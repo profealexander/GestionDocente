@@ -130,7 +130,7 @@ _timestamps: dict[str, dict[int, float]] = {
     "attendance": {},
     "query": {},
 }
-_TTL = 1800  # 30 minutos
+_TTL = 3600  # 60 minutos
 
 
 def _touch(store: str, user_id: int) -> None:
