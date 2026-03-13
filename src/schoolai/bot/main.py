@@ -3,13 +3,30 @@ from telegram import Update
 from telegram.ext import ApplicationBuilder, CallbackQueryHandler, CommandHandler, ContextTypes, MessageHandler, filters
 from telegram.request import HTTPXRequest
 
+from loguru import logger
+
 from schoolai.bot.attendance_handler import handle_attendance_callback
 from schoolai.bot.db_handler import handle_db_callback, handle_db_command, handle_db_text
 from schoolai.bot.help_handler import handle_help_back, handle_help_callback, handle_help_command
 from schoolai.bot.query_handler import handle_query_callback
 from schoolai.bot.handlers import handle_text, handle_voice
-from schoolai.bot.state import get_db_flow
+from schoolai.bot.state import cleanup_stale, clear_attendance, clear_db_flow, clear_pending, clear_query, get_db_flow
 from schoolai.config import settings
+
+
+async def _handle_cancel(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    user_id = update.effective_user.id
+    clear_db_flow(user_id)
+    clear_attendance(user_id)
+    clear_pending(user_id)
+    clear_query(user_id)
+    await update.message.reply_text("Operación cancelada.")
+
+
+async def _run_cleanup(context: ContextTypes.DEFAULT_TYPE) -> None:
+    removed = cleanup_stale()
+    if removed:
+        logger.info(f"[TTL] cleanup removed {removed} stale states")
 
 
 class _DbFlowFilter(filters.MessageFilter):
@@ -40,8 +57,13 @@ def run() -> None:
         .build()
     )
 
+    # TTL cleanup cada 10 minutos
+    app.job_queue.run_repeating(_run_cleanup, interval=600, first=600)
+
     app.add_error_handler(_error_handler)
 
+    # Cancelar cualquier flujo activo
+    app.add_handler(CommandHandler("cancelar", _handle_cancel))
     # Help
     app.add_handler(CommandHandler("ayuda", handle_help_command))
     app.add_handler(CallbackQueryHandler(handle_help_back, pattern=r"^help:back$"))
