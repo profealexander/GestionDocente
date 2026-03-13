@@ -5,8 +5,17 @@ from telegram.request import HTTPXRequest
 
 from schoolai.bot.attendance_handler import handle_attendance_callback
 from schoolai.bot.db_handler import handle_db_callback, handle_db_command, handle_db_text
+from schoolai.bot.query_handler import handle_query_callback
 from schoolai.bot.handlers import handle_text, handle_voice
+from schoolai.bot.state import get_db_flow
 from schoolai.config import settings
+
+
+class _DbFlowFilter(filters.MessageFilter):
+    """Only matches messages while a /db flow is active for the sender."""
+    def filter(self, message) -> bool:
+        user = message.from_user
+        return user is not None and get_db_flow(user.id) is not None
 
 
 async def _debug_callback(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
@@ -37,9 +46,12 @@ def run() -> None:
     app.add_handler(CallbackQueryHandler(handle_db_callback, pattern=r"^db_"))
     # Attendance skill
     app.add_handler(CallbackQueryHandler(handle_attendance_callback, pattern=r"^att_"))
+    # Query skill
+    app.add_handler(CallbackQueryHandler(handle_query_callback, pattern=r"^qry_"))
     # Catch-all for unhandled callbacks (debug)
     app.add_handler(CallbackQueryHandler(_debug_callback))
 
+    app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND & _DbFlowFilter(), handle_db_text))
     app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_text))
     app.add_handler(MessageHandler(filters.VOICE | filters.AUDIO, handle_voice))
 

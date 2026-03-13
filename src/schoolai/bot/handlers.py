@@ -4,8 +4,9 @@ from telegram.constants import ParseMode
 from telegram.ext import ContextTypes
 
 from schoolai.bot.attendance_handler import start_attendance
-from schoolai.bot.db_handler import handle_db_text
-from schoolai.bot.state import PendingHomework, clear_pending, get_attendance, get_db_flow, get_pending, set_pending
+from schoolai.bot.query_handler import start_query
+from schoolai.bot.state import PendingHomework, clear_pending, get_attendance, get_pending, get_query, set_pending
+from schoolai.skills.query.detector import is_query_message
 from schoolai.bot.transcription import transcribe
 from schoolai.config import settings
 from schoolai.db.connection import async_session
@@ -29,11 +30,6 @@ async def handle_text(update: Update, context: ContextTypes.DEFAULT_TYPE) -> Non
 
     text = update.message.text.strip()
     logger.info(f"[text] {user.id}: {text[:80]}")
-
-    # DB skill takes priority when flow is active
-    if get_db_flow(user.id):
-        await handle_db_text(update, context)
-        return
 
     await _dispatch(update, user.id, text)
 
@@ -78,7 +74,13 @@ async def _dispatch(update: Update, user_id: int, text: str) -> None:
         await _run_homework_agent(update, user_id, text)
         return
 
-    # 2 — Exact keyword detection (fast, no API)
+    # 2 — Query (read) before attendance/homework (write)
+    if is_query_message(text):
+        logger.info(f"[dispatch] user={user_id} → query")
+        await start_query(update, text)
+        return
+
+    # 3 — Exact keyword detection (fast, no API)
     if is_attendance_message(text):
         logger.info(f"[dispatch] user={user_id} → attendance (exact)")
         await start_attendance(update, text)

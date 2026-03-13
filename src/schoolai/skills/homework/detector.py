@@ -12,8 +12,8 @@ COURSE_PATTERNS = [
     r"\b(inicial\s+[12]|preparatoria)\b",
     r"\b(segundo|tercero|cuarto|quinto|sexto|séptimo|septimo|octavo|noveno|décimo|decimo)\s+egb\b",
     r"\b(primero|1ero|1ro|1er|1°|1o|primer)\s*(bt|bachillerato|bachi)\b",
-    r"\b(segundo|2do|2°|2o)\s*(bt|bachillerato|bachi)\b",
-    r"\b(tercero|3ero|3ro|3°|3o)\s*(bt|bachillerato|bachi)\b",
+    r"\b(segundo|segunda|2do|2da|2°|2o)\s*(bt|bachillerato|bachi)\b",
+    r"\b(tercero|tercera|3ero|3ro|3°|3o)\s*(bt|bachillerato|bachi)\b",
     r"\b[123][°o]?\s*(bt|bachi|bachillerato|egb)\b",
 ]
 

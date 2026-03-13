@@ -89,3 +89,25 @@ def get_attendance(user_id: int) -> PendingAttendance | None:
 
 def clear_attendance(user_id: int) -> None:
     _attendance.pop(user_id, None)
+
+
+# ── Query state ───────────────────────────────────────────────────────────────
+
+@dataclass
+class QueryFlow:
+    intent: object  # QueryIntent
+
+
+_queries: dict[int, QueryFlow] = {}
+
+
+def set_query(user_id: int, flow: QueryFlow) -> None:
+    _queries[user_id] = flow
+
+
+def get_query(user_id: int) -> QueryFlow | None:
+    return _queries.get(user_id)
+
+
+def clear_query(user_id: int) -> None:
+    _queries.pop(user_id, None)

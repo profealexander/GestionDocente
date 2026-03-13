@@ -16,8 +16,10 @@ _GRADE_ALIASES = {
     "primer bt": "PRIMERO BT", "primero bt": "PRIMERO BT", "primero bachillerato": "PRIMERO BT",
     # Segundo BT
     "2bt": "SEGUNDO BT", "2 bt": "SEGUNDO BT", "2bachi": "SEGUNDO BT",
-    "2bachillerato": "SEGUNDO BT", "2do bt": "SEGUNDO BT", "2° bt": "SEGUNDO BT",
-    "segundo bt": "SEGUNDO BT", "segundo bachillerato": "SEGUNDO BT",
+    "2bachillerato": "SEGUNDO BT", "2do bt": "SEGUNDO BT", "2dobt": "SEGUNDO BT",
+    "2° bt": "SEGUNDO BT", "2da bt": "SEGUNDO BT", "2da bt": "SEGUNDO BT",
+    "segundo bt": "SEGUNDO BT", "segunda bt": "SEGUNDO BT",
+    "segundo bachillerato": "SEGUNDO BT", "segunda bachillerato": "SEGUNDO BT",
     # Tercero BT
     "3bt": "TERCERO BT", "3 bt": "TERCERO BT", "3bachi": "TERCERO BT",
     "3bachillerato": "TERCERO BT", "3ero bt": "TERCERO BT", "3° bt": "TERCERO BT",
