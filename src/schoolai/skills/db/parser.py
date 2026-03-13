@@ -7,18 +7,13 @@ Supports:
 """
 
 import re
-import unicodedata
+
+from schoolai.skills.utils.text import normalize
 
 # Ecuador cédula: exactly 10 digits
 CEDULA_RE = re.compile(r"\b(\d{10})\b")
 # Leading numbering / bullet prefix
 PREFIX_RE = re.compile(r"^\s*\d+[.)]\s*|^[-•*]\s*")
-
-
-def normalize(text: str) -> str:
-    """Uppercase and strip accents — used for DB comparisons."""
-    nfkd = unicodedata.normalize("NFKD", text.upper())
-    return "".join(c for c in nfkd if not unicodedata.combining(c))
 
 
 def parse_line(line: str) -> dict | None:

@@ -1,8 +1,9 @@
 """Match extracted name strings to actual students in the DB."""
 
-import unicodedata
 from dataclasses import dataclass, field
 from difflib import SequenceMatcher
+from typing import NamedTuple
+
 
 SIMILARITY_THRESHOLD = 0.80  # mínimo para considerar nombre similar
 
@@ -11,11 +12,13 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from schoolai.db.models.person import Person
 from schoolai.db.models.student import Student
+from schoolai.skills.utils.text import normalize as _norm
 
 
-def _norm(text: str) -> str:
-    nfkd = unicodedata.normalize("NFKD", text.upper())
-    return "".join(c for c in nfkd if not unicodedata.combining(c))
+class _StudentEntry(NamedTuple):
+    student: object
+    display: str
+    short: str
 
 
 @dataclass
@@ -54,10 +57,10 @@ async def match_names(
     students = (await session.execute(stmt)).unique().scalars().all()
 
     # Build lookup structures
-    by_id: dict[int, tuple[Student, str, str]] = {}  # student.id → (student, display, short)
-    by_first: dict[str, list[int]] = {}               # norm first_name → [student_ids]
-    by_last: dict[str, list[int]] = {}                # norm last_name → [student_ids]
-    by_full: dict[str, int] = {}                      # norm name variant → student_id
+    by_id: dict[int, _StudentEntry] = {}  # student.id → _StudentEntry
+    by_first: dict[str, list[int]] = {}   # norm first_name → [student_ids]
+    by_last: dict[str, list[int]] = {}    # norm last_name → [student_ids]
+    by_full: dict[str, int] = {}          # norm name variant → student_id
 
     for s in students:
         if not s.person:
@@ -69,8 +72,8 @@ async def match_names(
         else:
             full_long = short
 
-        display = _display_name(p)
-        by_id[s.id] = (s, display, short)
+        display = p.full_name()
+        by_id[s.id] = _StudentEntry(student=s, display=display, short=short)
         by_full[_norm(short)] = s.id
         by_full[_norm(full_long)] = s.id
 
@@ -108,7 +111,7 @@ def _match_one(
         norm_full = _norm(raw)
         if norm_full in by_full:
             sid = by_full[norm_full]
-            _, display, _ = by_id[sid]
+            display = by_id[sid].display
             return MatchResult(raw_name=raw, status=status, matched_id=sid, matched_name=display)
 
         # Try first word as first_name + rest as last_name combinations
@@ -118,7 +121,7 @@ def _match_one(
             candidate_key = f"{first} {last}"
             if candidate_key in by_full:
                 sid = by_full[candidate_key]
-                _, display, _ = by_id[sid]
+                display = by_id[sid].display
                 return MatchResult(raw_name=raw, status=status, matched_id=sid, matched_name=display)
 
     # Try first name only (exact)
@@ -127,11 +130,11 @@ def _match_one(
 
     if len(ids) == 1:
         sid = ids[0]
-        _, display, _ = by_id[sid]
+        display = by_id[sid].display
         return MatchResult(raw_name=raw, status=status, matched_id=sid, matched_name=display)
 
     if len(ids) > 1:
-        candidates = [{"id": sid, "name": by_id[sid][1]} for sid in ids]
+        candidates = [{"id": sid, "name": by_id[sid].display} for sid in ids]
         return MatchResult(raw_name=raw, status=status, candidates=candidates)
 
     # Try last name only (exact)
@@ -139,20 +142,20 @@ def _match_one(
 
     if len(ids) == 1:
         sid = ids[0]
-        _, display, _ = by_id[sid]
+        display = by_id[sid].display
         return MatchResult(raw_name=raw, status=status, matched_id=sid, matched_name=display)
 
     if len(ids) > 1:
-        candidates = [{"id": sid, "name": by_id[sid][1]} for sid in ids]
+        candidates = [{"id": sid, "name": by_id[sid].display} for sid in ids]
         return MatchResult(raw_name=raw, status=status, candidates=candidates)
 
     # Fuzzy match — compare against short name (first + last) to avoid noise from middle names
     norm_raw = _norm(raw)
     fuzzy_hits: list[tuple[float, int, str]] = []
-    for sid, (_, display, short) in by_id.items():
-        score = SequenceMatcher(None, norm_raw, _norm(short)).ratio()
+    for sid, entry in by_id.items():
+        score = SequenceMatcher(None, norm_raw, _norm(entry.short)).ratio()
         if score >= SIMILARITY_THRESHOLD:
-            fuzzy_hits.append((score, sid, display))
+            fuzzy_hits.append((score, sid, entry.display))
 
     fuzzy_hits.sort(reverse=True)
 
@@ -165,8 +168,3 @@ def _match_one(
         return MatchResult(raw_name=raw, status=status, candidates=candidates)
 
     return MatchResult(raw_name=raw, status=status)
-
-
-def _display_name(p: Person) -> str:
-    parts = [p.first_name, p.middle_name, p.last_name, p.second_last_name]
-    return " ".join(x for x in parts if x)

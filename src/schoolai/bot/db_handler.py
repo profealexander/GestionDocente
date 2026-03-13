@@ -13,9 +13,10 @@ from telegram.ext import ContextTypes
 from schoolai.bot.state import DbFlow, clear_db_flow, get_db_flow, set_db_flow
 from schoolai.db.connection import async_session
 from schoolai.db.models.grade import Grade
-from schoolai.skills.db.deduplicator import MatchType, build_preview_lines, deduplicate
-from schoolai.skills.db.parser import format_name, parse_list
+from schoolai.skills.db.deduplicator import build_preview_lines, deduplicate
+from schoolai.skills.db.parser import parse_list
 from schoolai.skills.db.service import save_people
+from schoolai.skills.utils.keyboards import grade_keyboard
 
 from sqlalchemy import select
 
@@ -105,7 +106,8 @@ async def _on_section(query, user_id: int, section: str) -> None:
     flow.section = section
     flow.step = "await_confirm"
     set_db_flow(user_id, flow)
-    await _show_preview(query, user_id, flow)
+    await query.edit_message_text("Verificando duplicados...")
+    await _dedup_and_preview(query.edit_message_text, user_id, flow)
 
 
 async def _on_confirm(query, user_id: int) -> None:
@@ -161,19 +163,20 @@ async def handle_db_text(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
         await update.message.reply_text(
             f"Encontré *{len(parsed)} nombres*.\n\n¿A qué curso pertenecen?",
             parse_mode=ParseMode.MARKDOWN,
-            reply_markup=_grade_keyboard(grades),
+            reply_markup=grade_keyboard(grades, "db_grade"),
         )
     else:
         # No extra data needed — go straight to preview
         flow.step = "await_confirm"
         set_db_flow(user_id, flow)
-        await _run_dedup_and_preview(update, user_id, flow)
+        msg = await update.message.reply_text("Verificando duplicados...")
+        await _dedup_and_preview(msg.edit_text, user_id, flow)
 
 
 # ── Preview ───────────────────────────────────────────────────────────────────
 
-async def _run_dedup_and_preview(update, user_id: int, flow: DbFlow) -> None:
-    msg = await update.message.reply_text("Verificando duplicados...")
+async def _dedup_and_preview(reply_fn, user_id: int, flow: DbFlow) -> None:
+    """Run deduplication and show preview. reply_fn is an async callable (edit_text or similar)."""
     async with async_session() as session:
         results = await deduplicate(flow.parsed_names, session)
 
@@ -184,10 +187,10 @@ async def _run_dedup_and_preview(update, user_id: int, flow: DbFlow) -> None:
     new_count = sum(1 for r in results if r.match_type.name == "NEW")
     warn_count = len(results) - new_count
 
-    header = (
-        f"*Vista previa — {len(results)} personas*\n"
-        f"✅ Nuevas: {new_count}  ⚠️ Revisar: {warn_count}\n\n"
-    )
+    header = f"*Vista previa — {len(results)} personas*\n"
+    if flow.grade_name and flow.section:
+        header += f"Curso: *{flow.grade_name}* | Sección: *{flow.section}*\n"
+    header += f"✅ Nuevas: {new_count}  ⚠️ Revisar: {warn_count}\n\n"
 
     # Split preview into chunks of 30 to avoid Telegram message limit
     chunks = [preview_lines[i:i+30] for i in range(0, len(preview_lines), 30)]
@@ -195,37 +198,7 @@ async def _run_dedup_and_preview(update, user_id: int, flow: DbFlow) -> None:
     if len(chunks) > 1:
         body += f"\n_... y {sum(len(c) for c in chunks[1:])} más_"
 
-    await msg.edit_text(
-        header + body,
-        parse_mode=ParseMode.MARKDOWN,
-        reply_markup=_confirm_keyboard(),
-    )
-
-
-async def _show_preview(query, user_id: int, flow: DbFlow) -> None:
-    await query.edit_message_text("Verificando duplicados...")
-    async with async_session() as session:
-        results = await deduplicate(flow.parsed_names, session)
-
-    flow.dedup_results = results
-    set_db_flow(user_id, flow)
-
-    preview_lines = build_preview_lines(results, flow.role)
-    new_count = sum(1 for r in results if r.match_type.name == "NEW")
-    warn_count = len(results) - new_count
-
-    header = (
-        f"*Vista previa — {len(results)} personas*\n"
-        f"Curso: *{flow.grade_name}* | Sección: *{flow.section}*\n"
-        f"✅ Nuevas: {new_count}  ⚠️ Revisar: {warn_count}\n\n"
-    )
-
-    chunks = [preview_lines[i:i+30] for i in range(0, len(preview_lines), 30)]
-    body = "\n".join(chunks[0])
-    if len(chunks) > 1:
-        body += f"\n_... y {sum(len(c) for c in chunks[1:])} más_"
-
-    await query.edit_message_text(
+    await reply_fn(
         header + body,
         parse_mode=ParseMode.MARKDOWN,
         reply_markup=_confirm_keyboard(),
@@ -239,19 +212,6 @@ def _role_keyboard() -> InlineKeyboardMarkup:
         [InlineKeyboardButton(label, callback_data=f"db_role:{value}")]
         for label, value in ROLES
     ]
-    return InlineKeyboardMarkup(buttons)
-
-
-def _grade_keyboard(grades: list) -> InlineKeyboardMarkup:
-    buttons = []
-    row = []
-    for g in grades:
-        row.append(InlineKeyboardButton(g.name, callback_data=f"db_grade:{g.id}:{g.name}"))
-        if len(row) == 3:
-            buttons.append(row)
-            row = []
-    if row:
-        buttons.append(row)
     return InlineKeyboardMarkup(buttons)
 
 

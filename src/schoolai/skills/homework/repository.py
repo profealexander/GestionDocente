@@ -78,7 +78,7 @@ async def save_homework(
 
 
 async def list_open(session: AsyncSession, grade_id: int | None = None) -> list[Homework]:
-    stmt = select(Homework).where(Homework.is_open == True)  # noqa: E712
+    stmt = select(Homework).where(Homework.is_open.is_(True))
     if grade_id:
         stmt = stmt.where(Homework.grade_id == grade_id)
     stmt = stmt.order_by(Homework.submission_date.desc())

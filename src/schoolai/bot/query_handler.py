@@ -1,7 +1,7 @@
 """Query skill handler — answers data requests from free text."""
 
 from loguru import logger
-from telegram import InlineKeyboardButton, InlineKeyboardMarkup, Update
+from telegram import Update
 from telegram.constants import ParseMode
 from telegram.ext import ContextTypes
 
@@ -13,6 +13,7 @@ from schoolai.skills.homework.repository import find_grade
 from schoolai.skills.query.detector import QueryIntent, extract_intent
 from schoolai.skills.query.formatter import format_attendance, format_homework
 from schoolai.skills.query.resolver import resolve_attendance, resolve_homework
+from schoolai.skills.utils.keyboards import grade_keyboard
 
 from sqlalchemy import select
 
@@ -35,7 +36,7 @@ async def start_query(update: Update, text: str) -> None:
         set_query(user_id, QueryFlow(intent=intent))
         await update.message.reply_text(
             "¿De qué curso?",
-            reply_markup=_grade_keyboard(grades),
+            reply_markup=grade_keyboard(grades, "qry_grade"),
         )
         return
 
@@ -70,16 +71,3 @@ async def _run_query(reply_fn, user_id: int, intent: QueryIntent, grade_id: int)
 
     await reply_fn(text, parse_mode=ParseMode.MARKDOWN)
     logger.info(f"[query] user={user_id} grade={grade_id} done")
-
-
-def _grade_keyboard(grades: list) -> InlineKeyboardMarkup:
-    buttons = []
-    row = []
-    for g in grades:
-        row.append(InlineKeyboardButton(g.name, callback_data=f"qry_grade:{g.id}"))
-        if len(row) == 3:
-            buttons.append(row)
-            row = []
-    if row:
-        buttons.append(row)
-    return InlineKeyboardMarkup(buttons)

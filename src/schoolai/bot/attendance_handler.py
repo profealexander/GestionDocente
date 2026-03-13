@@ -19,11 +19,13 @@ from schoolai.bot.state import (
 )
 from schoolai.db.connection import async_session
 from schoolai.db.models.grade import Grade
+from schoolai.skills.attendance.constants import ABSENT, LATE, JUSTIFIED
 from schoolai.skills.attendance.detector import extract_absences
 from schoolai.skills.attendance.matcher import MatchResult, match_names
 from schoolai.skills.attendance.service import save_absences
 from schoolai.skills.homework.detector import extract_course
 from schoolai.skills.homework.repository import find_grade
+from schoolai.skills.utils.keyboards import grade_keyboard
 
 from sqlalchemy import select
 
@@ -68,7 +70,7 @@ async def start_attendance(update: Update, text: str) -> None:
         await update.message.reply_text(
             f"Ausentes detectados: *{names_preview}*\n\n¿De qué curso?",
             parse_mode=ParseMode.MARKDOWN,
-            reply_markup=_grade_keyboard(grades),
+            reply_markup=grade_keyboard(grades, "att_grade"),
         )
         return
 
@@ -229,9 +231,9 @@ async def _save_and_reply(reply_fn, user_id: int, state: PendingAttendance, not_
 
     clear_attendance(user_id)
 
-    absent    = [c for c in state.confirmed if c["status"] == "F"]
-    late      = [c for c in state.confirmed if c["status"] == "AT"]
-    justified = [c for c in state.confirmed if c["status"] == "J"]
+    absent    = [c for c in state.confirmed if c["status"] == ABSENT]
+    late      = [c for c in state.confirmed if c["status"] == LATE]
+    justified = [c for c in state.confirmed if c["status"] == JUSTIFIED]
 
     lines = [f"📋 *{state.grade_name} — {state.attendance_date.strftime('%d/%m/%Y')}*\n"]
 
@@ -253,18 +255,3 @@ async def _save_and_reply(reply_fn, user_id: int, state: PendingAttendance, not_
 
     await reply_fn("\n".join(lines), parse_mode=ParseMode.MARKDOWN)
     logger.info(f"[attendance] user={user_id} saved {result.saved} records")
-
-
-# ── Keyboards ─────────────────────────────────────────────────────────────────
-
-def _grade_keyboard(grades: list) -> InlineKeyboardMarkup:
-    buttons = []
-    row = []
-    for g in grades:
-        row.append(InlineKeyboardButton(g.name, callback_data=f"att_grade:{g.id}:{g.name}"))
-        if len(row) == 3:
-            buttons.append(row)
-            row = []
-    if row:
-        buttons.append(row)
-    return InlineKeyboardMarkup(buttons)

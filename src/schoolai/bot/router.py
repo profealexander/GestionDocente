@@ -1,7 +1,6 @@
 """LLM router — classifies incoming messages and routes to the correct agent."""
 
 import asyncio
-from functools import partial
 
 from loguru import logger
 from zhipuai import ZhipuAI

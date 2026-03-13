@@ -7,6 +7,7 @@ from sqlalchemy import delete, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from schoolai.db.models.attendance import Attendance
+from schoolai.skills.attendance.constants import ABSENT
 
 
 @dataclass
@@ -38,7 +39,7 @@ async def save_absences(
         session.add(Attendance(
             student_id=sid,
             date=attendance_date,
-            status=statuses.get(sid, "F"),
+            status=statuses.get(sid, ABSENT),
         ))
 
     await session.commit()

@@ -1,9 +1,10 @@
 """Detect query messages and extract intent, subject type and period."""
 
 import re
-import unicodedata
 from dataclasses import dataclass
 from datetime import date, timedelta
+
+from schoolai.skills.utils.text import normalize as _norm
 
 QUERY_KEYWORDS = [
     "dame", "muestra", "mostrar", "ver", "lista", "listar",
@@ -37,11 +38,6 @@ TRIMESTERS = [
     (2, date(2025, 12, 1), date(2026,  2, 28)),
     (3, date(2026, 3,  1), date(2026,  7, 31)),
 ]
-
-
-def _norm(text: str) -> str:
-    nfkd = unicodedata.normalize("NFKD", text.lower())
-    return "".join(c for c in nfkd if not unicodedata.combining(c))
 
 
 @dataclass

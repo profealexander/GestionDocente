@@ -8,9 +8,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from schoolai.api.schemas import HomeworkClose, HomeworkOut, MessageOut
 from schoolai.db.connection import get_session
-from schoolai.db.models.grade import Grade
 from schoolai.db.models.homework import Homework
-from schoolai.db.models.subject import Subject
 
 router = APIRouter(prefix="/homework", tags=["Homework"])
 

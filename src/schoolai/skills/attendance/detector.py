@@ -4,6 +4,8 @@ import re
 import unicodedata
 from difflib import SequenceMatcher
 
+from schoolai.skills.attendance.constants import ABSENT, LATE, JUSTIFIED
+
 FUZZY_THRESHOLD = 0.82  # minimum similarity for keyword fuzzy match
 
 ABSENCE_KEYWORDS = [
@@ -86,9 +88,9 @@ def extract_absences(text: str) -> list[dict]:
     # Find all keyword positions with their status
     # Order: J > AT > F so higher priority wins on overlap
     keyword_groups = [
-        (JUSTIFIED_KEYWORDS, "J"),
-        (LATE_KEYWORDS, "AT"),
-        (ABSENCE_KEYWORDS, "F"),
+        (JUSTIFIED_KEYWORDS, JUSTIFIED),
+        (LATE_KEYWORDS, LATE),
+        (ABSENCE_KEYWORDS, ABSENT),
     ]
 
     spans: list[tuple[int, int, str]] = []  # (kw_start, kw_end, status)

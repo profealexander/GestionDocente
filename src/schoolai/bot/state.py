@@ -1,5 +1,6 @@
 """In-memory conversation state per user."""
 
+import time
 from dataclasses import dataclass, field
 from datetime import date
 from typing import Literal
@@ -19,6 +20,7 @@ _pending: dict[int, PendingHomework] = {}
 
 def set_pending(user_id: int, pending: PendingHomework) -> None:
     _pending[user_id] = pending
+    _touch("pending", user_id)
 
 
 def get_pending(user_id: int) -> PendingHomework | None:
@@ -27,6 +29,7 @@ def get_pending(user_id: int) -> PendingHomework | None:
 
 def clear_pending(user_id: int) -> None:
     _pending.pop(user_id, None)
+    _expire("pending", user_id)
 
 
 # ── DB Skill state ────────────────────────────────────────────────────────────
@@ -50,6 +53,7 @@ _db_flows: dict[int, DbFlow] = {}
 
 def set_db_flow(user_id: int, flow: DbFlow) -> None:
     _db_flows[user_id] = flow
+    _touch("db", user_id)
 
 
 def get_db_flow(user_id: int) -> DbFlow | None:
@@ -58,6 +62,7 @@ def get_db_flow(user_id: int) -> DbFlow | None:
 
 def clear_db_flow(user_id: int) -> None:
     _db_flows.pop(user_id, None)
+    _expire("db", user_id)
 
 
 # ── Attendance state ──────────────────────────────────────────────────────────
@@ -81,6 +86,7 @@ _attendance: dict[int, PendingAttendance] = {}
 
 def set_attendance(user_id: int, state: PendingAttendance) -> None:
     _attendance[user_id] = state
+    _touch("attendance", user_id)
 
 
 def get_attendance(user_id: int) -> PendingAttendance | None:
@@ -89,6 +95,7 @@ def get_attendance(user_id: int) -> PendingAttendance | None:
 
 def clear_attendance(user_id: int) -> None:
     _attendance.pop(user_id, None)
+    _expire("attendance", user_id)
 
 
 # ── Query state ───────────────────────────────────────────────────────────────
@@ -103,6 +110,7 @@ _queries: dict[int, QueryFlow] = {}
 
 def set_query(user_id: int, flow: QueryFlow) -> None:
     _queries[user_id] = flow
+    _touch("query", user_id)
 
 
 def get_query(user_id: int) -> QueryFlow | None:
@@ -111,3 +119,41 @@ def get_query(user_id: int) -> QueryFlow | None:
 
 def clear_query(user_id: int) -> None:
     _queries.pop(user_id, None)
+    _expire("query", user_id)
+
+
+# ── TTL cleanup ───────────────────────────────────────────────────────────────
+
+_timestamps: dict[str, dict[int, float]] = {
+    "pending": {},
+    "db": {},
+    "attendance": {},
+    "query": {},
+}
+_TTL = 1800  # 30 minutos
+
+
+def _touch(store: str, user_id: int) -> None:
+    _timestamps[store][user_id] = time.monotonic()
+
+
+def _expire(store: str, user_id: int) -> None:
+    _timestamps[store].pop(user_id, None)
+
+
+def cleanup_stale() -> int:
+    """Elimina estados expirados. Retorna cantidad eliminada."""
+    now = time.monotonic()
+    removed = 0
+    for store, data_dict in [
+        ("pending", _pending),
+        ("db", _db_flows),
+        ("attendance", _attendance),
+        ("query", _queries),
+    ]:
+        expired = [uid for uid, ts in _timestamps[store].items() if now - ts > _TTL]
+        for uid in expired:
+            data_dict.pop(uid, None)
+            _timestamps[store].pop(uid, None)
+            removed += 1
+    return removed
