@@ -15,6 +15,11 @@ QUERY_KEYWORDS = [
 ATTENDANCE_KEYWORDS = ["asistencia", "faltas", "faltaron", "atrasos", "justificados", "quien falto", "quién faltó"]
 HOMEWORK_KEYWORDS   = ["tareas", "tarea", "actividades", "actividad", "pendientes"]
 
+# Pre-normalizados para comparar contra texto normalizado (mayúsculas, sin acentos)
+_QUERY_KEYWORDS_N     = [_norm(k) for k in QUERY_KEYWORDS]
+_ATTENDANCE_KEYWORDS_N = [_norm(k) for k in ATTENDANCE_KEYWORDS]
+_HOMEWORK_KEYWORDS_N  = [_norm(k) for k in HOMEWORK_KEYWORDS]
+
 PERIOD_PATTERNS = [
     (r"\bhoy\b",                          "day",   0),
     (r"\besta\s+semana\b",                "week",  0),
@@ -51,7 +56,7 @@ class QueryIntent:
 
 def is_query_message(text: str) -> bool:
     t = _norm(text)
-    return any(re.search(rf"\b{re.escape(kw)}\b", t) for kw in QUERY_KEYWORDS)
+    return any(re.search(rf"\b{re.escape(kw)}\b", t) for kw in _QUERY_KEYWORDS_N)
 
 
 def get_current_trimester() -> tuple[int, date, date]:
@@ -69,11 +74,11 @@ def extract_intent(text: str) -> QueryIntent:
 
     # Determine query type
     qtype = "unknown"
-    if any(re.search(rf"\b{re.escape(kw)}\b", t) for kw in ATTENDANCE_KEYWORDS):
+    if any(re.search(rf"\b{re.escape(kw)}\b", t) for kw in _ATTENDANCE_KEYWORDS_N):
         qtype = "attendance"
-    elif any(re.search(rf"\b{re.escape(kw)}\b", t) for kw in HOMEWORK_KEYWORDS):
+    elif any(re.search(rf"\b{re.escape(kw)}\b", t) for kw in _HOMEWORK_KEYWORDS_N):
         qtype = "homework"
-    elif any(kw in t for kw in ["dame", "muestra", "lista"]):
+    elif any(_norm(kw) in t for kw in ["dame", "muestra", "lista"]):
         # Ambiguous — default attendance if no clear type
         qtype = "attendance"
 
