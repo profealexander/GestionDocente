@@ -5,6 +5,7 @@ from telegram.request import HTTPXRequest
 
 from schoolai.bot.attendance_handler import handle_attendance_callback
 from schoolai.bot.db_handler import handle_db_callback, handle_db_command, handle_db_text
+from schoolai.bot.help_handler import handle_help_back, handle_help_callback, handle_help_command
 from schoolai.bot.query_handler import handle_query_callback
 from schoolai.bot.handlers import handle_text, handle_voice
 from schoolai.bot.state import get_db_flow
@@ -41,6 +42,10 @@ def run() -> None:
 
     app.add_error_handler(_error_handler)
 
+    # Help
+    app.add_handler(CommandHandler("ayuda", handle_help_command))
+    app.add_handler(CallbackQueryHandler(handle_help_back, pattern=r"^help:back$"))
+    app.add_handler(CallbackQueryHandler(handle_help_callback, pattern=r"^help:"))
     # DB skill
     app.add_handler(CommandHandler("db", handle_db_command))
     app.add_handler(CallbackQueryHandler(handle_db_callback, pattern=r"^db_"))
