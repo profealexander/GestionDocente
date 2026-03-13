@@ -1,0 +1,98 @@
+"""SchoolAI REST API."""
+
+from fastapi import FastAPI
+from fastapi.openapi.docs import get_redoc_html, get_swagger_ui_html
+from fastapi.openapi.utils import get_openapi
+
+from schoolai.api.routers import grades, homework, subjects
+
+# ── App ───────────────────────────────────────────────────────────────────────
+
+app = FastAPI(
+    title="SchoolAI API",
+    version="1.0.0",
+    description=(
+        "REST API for SchoolAI — school assistant for teachers.\n\n"
+        "## Documentation\n"
+        "- **`/docs`** — Interactive API explorer (Swagger UI)\n"
+        "- **`/redoc`** — Technical reference (ReDoc)\n"
+        "- **`/openapi.json`** — OpenAPI schema\n\n"
+        "## Skills\n"
+        "- **Homework** — Register and query academic tasks\n"
+        "- **Grades** — School grade catalog\n"
+        "- **Subjects** — Academic subject catalog\n"
+    ),
+    contact={
+        "name": "SchoolAI",
+        "email": "admin@schoolai.edu",
+    },
+    license_info={
+        "name": "Private",
+    },
+    # Disable default docs — we serve custom ones below
+    docs_url=None,
+    redoc_url=None,
+)
+
+# ── Routers ───────────────────────────────────────────────────────────────────
+
+app.include_router(homework.router)
+app.include_router(grades.router)
+app.include_router(subjects.router)
+
+
+# ── Custom docs ───────────────────────────────────────────────────────────────
+
+@app.get("/docs", include_in_schema=False, tags=["Documentation"])
+async def swagger_ui():
+    """Interactive API explorer for developers."""
+    return get_swagger_ui_html(
+        openapi_url="/openapi.json",
+        title="SchoolAI API — Swagger UI",
+        swagger_favicon_url="https://fastapi.tiangolo.com/img/favicon.png",
+    )
+
+
+@app.get("/redoc", include_in_schema=False, tags=["Documentation"])
+async def redoc():
+    """Technical API reference."""
+    return get_redoc_html(
+        openapi_url="/openapi.json",
+        title="SchoolAI API — ReDoc",
+        redoc_favicon_url="https://fastapi.tiangolo.com/img/favicon.png",
+    )
+
+
+@app.get("/", include_in_schema=False)
+async def root():
+    return {
+        "app": "SchoolAI API",
+        "version": "1.0.0",
+        "docs": {
+            "swagger": "/docs",
+            "redoc": "/redoc",
+            "openapi": "/openapi.json",
+        },
+    }
+
+
+# ── Custom OpenAPI schema ─────────────────────────────────────────────────────
+
+def custom_openapi():
+    if app.openapi_schema:
+        return app.openapi_schema
+    schema = get_openapi(
+        title=app.title,
+        version=app.version,
+        description=app.description,
+        contact=app.contact,
+        routes=app.routes,
+    )
+    schema["info"]["x-logo"] = {
+        "url": "https://fastapi.tiangolo.com/img/logo-margin/logo-teal.png"
+    }
+    app.openapi_schema = schema
+    return schema
+
+
+app.openapi = custom_openapi
