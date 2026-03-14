@@ -16,7 +16,7 @@ dependencies = [
     "pydantic-settings>=2.7.0",
     "python-dotenv>=1.0.0",
     # Telegram bot
-    "python-telegram-bot>=21.0",
+    "python-telegram-bot[job-queue]>=21.0",
     # AI
     "zhipuai>=2.1.0",
     # HTTP
