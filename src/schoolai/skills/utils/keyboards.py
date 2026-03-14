@@ -12,7 +12,7 @@ def grade_keyboard(grades: list, callback_prefix: str) -> InlineKeyboardMarkup:
     Para att_grade y db_grade el formato es '{prefix}:{id}:{name}'.
     Para qry_grade el formato es '{prefix}:{id}'.
     """
-    include_name = callback_prefix in ("att_grade", "db_grade")
+    include_name = callback_prefix in ("att_grade", "db_grade", "act_grade")
     buttons = []
     row = []
     for g in grades:

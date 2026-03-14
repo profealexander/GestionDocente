@@ -5,6 +5,7 @@ from telegram.request import HTTPXRequest
 
 from loguru import logger
 
+from schoolai.bot.action_handler import handle_act_callback
 from schoolai.bot.attendance_handler import handle_attendance_callback
 from schoolai.bot.db_handler import handle_db_callback, handle_db_command, handle_db_text
 from schoolai.bot.help_handler import handle_help_back, handle_help_callback, handle_help_command
@@ -75,6 +76,8 @@ def run() -> None:
     app.add_handler(CallbackQueryHandler(handle_attendance_callback, pattern=r"^att_"))
     # Query skill
     app.add_handler(CallbackQueryHandler(handle_query_callback, pattern=r"^qry_"))
+    # Action handler (LLM extractor course selection)
+    app.add_handler(CallbackQueryHandler(handle_act_callback, pattern=r"^act_grade:"))
     # Catch-all for unhandled callbacks (debug)
     app.add_handler(CallbackQueryHandler(_debug_callback))
 

@@ -3,17 +3,8 @@ from telegram import Update
 from telegram.constants import ParseMode
 from telegram.ext import ContextTypes
 
-from schoolai.bot.attendance_handler import start_attendance
-from schoolai.bot.query_handler import start_query
-from schoolai.bot.state import PendingHomework, clear_pending, get_attendance, get_pending, get_query, set_pending
-from schoolai.skills.query.detector import is_query_message
 from schoolai.bot.transcription import transcribe
 from schoolai.config import settings
-from schoolai.db.connection import async_session
-from schoolai.bot.router import classify
-from schoolai.skills.attendance.detector import is_attendance_message, is_attendance_message_fuzzy
-from schoolai.skills.homework.detector import is_homework_message
-from schoolai.skills.homework.pre_agent import process, save_with_subject
 from schoolai.skills.ia.agent import chat
 
 
@@ -63,54 +54,25 @@ async def handle_voice(update: Update, context: ContextTypes.DEFAULT_TYPE) -> No
 
 
 async def _dispatch(update: Update, user_id: int, text: str) -> None:
-    # 1 — Pending state takes priority
-    if get_attendance(user_id):
-        logger.info(f"[dispatch] user={user_id} → attendance (pending)")
-        await start_attendance(update, text)
+    from schoolai.skills.extractor.llm import extract
+    from schoolai.skills.ia.history import get as get_history, append as append_history
+    from schoolai.bot.action_handler import handle_extraction
+
+    # Obtener historial para contexto
+    history = get_history(user_id)
+
+    # Extraer intent y entidades con LLM
+    result = await extract(text, history)
+
+    # Guardar en historial
+    append_history(user_id, "user", text)
+
+    if result.intent == "chat":
+        await _run_ia_skill(update, user_id, text)
         return
 
-    if get_pending(user_id):
-        logger.info(f"[dispatch] user={user_id} → homework (pending)")
-        await _run_homework_agent(update, user_id, text)
-        return
-
-    # 2 — Query (read) before attendance/homework (write)
-    if is_query_message(text):
-        logger.info(f"[dispatch] user={user_id} → query")
-        await start_query(update, text)
-        return
-
-    # 3 — Exact keyword detection (fast, no API)
-    if is_attendance_message(text):
-        logger.info(f"[dispatch] user={user_id} → attendance (exact)")
-        await start_attendance(update, text)
-        return
-
-    if is_homework_message(text):
-        logger.info(f"[dispatch] user={user_id} → homework (exact)")
-        await _run_homework_agent(update, user_id, text)
-        return
-
-    # 3 — Fuzzy keyword detection (catches typos)
-    if is_attendance_message_fuzzy(text):
-        logger.info(f"[dispatch] user={user_id} → attendance (fuzzy)")
-        await start_attendance(update, text)
-        return
-
-    # 4 — GLM classifier as final fallback
-    intent = await classify(text)
-    if intent == "attendance":
-        logger.info(f"[dispatch] user={user_id} → attendance (glm)")
-        await start_attendance(update, text)
-        return
-
-    if intent == "homework":
-        logger.info(f"[dispatch] user={user_id} → homework (glm)")
-        await _run_homework_agent(update, user_id, text)
-        return
-
-    logger.info(f"[dispatch] user={user_id} → ia")
-    await _run_ia_skill(update, user_id, text)
+    await handle_extraction(update, user_id, result)
+    append_history(user_id, "assistant", f"[{result.intent} procesado]")
 
 
 async def _run_ia_skill(update: Update, user_id: int, text: str) -> None:
@@ -139,32 +101,3 @@ async def _run_ia_skill(update: Update, user_id: int, text: str) -> None:
             await sent.edit_text(final)
         except Exception:
             pass
-
-
-async def _run_homework_agent(update: Update, user_id: int, text: str) -> None:
-    pending = get_pending(user_id)
-
-    async with async_session() as session:
-        if pending:
-            result = await save_with_subject(
-                text=pending.text,
-                subject_text=text,
-                grade_id=pending.grade_id,
-                grade_name=pending.grade_name,
-                delivery=pending.delivery,
-                session=session,
-            )
-        else:
-            result = await process(text, session)
-
-    if result.waiting_for_subject:
-        set_pending(user_id, PendingHomework(
-            text=text,
-            grade_id=result.pending_grade_id,
-            grade_name=result.pending_grade_name,
-            delivery=result.pending_delivery,
-        ))
-    else:
-        clear_pending(user_id)
-
-    await update.message.reply_text(result.message, parse_mode=ParseMode.MARKDOWN)
