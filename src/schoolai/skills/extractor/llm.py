@@ -44,13 +44,14 @@ date por defecto: "today".
 Para homework:
 {
   "intent": "homework",
-  "description": "descripción de la tarea",
+  "description": "descripción corregida y normalizada de la tarea",
   "course": "curso o null",
   "subject": "materia o null",
   "delivery_date": "YYYY-MM-DD|nombre del día|null",
   "complete": true/false
 }
 complete=false si course es null o subject es null.
+En description: corrige errores ortográficos, expande abreviaturas (pag.→página, ej.→ejercicio), redacta de forma clara.
 
 Para query:
 {
