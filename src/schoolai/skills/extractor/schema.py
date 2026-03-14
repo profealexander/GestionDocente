@@ -30,11 +30,21 @@ class QueryExtract:
 
 
 @dataclass
+class HomeworkReportExtract:
+    names: list[str]           # quienes no cumplieron
+    homework_ref: int | None   # número de tarea (ej: 3)
+    course: str | None
+    subject: str | None
+    status: str                # "missing" | "late" | "partial"
+    complete: bool             # False si falta course o homework_ref
+
+
+@dataclass
 class ChatExtract:
     pass
 
 
 @dataclass
 class ExtractionResult:
-    intent: Literal["attendance", "homework", "query", "chat"]
-    data: AttendanceExtract | HomeworkExtract | QueryExtract | ChatExtract
+    intent: Literal["attendance", "homework", "homework_report", "query", "chat"]
+    data: AttendanceExtract | HomeworkExtract | HomeworkReportExtract | QueryExtract | ChatExtract

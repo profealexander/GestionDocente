@@ -17,9 +17,17 @@ from schoolai.skills.extractor.schema import (
     AttendanceExtract,
     ExtractionResult,
     HomeworkExtract,
+    HomeworkReportExtract,
     QueryExtract,
 )
-from schoolai.skills.homework.repository import find_grade, find_subject, save_homework
+from schoolai.skills.homework.repository import (
+    find_grade,
+    find_subject,
+    save_homework,
+    find_homework_by_ref,
+    save_non_completers,
+    count_students_in_grade,
+)
 from schoolai.skills.utils.keyboards import grade_keyboard
 
 # Caché ligero: datos parciales esperando que el usuario elija curso
@@ -50,6 +58,8 @@ async def handle_extraction(update: Update, user_id: int, result: ExtractionResu
         await _handle_attendance(update, user_id, result, data)
     elif intent == "homework":
         await _handle_homework(update, user_id, result, data)
+    elif intent == "homework_report":
+        await _handle_homework_report(update, user_id, result, data)
     elif intent == "query":
         await _handle_query(update, user_id, result, data)
     else:
@@ -166,8 +176,8 @@ async def _save_homework(reply_fn, user_id: int, data: HomeworkExtract) -> None:
     delivery_str = record.delivery_date.strftime("%d/%m/%Y") if record.delivery_date else "no especificada"
     subject_str = subject.name if subject else "sin materia"
     await reply_fn(
-        f"✅ *Tarea registrada*\n"
-        f"Curso: *{grade.name}* | Materia: *{subject_str}*\n"
+        f"✅ Tarea #{record.sequence_num} registrada\n"
+        f"{subject_str} | {grade.name} | Trimestre {record.trimester_num}\n"
         f"Entrega: {delivery_str}",
         parse_mode=ParseMode.MARKDOWN,
     )
@@ -237,6 +247,83 @@ async def _handle_query(update, user_id: int, result: ExtractionResult, data: Qu
     await _run_query(update.message.reply_text, user_id, intent, grade.id)
 
 
+# ── Homework Report ───────────────────────────────────────────────────────────
+
+async def _handle_homework_report(update, user_id: int, result: ExtractionResult, data: HomeworkReportExtract) -> None:
+    if not data.course:
+        store_pending(user_id, result)
+        async with async_session() as session:
+            grades = (await session.execute(select(Grade).order_by(Grade.sort_order))).scalars().all()
+        await update.message.reply_text(
+            "¿De qué curso es el reporte?",
+            reply_markup=grade_keyboard(grades, "act_grade"),
+        )
+        return
+    await _save_homework_report(update.message.reply_text, user_id, data)
+
+
+async def _save_homework_report(reply_fn, user_id: int, data: HomeworkReportExtract) -> None:
+    async with async_session() as session:
+        grade = await find_grade(session, data.course)
+        if not grade:
+            await reply_fn(f"No encontré el curso *{data.course}*.", parse_mode=ParseMode.MARKDOWN)
+            return
+
+        subject = await find_subject(session, data.subject) if data.subject else None
+
+        homework = await find_homework_by_ref(
+            session,
+            sequence_num=data.homework_ref or 1,
+            grade_id=grade.id,
+            subject_id=subject.id if subject else None,
+        )
+
+        if not homework:
+            ref_str = f"#{data.homework_ref}" if data.homework_ref else "más reciente"
+            subj_str = subject.name if subject else "sin materia"
+            await reply_fn(
+                f"No encontré la tarea {ref_str} de *{subj_str}* para *{grade.name}*.",
+                parse_mode=ParseMode.MARKDOWN,
+            )
+            return
+
+        # Match names against students in the grade
+        extracted = [{"name": n, "status": data.status} for n in data.names]
+        results = await match_names(extracted, grade.id, session)
+
+        resolved = [r for r in results if r.resolved]
+        not_found = [r for r in results if r.not_found]
+
+        # Save non-completers
+        if resolved:
+            await save_non_completers(
+                session,
+                homework_id=homework.id,
+                student_ids=[r.matched_id for r in resolved],
+                status=data.status,
+            )
+
+        total = await count_students_in_grade(session, grade.id)
+        missing_count = len(resolved)
+        completed_count = max(0, total - missing_count)
+
+        status_label = {"missing": "No cumplieron", "late": "Entregaron tarde", "partial": "Entrega parcial"}.get(data.status, "No cumplieron")
+        subject_name = subject.name if subject else "sin materia"
+
+        lines = [
+            f"📋 *Tarea #{homework.sequence_num} — {subject_name} / {grade.name}*\n",
+            f"✗ *{status_label} ({missing_count}):*",
+        ]
+        lines.extend(f"  • {r.matched_name}" for r in resolved)
+        lines.append(f"\n✓ Cumplieron: *{completed_count} de {total}*")
+
+        if not_found:
+            lines.append(f"\n⚠️ No encontrados: {', '.join(r.raw_name for r in not_found)}")
+
+        await reply_fn("\n".join(lines), parse_mode=ParseMode.MARKDOWN)
+        logger.info(f"[action] homework_report user={user_id} hw={homework.id} missing={missing_count}")
+
+
 # ── Callback: usuario eligió curso ────────────────────────────────────────────
 
 async def handle_act_callback(update, context) -> None:
@@ -263,6 +350,10 @@ async def handle_act_callback(update, context) -> None:
         result.data.course = grade_name
         result.data.complete = True
         await _save_homework(query.edit_message_text, user_id, result.data)
+    elif result.intent == "homework_report":
+        result.data.course = grade_name
+        result.data.complete = True
+        await _save_homework_report(query.edit_message_text, user_id, result.data)
     elif result.intent == "query":
         result.data.course = grade_name
         result.data.complete = True

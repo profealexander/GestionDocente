@@ -14,6 +14,7 @@ from schoolai.skills.extractor.schema import (
     ChatExtract,
     ExtractionResult,
     HomeworkExtract,
+    HomeworkReportExtract,
     QueryExtract,
 )
 
@@ -63,6 +64,22 @@ Para query:
 }
 complete=false si course es null.
 period por defecto: "today" para attendance, "trimester" para homework.
+
+- homework_report: reportar quienes no cumplieron una tarea
+
+Para homework_report:
+{
+  "intent": "homework_report",
+  "names": ["nombre completo"],
+  "homework_ref": número de tarea o null,
+  "course": "curso o null",
+  "subject": "materia o null",
+  "status": "missing|late|partial",
+  "complete": true/false
+}
+complete=false si course es null.
+status por defecto: "missing". Si dice "tarde/atrasado": "late". Si dice "incompleto/parcial": "partial".
+homework_ref: número entero si menciona "tarea 3", "la 2", "#1", etc. Si no menciona número, null.
 
 Para chat:
 {
@@ -132,6 +149,15 @@ def _build_result(raw: dict) -> ExtractionResult:
             query_type=raw.get("query_type", "attendance"),
             course=raw.get("course"),
             period=raw.get("period", "today"),
+            complete=bool(raw.get("complete", False)),
+        )
+    elif intent == "homework_report":
+        data = HomeworkReportExtract(
+            names=raw.get("names", []),
+            homework_ref=raw.get("homework_ref"),
+            course=raw.get("course"),
+            subject=raw.get("subject"),
+            status=raw.get("status", "missing"),
             complete=bool(raw.get("complete", False)),
         )
     else:

@@ -57,6 +57,14 @@ async def find_subject(session: AsyncSession, name: str) -> Subject | None:
     return result.scalars().first()
 
 
+def _get_trimester_num(d: date) -> int:
+    from schoolai.skills.query.detector import TRIMESTERS
+    for num, start, end in TRIMESTERS:
+        if start <= d <= end:
+            return num
+    return 0
+
+
 async def save_homework(
     session: AsyncSession,
     homework: str,
@@ -64,12 +72,27 @@ async def save_homework(
     subject_id: int | None = None,
     delivery_date: date | None = None,
 ) -> Homework:
+    today = delivery_date or date.today()
+    trimester = _get_trimester_num(today)
+
+    # Count existing homework for this grade+trimester (and optionally subject)
+    count_stmt = select(func.count()).select_from(Homework).where(
+        Homework.grade_id == grade_id,
+        Homework.trimester_num == trimester,
+    )
+    if subject_id:
+        count_stmt = count_stmt.where(Homework.subject_id == subject_id)
+    count_result = await session.execute(count_stmt)
+    seq_num = (count_result.scalar() or 0) + 1
+
     record = Homework(
         homework=homework,
         grade_id=grade_id,
         subject_id=subject_id,
         delivery_date=delivery_date,
         is_open=True,
+        sequence_num=seq_num,
+        trimester_num=trimester,
     )
     session.add(record)
     await session.commit()
@@ -84,3 +107,56 @@ async def list_open(session: AsyncSession, grade_id: int | None = None) -> list[
     stmt = stmt.order_by(Homework.submission_date.desc())
     result = await session.execute(stmt)
     return list(result.scalars().all())
+
+
+async def find_homework_by_ref(
+    session: AsyncSession,
+    sequence_num: int,
+    grade_id: int,
+    subject_id: int | None = None,
+    trimester_num: int | None = None,
+) -> Homework | None:
+    from datetime import date as _date
+    if trimester_num is None:
+        trimester_num = _get_trimester_num(_date.today())
+    stmt = select(Homework).where(
+        Homework.grade_id == grade_id,
+        Homework.sequence_num == sequence_num,
+        Homework.trimester_num == trimester_num,
+    )
+    if subject_id:
+        stmt = stmt.where(Homework.subject_id == subject_id)
+    result = await session.execute(stmt)
+    return result.scalars().first()
+
+
+async def save_non_completers(
+    session: AsyncSession,
+    homework_id: int,
+    student_ids: list[int],
+    status: str = "missing",
+) -> int:
+    from schoolai.db.models.homework_submission import HomeworkSubmission
+    # Delete previous records for this homework (idempotent)
+    existing = await session.execute(
+        select(HomeworkSubmission).where(HomeworkSubmission.homework_id == homework_id)
+    )
+    for sub in existing.scalars().all():
+        await session.delete(sub)
+
+    for sid in student_ids:
+        session.add(HomeworkSubmission(homework_id=homework_id, student_id=sid, status=status))
+
+    await session.commit()
+    return len(student_ids)
+
+
+async def count_students_in_grade(session: AsyncSession, grade_id: int) -> int:
+    from schoolai.db.models.student import Student
+    result = await session.execute(
+        select(func.count()).select_from(Student).where(
+            Student.grade_id == grade_id,
+            Student.status == "active",
+        )
+    )
+    return result.scalar() or 0
