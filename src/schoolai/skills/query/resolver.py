@@ -1,6 +1,5 @@
 """Query the DB and return structured data."""
 
-import asyncio
 from dataclasses import dataclass
 from datetime import date
 

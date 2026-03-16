@@ -1,6 +1,5 @@
 """Tests for rule-based fallback extractor — pure function, no LLM."""
 
-import pytest
 
 from schoolai.skills.extractor.rules import extract_fallback
 from schoolai.skills.extractor.schema import AttendanceExtract, HomeworkExtract

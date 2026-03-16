@@ -35,7 +35,7 @@ class Settings(BaseSettings):
     groq_api_key: str = ""
 
     # FastAPI
-    api_host: str = "0.0.0.0"
+    api_host: str = "0.0.0.0"  # nosec B104 — intencional, uvicorn escucha en todas las interfaces
     api_port: int = 8000
     debug: bool = False
 

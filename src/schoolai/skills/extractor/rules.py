@@ -9,7 +9,6 @@ import re
 
 from schoolai.skills.extractor.schema import (
     AttendanceExtract,
-    ChatExtract,
     ExtractionResult,
     HomeworkExtract,
 )

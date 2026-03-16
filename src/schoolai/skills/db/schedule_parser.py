@@ -9,7 +9,6 @@ Expected format (one period per line):
 import re
 from dataclasses import dataclass
 
-from schoolai.skills.utils.text import normalize
 
 # Maps course abbreviations/aliases → canonical abbrev used in course_abbrev_map
 _COURSE_ALIASES: dict[str, str] = {

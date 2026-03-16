@@ -1,8 +1,7 @@
 """Tests for schedule text parser — pure function, no DB."""
 
-import pytest
 
-from schoolai.skills.db.schedule_parser import ParsedPeriod, parse_schedule_text
+from schoolai.skills.db.schedule_parser import parse_schedule_text
 
 
 # ── Valid input ───────────────────────────────────────────────────────────────

@@ -56,7 +56,7 @@ def _rget(key: str) -> Any:
         return None
     try:
         raw = _redis_client.get(key)
-        return pickle.loads(raw) if raw else None
+        return pickle.loads(raw) if raw else None  # nosec B301 — Redis es interno, solo el bot escribe
     except Exception as exc:
         logger.debug(f"[state] Redis get failed ({key}): {exc}")
         return None
