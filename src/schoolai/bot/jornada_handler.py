@@ -112,6 +112,9 @@ async def handle_jornada_command(update, context) -> None:
         return
 
     today = date.today().weekday()
+    if today > 4:
+        await update.message.reply_text("Hoy es fin de semana. ¡Descansa! 😄")
+        return
 
     async with async_session() as session:
         teacher = await get_teacher_by_telegram(session, user_id)
