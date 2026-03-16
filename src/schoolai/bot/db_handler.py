@@ -30,6 +30,8 @@ ROLES = [
     ("Representante", "representante"),
 ]
 
+SCHEDULE_OPTION = "horario"
+
 SECTIONS = ["A", "B", "C", "D", "E"]
 
 
@@ -38,7 +40,7 @@ SECTIONS = ["A", "B", "C", "D", "E"]
 async def handle_db_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     clear_db_flow(update.effective_user.id)
     await update.message.reply_text(
-        "¿Qué rol asignarás a las personas de la lista?",
+        "¿Qué deseas registrar?",
         reply_markup=_role_keyboard(),
     )
 
@@ -51,6 +53,18 @@ async def handle_db_callback(update: Update, context: ContextTypes.DEFAULT_TYPE)
     user_id = update.effective_user.id
     data = query.data
     logger.info(f"[db_callback] user={user_id} data={data!r}")
+
+    if data == "db_role:horario":
+        from schoolai.bot.schedule_handler import start_schedule_flow
+        await query.edit_message_reply_markup(reply_markup=None)
+        await start_schedule_flow(update, context)
+        return
+
+    if data == "db_role:cargos":
+        from schoolai.bot.position_handler import start_position_flow
+        await query.edit_message_reply_markup(reply_markup=None)
+        await start_position_flow(update, context)
+        return
 
     if data.startswith("db_role:"):
         await _on_role(query, user_id, data.split(":", 1)[1])
@@ -130,8 +144,7 @@ async def _on_confirm(query, user_id: int) -> None:
     summary = (
         f"✅ *Guardado correctamente*\n\n"
         f"• Personas nuevas: {result.created}\n"
-        f"• Roles agregados: {result.role_added}\n"
-        f"• Omitidos (revisar): {result.skipped}"
+        f"• Omitidos (ya existen): {result.skipped}"
     )
     await query.edit_message_text(summary, parse_mode=ParseMode.MARKDOWN)
     logger.info(f"[db] user={user_id} saved: {result}")
@@ -212,6 +225,8 @@ def _role_keyboard() -> InlineKeyboardMarkup:
         [InlineKeyboardButton(label, callback_data=f"db_role:{value}")]
         for label, value in ROLES
     ]
+    buttons.append([InlineKeyboardButton("📅 Horario",       callback_data="db_role:horario")])
+    buttons.append([InlineKeyboardButton("📋 Cargos docente", callback_data="db_role:cargos")])
     return InlineKeyboardMarkup(buttons)
 
 

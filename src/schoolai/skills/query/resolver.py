@@ -38,6 +38,7 @@ class HomeworkRecord:
     subject: str | None
     delivery_date: date | None
     is_open: bool
+    sequence_num: int = 0
 
 
 @dataclass
@@ -110,7 +111,11 @@ async def resolve_homework_multi(
     grade_ids: list[int],
     session: AsyncSession,
 ) -> list["HomeworkData"]:
-    return list(await asyncio.gather(*[resolve_homework(intent, gid, session) for gid in grade_ids]))
+    # Sequential — AsyncSession no soporta acceso concurrente desde asyncio.gather
+    results = []
+    for gid in grade_ids:
+        results.append(await resolve_homework(intent, gid, session))
+    return results
 
 
 async def resolve_homework(
@@ -121,19 +126,22 @@ async def resolve_homework(
     grade = await session.get(Grade, grade_id)
     grade_name = grade.name if grade else str(grade_id)
 
+    filters = [
+        Homework.grade_id == grade_id,
+        Homework.submission_date >= intent.period_start,
+        Homework.submission_date <= intent.period_end,
+    ]
+    if intent.trimester_num is not None:
+        filters.append(Homework.trimester_num == intent.trimester_num)
+
     stmt = (
         select(Homework)
-        .where(
-            and_(
-                Homework.grade_id == grade_id,
-                Homework.submission_date >= intent.period_start,
-                Homework.submission_date <= intent.period_end,
-            )
-        )
+        .where(and_(*filters))
         .order_by(Homework.submission_date.desc())
     )
     rows = (await session.execute(stmt)).scalars().all()
 
+    sf = intent.subject_filter.lower() if intent.subject_filter else None
     records = [
         HomeworkRecord(
             id=hw.id,
@@ -141,8 +149,10 @@ async def resolve_homework(
             subject=hw.subject.name if hw.subject else None,
             delivery_date=hw.delivery_date.date() if hw.delivery_date else None,
             is_open=hw.is_open,
+            sequence_num=hw.sequence_num,
         )
         for hw in rows
+        if sf is None or (hw.subject and sf in hw.subject.name.lower())
     ]
 
     return HomeworkData(

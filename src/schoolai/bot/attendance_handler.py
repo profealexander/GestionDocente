@@ -250,7 +250,7 @@ async def _save_and_reply(reply_fn, user_id: int, state: PendingAttendance, not_
         lines.extend(f"  • {c['name']}" for c in justified)
 
     if not_found:
-        lines.append(f"\n⚠️ *No encontrados*")
+        lines.append("\n⚠️ *No encontrados*")
         lines.extend(f"  • {r.raw_name}" for r in not_found)
 
     await reply_fn("\n".join(lines), parse_mode=ParseMode.MARKDOWN)

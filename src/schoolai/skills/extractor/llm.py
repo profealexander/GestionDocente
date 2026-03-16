@@ -1,4 +1,4 @@
-"""Extractor de intención y entidades usando GLM."""
+"""Extractor de intención y entidades usando LLM."""
 
 import asyncio
 import json
@@ -6,7 +6,6 @@ import re
 from datetime import date, timedelta
 
 from loguru import logger
-from zhipuai import ZhipuAI
 
 from schoolai.config import settings
 from schoolai.skills.extractor.schema import (
@@ -17,8 +16,8 @@ from schoolai.skills.extractor.schema import (
     HomeworkReportExtract,
     QueryExtract,
 )
+from schoolai.skills.llm import get_client, parse_model
 
-_client: ZhipuAI | None = None
 _JSON_RE = re.compile(r"\{.*\}", re.DOTALL)
 
 # Mapa estático: abreviatura → nombre canónico en BD
@@ -77,9 +76,10 @@ homework:
 - description: fix spelling, expand abbreviations (pag.→página, ej.→ejercicio), write clearly
 
 query:
-{{"intent":"query","query_type":"attendance|homework","courses":["abbrev1","abbrev2"],"period":"today|yesterday|week|last_week|month|last_month|trimester","complete":true/false}}
+{{"intent":"query","query_type":"attendance|homework","courses":["abbrev1","abbrev2"],"period":"today|yesterday|week|last_week|month|last_month|trimester","subject":"subject name or null","complete":true/false}}
 - complete=false if courses is empty
 - period default: "today" for attendance, "trimester" for homework
+- subject: extract if a specific subject is mentioned (e.g. "tareas de filosofía" → "Filosofía"), null otherwise
 - courses: list of abbreviations from the table below, [] if none mentioned
 - Available courses: {course_list}
 - Groups: bachillerato→[1bt,2bt,3bt] | básica superior→[8egb,9egb,10egb] | básica media→[5egb,6egb,7egb] | básica elemental→[2egb,3egb,4egb] | egb→[prep,2egb,3egb,4egb,5egb,6egb,7egb,8egb,9egb,10egb] | inicial→[i1,i2]
@@ -103,16 +103,6 @@ Edge cases → always return valid JSON:
 
 def _get_system_prompt() -> str:
     return _SYSTEM_PROMPT_TEMPLATE.format(course_list=_course_list_str())
-
-
-def _get_client() -> ZhipuAI:
-    global _client
-    if _client is None:
-        _client = ZhipuAI(
-            api_key=settings.glm_api_key,
-            timeout=30.0,   # extractor JSON: respuesta corta, 30s es más que suficiente
-        )
-    return _client
 
 
 def _parse_date(value: str) -> date:
@@ -146,13 +136,23 @@ def _resolve_delivery(value: str | None) -> date | None:
         return None
 
 
+_NULL_STRINGS = {"null", "none", "n/a", ""}
+
+
+def _nullify(value: str | None) -> str | None:
+    """Convierte strings tipo 'NULL'/'null'/'none' devueltos por el LLM a None real."""
+    if value is None:
+        return None
+    return None if str(value).strip().lower() in _NULL_STRINGS else value
+
+
 def _build_result(raw: dict) -> ExtractionResult:
     intent = raw.get("intent", "chat")
 
     if intent == "attendance":
         data = AttendanceExtract(
             names=raw.get("names", []),
-            course=raw.get("course"),
+            course=_nullify(raw.get("course")),
             date=raw.get("date", "today"),
             status=raw.get("status", "absent"),
             complete=bool(raw.get("complete", False)),
@@ -160,9 +160,9 @@ def _build_result(raw: dict) -> ExtractionResult:
     elif intent == "homework":
         data = HomeworkExtract(
             description=raw.get("description", ""),
-            course=raw.get("course"),
-            subject=raw.get("subject"),
-            delivery_date=raw.get("delivery_date"),
+            course=_nullify(raw.get("course")),
+            subject=_nullify(raw.get("subject")),
+            delivery_date=_nullify(raw.get("delivery_date")),
             complete=bool(raw.get("complete", False)),
         )
     elif intent == "query":
@@ -174,13 +174,14 @@ def _build_result(raw: dict) -> ExtractionResult:
             courses=courses,
             period=raw.get("period", "today"),
             complete=bool(raw.get("complete", False)),
+            subject=_nullify(raw.get("subject")),
         )
     elif intent == "homework_report":
         data = HomeworkReportExtract(
             names=raw.get("names", []),
             homework_ref=raw.get("homework_ref"),
-            course=raw.get("course"),
-            subject=raw.get("subject"),
+            course=_nullify(raw.get("course")),
+            subject=_nullify(raw.get("subject")),
             status=raw.get("status", "missing"),
             complete=bool(raw.get("complete", False)),
         )
@@ -195,17 +196,21 @@ async def extract(text: str, history: list[dict] | None = None) -> ExtractionRes
 
     history = últimos intercambios [{role, content}]
     """
-    if not settings.glm_api_key:
+    provider, model = parse_model(settings.llm_extractor)
+    try:
+        client = get_client(provider, timeout=30.0)
+    except ValueError as e:
+        logger.warning(f"[extractor] {e}")
         return ExtractionResult(intent="chat", data=ChatExtract())
 
     messages = [{"role": "system", "content": _get_system_prompt()}]
     if history:
-        messages.extend(history[-6:])  # últimos 3 intercambios
+        messages.extend(history[-6:])
     messages.append({"role": "user", "content": text})
 
     def _call(temperature: float, top_p: float):
-        return _get_client().chat.completions.create(
-            model="glm-4.5-air",
+        return client.chat.completions.create(
+            model=model,
             messages=messages,
             temperature=temperature,
             top_p=top_p,
@@ -215,18 +220,28 @@ async def extract(text: str, history: list[dict] | None = None) -> ExtractionRes
 
     try:
         response = await asyncio.to_thread(_call, 0.1, 0.2)
-        content = response.choices[0].message.content.strip()
+        choice = response.choices[0]
+        msg = choice.message
+        content = (msg.content or getattr(msg, "reasoning_content", None) or "").strip()
+
+        finish = getattr(choice, "finish_reason", "?")
+        if finish == "length":
+            logger.warning("[extractor] JSON truncado por max_tokens")
 
         match = _JSON_RE.search(content)
         if not match:
-            # Primer intento vacío — retry con parámetros más permisivos
-            logger.warning(f"[extractor] no JSON (attempt 1) — raw: {content!r}, retrying...")
+            logger.warning(f"[extractor] no JSON (attempt 1) finish={finish!r} — raw: {content!r}, retrying...")
             response = await asyncio.to_thread(_call, 0.3, 0.7)
-            content = response.choices[0].message.content.strip()
+            choice = response.choices[0]
+            msg = choice.message
+            content = (msg.content or getattr(msg, "reasoning_content", None) or "").strip()
+            finish = getattr(choice, "finish_reason", "?")
+            if finish == "length":
+                logger.warning("[extractor] JSON truncado en retry por max_tokens")
             match = _JSON_RE.search(content)
 
         if not match:
-            logger.error(f"[extractor] no JSON after retry — raw: {content!r}")
+            logger.error(f"[extractor] no JSON after retry finish={finish!r} — raw: {content!r}")
             return None
 
         raw = json.loads(match.group())

@@ -20,11 +20,11 @@ router = APIRouter(prefix="/subjects", tags=["Subjects"])
     description="Returns subjects optionally filtered by education level (basica or bachillerato).",
 )
 async def list_subjects(
-    subnivel: Optional[str] = Query(None, description="Filter by level: basica or bachillerato"),
+    sublevel: Optional[str] = Query(None, description="Filter by level: basica or bachillerato"),
     session: AsyncSession = Depends(get_session),
 ):
-    stmt = select(Subject).order_by(Subject.subnivel, Subject.area, Subject.name)
-    if subnivel:
-        stmt = stmt.where(Subject.subnivel == subnivel)
+    stmt = select(Subject).order_by(Subject.sublevel, Subject.area, Subject.name)
+    if sublevel:
+        stmt = stmt.where(Subject.sublevel == sublevel)
     result = await session.execute(stmt)
     return result.scalars().all()

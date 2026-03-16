@@ -16,59 +16,68 @@ _TABLE_W = 38   # ancho de líneas en bloque <pre>
 # ── Homework — curso único ─────────────────────────────────────────────────────
 
 def format_homework(data: HomeworkData) -> str:
-    """HTML — lista estructurada con descripción completa."""
+    """HTML — tareas agrupadas por materia."""
     period = _period_label(data)
     n = len(data.records)
-    lines = [f'📚 <b>{_e(data.grade_name)}</b>  ·  {period}  ·  {n} tarea(s)', ""]
+    lines = [f'📚 <b>{_e(data.grade_name)}</b>  ·  {period}  ·  {n} tarea(s)']
 
     if not n:
-        lines.append("Sin tareas registradas en este período.")
+        lines += ["", "Sin tareas registradas en este período."]
         return "\n".join(lines)
 
-    for i, hw in enumerate(data.records, 1):
-        subj  = _e(hw.subject) if hw.subject else "Sin materia"
-        date  = hw.delivery_date.strftime("%d/%m/%Y") if hw.delivery_date else "Sin fecha"
-        icon  = "🟢" if hw.is_open else "🔴"
-        desc  = _e(hw.description)
-        lines.append(f"<b>{i}.</b>  {subj}  ·  📅 {date}  {icon}")
-        lines.append(f"   {desc}")
-        lines.append("")
+    # Agrupar por materia preservando orden de aparición
+    grouped: dict[str, list] = {}
+    for hw in data.records:
+        key = hw.subject or "Sin materia"
+        grouped.setdefault(key, []).append(hw)
 
-    return "\n".join(lines).rstrip()
+    for subject, tasks in grouped.items():
+        lines.append("")
+        lines.append(f"<b>{_e(subject)}</b>")
+        for i, hw in enumerate(tasks, 1):
+            date = hw.delivery_date.strftime("%d/%m/%Y") if hw.delivery_date else "Sin fecha"
+            icon = "🟢" if hw.is_open else "🔴"
+            lines.append(f"  <b>{i}.</b>  {_e(hw.description)}")
+            lines.append(f"  📅 {date}  {icon}")
+
+    return "\n".join(lines)
 
 
 # ── Homework — multi-curso ─────────────────────────────────────────────────────
 
 def format_homework_multi(data_list: list[HomeworkData], group_label: str = "Grupo") -> str:
-    """HTML + <pre> — tabla compacta por sección de curso."""
+    """HTML — tareas agrupadas por curso y materia."""
     if not data_list:
         return "Sin tareas registradas."
 
     first = data_list[0]
     total = sum(len(d.records) for d in data_list)
     period = _period_label(first)
+    lines = [f'📚 <b>{_e(group_label)}</b>  ·  {period}  ·  {total} tarea(s)']
 
-    header = f'📚 <b>{_e(group_label)}</b>  ·  {period}  ·  {total} tarea(s)'
-
-    rows: list[str] = []
     for data in data_list:
         n = len(data.records)
-        rows.append(_section_header(data.grade_name, n))
+        lines.append("")
+        lines.append(f"<b>── {_e(data.grade_name)}</b>")
+
         if not n:
-            rows.append("   sin tareas")
-        else:
-            for i, hw in enumerate(data.records, 1):
-                subj = (hw.subject or "—")[:16].ljust(16)
-                date = hw.delivery_date.strftime("%d/%m") if hw.delivery_date else "  —  "
-                mark = "✓" if hw.is_open else "✗"
-                rows.append(f" {i:>2}  {subj}  {date}  {mark}")
-        rows.append("")
+            lines.append("   Sin tareas")
+            continue
 
-    # quitar último salto vacío
-    while rows and rows[-1] == "":
-        rows.pop()
+        grouped: dict[str, list] = {}
+        for hw in data.records:
+            key = hw.subject or "Sin materia"
+            grouped.setdefault(key, []).append(hw)
 
-    return header + "\n\n<pre>" + "\n".join(rows) + "</pre>"
+        for subject, tasks in grouped.items():
+            lines.append(f"  <i>{_e(subject)}</i>")
+            for i, hw in enumerate(tasks, 1):
+                date = hw.delivery_date.strftime("%d/%m/%Y") if hw.delivery_date else "Sin fecha"
+                icon = "🟢" if hw.is_open else "🔴"
+                lines.append(f"    <b>{i}.</b>  {_e(hw.description)}")
+                lines.append(f"    📅 {date}  {icon}")
+
+    return "\n".join(lines)
 
 
 # ── Attendance ─────────────────────────────────────────────────────────────────

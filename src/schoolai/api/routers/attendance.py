@@ -7,12 +7,17 @@ from fastapi import APIRouter, Depends, Query
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from schoolai.api.auth import get_current_user
 from schoolai.api.schemas import AttendanceOut
 from schoolai.db.connection import get_session
 from schoolai.db.models.attendance import Attendance
 from schoolai.db.models.student import Student
 
-router = APIRouter(prefix="/attendance", tags=["Attendance"])
+router = APIRouter(
+    prefix="/attendance",
+    tags=["Attendance"],
+    dependencies=[Depends(get_current_user)],
+)
 
 _STATUS_LABELS = {"F": "absent", "AT": "late", "J": "justified"}
 

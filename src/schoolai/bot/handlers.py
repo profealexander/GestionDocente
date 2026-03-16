@@ -1,10 +1,20 @@
 from loguru import logger
-from telegram import Update
+from telegram import KeyboardButton, ReplyKeyboardMarkup, ReplyKeyboardRemove, Update
 from telegram.ext import ContextTypes
 
 from schoolai.bot.transcription import transcribe
 from schoolai.config import settings
 from schoolai.skills.ia.agent import chat
+
+# Teclas de acceso rápido para iniciar Modo Jornada
+_JORNADA_TRIGGERS = {"j", "J", "1", "jornada", "Jornada", "📅 Jornada"}
+
+JORNADA_KEYBOARD = ReplyKeyboardMarkup(
+    [[KeyboardButton("📅 Jornada")]],
+    resize_keyboard=True,
+    input_field_placeholder="Escribe o toca 📅 Jornada...",
+)
+REMOVE_KEYBOARD = ReplyKeyboardRemove()
 
 
 def is_allowed(user_id: int) -> bool:
@@ -54,7 +64,24 @@ async def handle_voice(update: Update, context: ContextTypes.DEFAULT_TYPE) -> No
 
 
 async def _dispatch(update: Update, user_id: int, text: str) -> None:
+    from schoolai.bot.mode import is_jornada
+    from schoolai.bot.state import get_jornada
+    if is_jornada():
+        session = get_jornada(user_id)
+        # Atajo de teclado para iniciar jornada
+        if text in _JORNADA_TRIGGERS:
+            from schoolai.bot.jornada_handler import handle_jornada_command
+            await handle_jornada_command(update, None)
+            return
+        if not session or session.status == "done":
+            await update.message.reply_text(
+                "Toca el botón o escribe *j* para iniciar tu jornada.",
+                parse_mode="Markdown",
+                reply_markup=JORNADA_KEYBOARD,
+            )
+            return
     from schoolai.skills.extractor.llm import extract
+    from schoolai.skills.extractor.rules import extract_fallback
     from schoolai.skills.ia.history import get as get_history, append as append_history
     from schoolai.bot.action_handler import handle_extraction, resolve_selection_text
 
@@ -72,12 +99,17 @@ async def _dispatch(update: Update, user_id: int, text: str) -> None:
     append_history(user_id, "user", text)
 
     if result is None:
-        await update.message.reply_text(
-            "No pude interpretar el mensaje. ¿Puedes reformularlo?\n"
-            "Ejemplo: _\"Recalde no asistió el viernes, décimo EGB\"_",
-            parse_mode="Markdown",
-        )
-        return
+        # LLM falló — intentar con reglas básicas antes de dar error
+        result = extract_fallback(text)
+        if result is not None:
+            logger.info(f"[fallback] intent={result.intent} user={user_id}")
+        else:
+            await update.message.reply_text(
+                "No pude interpretar el mensaje. ¿Puedes reformularlo?\n"
+                "Ejemplo: _\"Recalde no asistió el viernes, décimo EGB\"_",
+                parse_mode="Markdown",
+            )
+            return
 
     if result.intent == "chat":
         await _run_ia_skill(update, user_id, text)

@@ -33,6 +33,7 @@ from schoolai.skills.utils.keyboards import grade_keyboard
 from schoolai.bot.state import (
     PendingSelection,
     clear_selection,
+    get_jornada_context,
     get_selection,
     set_selection,
 )
@@ -396,6 +397,12 @@ async def _handle_attendance(update, user_id: int, result: ExtractionResult, dat
         return
 
     if not data.course:
+        grade_id, grade_name, _, _ = get_jornada_context(user_id)
+        if grade_name:
+            data.course = grade_name
+            data.complete = True
+
+    if not data.course:
         store_pending(user_id, result)
         async with async_session() as session:
             grades = (await session.execute(select(Grade).order_by(Grade.sort_order))).scalars().all()
@@ -490,6 +497,15 @@ async def _save_attendance(reply_fn, user_id: int, data: AttendanceExtract, chat
 # ── Homework ──────────────────────────────────────────────────────────────────
 
 async def _handle_homework(update, user_id: int, result: ExtractionResult, data: HomeworkExtract) -> None:
+    if not data.course or not data.subject:
+        grade_id, grade_name, subject_id, subject_name = get_jornada_context(user_id)
+        if grade_name and not data.course:
+            data.course = grade_name
+        if subject_name and not data.subject:
+            data.subject = subject_name
+        if data.course and data.subject:
+            data.complete = True
+
     if not data.course:
         store_pending(user_id, result)
         async with async_session() as session:
@@ -535,29 +551,29 @@ async def _save_homework(reply_fn, user_id: int, data: HomeworkExtract) -> None:
 
 # ── Query ─────────────────────────────────────────────────────────────────────
 
-def _build_query_intent(period: str):
+def _build_query_intent(period: str, subject_filter: str | None = None):
     from schoolai.skills.query.detector import QueryIntent, get_current_trimester
     today = date.today()
     if period == "today":
-        return QueryIntent("homework", "day", today, today)
+        return QueryIntent("homework", "day", today, today, subject_filter=subject_filter)
     if period == "yesterday":
         d = today - timedelta(days=1)
-        return QueryIntent("homework", "day", d, d)
+        return QueryIntent("homework", "day", d, d, subject_filter=subject_filter)
     if period == "week":
         start = today - timedelta(days=today.weekday())
-        return QueryIntent("homework", "week", start, start + timedelta(days=4))
+        return QueryIntent("homework", "week", start, start + timedelta(days=4), subject_filter=subject_filter)
     if period == "last_week":
         start = today - timedelta(days=today.weekday() + 7)
-        return QueryIntent("homework", "week", start, start + timedelta(days=4))
+        return QueryIntent("homework", "week", start, start + timedelta(days=4), subject_filter=subject_filter)
     if period == "month":
         start = today.replace(day=1)
-        return QueryIntent("homework", "month", start, today)
+        return QueryIntent("homework", "month", start, today, subject_filter=subject_filter)
     if period == "last_month":
         first = today.replace(day=1)
         end = first - timedelta(days=1)
-        return QueryIntent("homework", "month", end.replace(day=1), end)
+        return QueryIntent("homework", "month", end.replace(day=1), end, subject_filter=subject_filter)
     num, start, end = get_current_trimester()
-    return QueryIntent("homework", "trimester", start, end, trimester_num=num)
+    return QueryIntent("homework", "trimester", start, end, trimester_num=num, subject_filter=subject_filter)
 
 
 async def _handle_query(update, user_id: int, result: ExtractionResult, data: QueryExtract) -> None:
@@ -576,7 +592,7 @@ async def _handle_query(update, user_id: int, result: ExtractionResult, data: Qu
         )
         return
 
-    intent = _build_query_intent(data.period)
+    intent = _build_query_intent(data.period, data.subject)
     intent.type = data.query_type
 
     # Resolver abreviaturas → grade_ids
@@ -836,7 +852,7 @@ async def handle_act_callback(update, context) -> None:
         from schoolai.bot.query_handler import _run_query
         from schoolai.skills.homework.repository import find_grade as _find_grade
 
-        intent_obj = _build_query_intent(result.data.period)
+        intent_obj = _build_query_intent(result.data.period, result.data.subject)
         intent_obj.type = result.data.query_type
         async with async_session() as session:
             grade = await _find_grade(session, grade_name)

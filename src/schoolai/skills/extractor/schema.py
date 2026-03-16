@@ -27,6 +27,7 @@ class QueryExtract:
     courses: list[str]   # abreviaturas de cursos, [] si no se mencionó ninguno
     period: Literal["today", "yesterday", "week", "last_week", "month", "last_month", "trimester"]
     complete: bool       # False si courses está vacío
+    subject: str | None = None  # materia específica si se mencionó, ej: "Filosofía"
 
 
 @dataclass

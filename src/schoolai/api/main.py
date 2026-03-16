@@ -4,13 +4,14 @@ from fastapi import FastAPI
 from fastapi.openapi.docs import get_redoc_html, get_swagger_ui_html
 from fastapi.openapi.utils import get_openapi
 
-from schoolai.api.routers import attendance, grades, homework, students, subjects
+from schoolai.api.routers import attendance, auth, grades, homework, students, subjects
 
 # ── App ───────────────────────────────────────────────────────────────────────
 
 app = FastAPI(
     title="SchoolAI API",
     version="1.0.0",
+    swagger_ui_init_oauth={"usePkceWithAuthorizationCodeGrant": True},
     description=(
         "REST API for SchoolAI — school assistant for teachers.\n\n"
         "## Documentation\n"
@@ -38,6 +39,7 @@ app = FastAPI(
 
 # ── Routers ───────────────────────────────────────────────────────────────────
 
+app.include_router(auth.router)
 app.include_router(grades.router)
 app.include_router(subjects.router)
 app.include_router(students.router)
@@ -94,6 +96,14 @@ def custom_openapi():
     )
     schema["info"]["x-logo"] = {
         "url": "https://fastapi.tiangolo.com/img/logo-margin/logo-teal.png"
+    }
+    schema.setdefault("components", {})["securitySchemes"] = {
+        "BearerAuth": {
+            "type": "http",
+            "scheme": "bearer",
+            "bearerFormat": "JWT",
+            "description": "JWT obtenido en POST /auth/token",
+        }
     }
     app.openapi_schema = schema
     return schema

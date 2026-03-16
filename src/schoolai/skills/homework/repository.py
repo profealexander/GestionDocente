@@ -75,7 +75,7 @@ async def save_homework(
     today = delivery_date or date.today()
     trimester = _get_trimester_num(today)
 
-    # Count existing homework for this grade+trimester (and optionally subject)
+    # Count existing homework for this grade+trimester+subject
     count_stmt = select(func.count()).select_from(Homework).where(
         Homework.grade_id == grade_id,
         Homework.trimester_num == trimester,
@@ -101,7 +101,12 @@ async def save_homework(
 
 
 async def list_open(session: AsyncSession, grade_id: int | None = None) -> list[Homework]:
-    stmt = select(Homework).where(Homework.is_open.is_(True))
+    from datetime import date as _date
+    current_trimester = _get_trimester_num(_date.today())
+    stmt = select(Homework).where(
+        Homework.is_open.is_(True),
+        Homework.trimester_num == current_trimester,
+    )
     if grade_id:
         stmt = stmt.where(Homework.grade_id == grade_id)
     stmt = stmt.order_by(Homework.submission_date.desc())

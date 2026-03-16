@@ -8,7 +8,6 @@ Supports:
 
 import re
 
-from schoolai.skills.utils.text import normalize
 
 # Ecuador cédula: exactly 10 digits
 CEDULA_RE = re.compile(r"\b(\d{10})\b")

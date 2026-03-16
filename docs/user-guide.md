@@ -35,6 +35,49 @@ El bot entiende: "optabo" → Octavo EGB, "pimero bt" → Primero BT.
 
 ---
 
+## Modo Jornada
+
+El Modo Jornada guía al docente hora a hora durante su jornada escolar.
+Requiere tener el horario registrado en el sistema.
+
+### Cómo iniciar
+
+Toca el botón **📅 Jornada** o escribe `j` en cualquier momento.
+
+```
+[Primer período] 07:00–08:30 — TERCERO BT — Matemáticas
+¿Llegaste al aula?  [Aquí ✅]  [Saltar ⏭]  [Pausar ⏸]
+```
+
+### Controles durante la jornada
+
+| Botón | Acción |
+|---|---|
+| **Aquí ✅** | Confirma llegada al aula — activa el contexto (curso + materia) |
+| **Saltar ⏭** | Salta al siguiente período sin registrar |
+| **Siguiente ▶** | Avanza al siguiente período después de registrar |
+| **Pausar ⏸** | Pausa la jornada (receso, imprevisto) |
+| **Reanudar ▶** | Continúa desde donde quedó |
+| **Terminar 🏁** | Finaliza la jornada del día |
+
+### Contexto automático
+
+Cuando el Modo Jornada está activo, **no necesitas especificar el curso**:
+
+```
+Tú:  "Faltó Recalde"
+Bot: ✅ Recalde — ausente en TERCERO BT (Matemáticas)
+```
+
+El curso y la materia del período activo se inyectan automáticamente.
+
+### Notificación matutina
+
+A las 06:00, el bot envía automáticamente el primer período del día
+para que el docente esté preparado.
+
+---
+
 ## Registrar asistencia
 
 ### Ausencias simples
@@ -128,19 +171,13 @@ Tarea 2 de décimo EGB, entrega parcial: Luis Herrera
 No entregó la tarea de inglés de 1bt: Pedro Gómez
 ```
 
-### Todas las tareas abiertas del curso
-
-```
-Décimo EGB, no entregó ninguna tarea: Sofía Castro
-```
-
 ### Estados de entrega
 
 | Estado | Cómo decirlo |
 |---|---|
-| No entregó | "no entregó", "faltó entregar", "missing" |
-| Entrega tardía | "entregó tarde", "tardó", "late" |
-| Entrega parcial | "incompleto", "parcial", "partial" |
+| No entregó | "no entregó", "faltó entregar" |
+| Entrega tardía | "entregó tarde", "tardó" |
+| Entrega parcial | "incompleto", "parcial" |
 
 ---
 
@@ -176,19 +213,11 @@ Tareas de básica superior (equivale a 8egb, 9egb, 10egb)
 |---|---|
 | Hoy | "hoy", "de hoy" |
 | Ayer | "ayer" |
-| Esta semana | "esta semana", "la semana" |
+| Esta semana | "esta semana" |
 | La semana pasada | "semana pasada" |
 | Este mes | "este mes" |
 | El mes pasado | "mes pasado" |
 | El trimestre | "el trimestre", "trimestre actual" |
-
-Ejemplos:
-```
-Tareas de 1bt de esta semana
-```
-```
-Dame el reporte de tareas de bachillerato del mes
-```
 
 ### Asistencia
 
@@ -206,8 +235,6 @@ Ausencias de noveno en lo que va del mes
 
 ## Rangos de cursos por nivel
 
-Puedes mencionar el nivel completo y el bot lo expande automáticamente:
-
 | Lo que dices | Cursos incluidos |
 |---|---|
 | "básica elemental" | 2egb, 3egb, 4egb |
@@ -220,8 +247,7 @@ Puedes mencionar el nivel completo y el bot lo expande automáticamente:
 
 ## Preguntas al asistente IA
 
-Para cualquier pregunta general de pedagogía, planificación o materias,
-escríbela directamente:
+Para cualquier pregunta general de pedagogía, planificación o materias:
 
 ```
 ¿Cómo explico las fracciones a niños de 8 años?
@@ -229,12 +255,9 @@ escríbela directamente:
 ```
 Dame ideas para una actividad de ciencias naturales al aire libre
 ```
-```
-¿Cuál es la diferencia entre evaluación formativa y sumativa?
-```
 
-El asistente **no tiene acceso a los datos del colegio** (estudiantes, tareas,
-asistencia). Para eso usa los comandos de registro y consulta descritos arriba.
+El asistente **no tiene acceso a los datos del colegio**. Para eso usa los
+comandos de registro y consulta descritos arriba.
 
 ---
 
@@ -244,32 +267,36 @@ asistencia). Para eso usa los comandos de registro y consulta descritos arriba.
 |---|---|
 | `/ayuda` | Muestra la ayuda del bot |
 | `/cancelar` | Cancela el flujo actual y limpia el estado |
-| `/db` | Panel de base de datos (consultas directas) |
+| `/db` | Panel de base de datos (personas, horarios, cargos) |
+| `/jornada` | Inicia o retoma la jornada del día *(solo Modo Jornada)* |
 
 ---
 
 ## Preguntas frecuentes
 
 **¿Puedo escribir con errores de ortografía?**
-Sí. El bot usa IA para interpretar el mensaje. Entiende "optabo", "nobeno",
-"pimero bt", "sacar resumen", etc.
+Sí. El bot usa IA para interpretar el mensaje y un fallback con reglas básicas
+si la IA no está disponible.
 
 **¿Puedo enviar mensajes de voz?**
-Sí, siempre que `GROQ_API_KEY` esté configurada. El bot transcribe el audio
-y lo procesa igual que texto.
+Sí, siempre que `GROQ_API_KEY` esté configurada.
 
 **¿Qué pasa si olvido poner el curso?**
-El bot te mostrará un teclado con todos los cursos para que selecciones.
-Después procesa el mensaje completo.
+El bot mostrará un teclado con todos los cursos. Si estás en Modo Jornada, el
+curso se toma automáticamente del período activo.
 
 **¿Cómo sé el número de tarea?**
-El bot responde con "✅ Tarea #N registrada" al guardar. También puedes
-consultar "tareas de [curso]" para ver la lista con numeración.
+El bot responde con "✅ Tarea #N registrada". También puedes consultar
+"tareas de [curso]" para ver la lista numerada.
 
 **¿Qué es el trimestre en los reportes?**
 Los números de tarea se reinician cada trimestre. El trimestre se calcula
-automáticamente según la fecha de registro.
+automáticamente según la fecha.
 
 **El bot no me responde, ¿qué hago?**
 Verifica que tu ID de Telegram esté en `TELEGRAM_ALLOWED_USERS`. Usa
 [@userinfobot](https://t.me/userinfobot) para obtener tu ID.
+
+**¿Qué pasa si el bot se reinicia a media jornada?**
+Si Redis está configurado, la sesión de Jornada se recupera automáticamente.
+Sin Redis, necesitas volver a tocar 📅 Jornada.
