@@ -16,10 +16,14 @@ _TABLE_W = 38   # ancho de líneas en bloque <pre>
 # ── Homework — curso único ─────────────────────────────────────────────────────
 
 def format_homework(data: HomeworkData) -> str:
-    """HTML — tareas agrupadas por materia."""
+    """HTML — listado de tareas agrupadas por materia."""
     period = _period_label(data)
     n = len(data.records)
-    lines = [f'📚 <b>{_e(data.grade_name)}</b>  ·  {period}  ·  {n} tarea(s)']
+    lines = [
+        f'📋 <b>LISTADO DE TAREAS</b>',
+        f'<b>{_e(data.grade_name)}</b>  ·  {period}  ·  {n} tarea(s)',
+        '──────────────────────',
+    ]
 
     if not n:
         lines += ["", "Sin tareas registradas en este período."]
@@ -34,11 +38,12 @@ def format_homework(data: HomeworkData) -> str:
     for subject, tasks in grouped.items():
         lines.append("")
         lines.append(f"<b>{_e(subject)}</b>")
-        for i, hw in enumerate(tasks, 1):
-            date = hw.delivery_date.strftime("%d/%m/%Y") if hw.delivery_date else "Sin fecha"
-            icon = "🟢" if hw.is_open else "🔴"
-            lines.append(f"  <b>{i}.</b>  {_e(hw.description)}")
-            lines.append(f"  📅 {date}  {icon}")
+        for hw in tasks:
+            date_str = hw.delivery_date.strftime("%d/%m/%Y") if hw.delivery_date else "Sin fecha"
+            state = "🟢 Abierta" if hw.is_open else "🔴 Cerrada"
+            seq = f"#{hw.sequence_num}" if hw.sequence_num else ""
+            lines.append(f"  <b>{seq}</b>  {_e(hw.description)}")
+            lines.append(f"  📅 {date_str}  ·  {state}")
 
     return "\n".join(lines)
 
@@ -46,19 +51,23 @@ def format_homework(data: HomeworkData) -> str:
 # ── Homework — multi-curso ─────────────────────────────────────────────────────
 
 def format_homework_multi(data_list: list[HomeworkData], group_label: str = "Grupo") -> str:
-    """HTML — tareas agrupadas por curso y materia."""
+    """HTML — listado de tareas agrupadas por curso y materia."""
     if not data_list:
         return "Sin tareas registradas."
 
     first = data_list[0]
     total = sum(len(d.records) for d in data_list)
     period = _period_label(first)
-    lines = [f'📚 <b>{_e(group_label)}</b>  ·  {period}  ·  {total} tarea(s)']
+    lines = [
+        f'📋 <b>LISTADO DE TAREAS</b>',
+        f'<b>{_e(group_label)}</b>  ·  {period}  ·  {total} tarea(s)',
+        '──────────────────────',
+    ]
 
     for data in data_list:
         n = len(data.records)
         lines.append("")
-        lines.append(f"<b>── {_e(data.grade_name)}</b>")
+        lines.append(f"<b>▸ {_e(data.grade_name)}</b>")
 
         if not n:
             lines.append("   Sin tareas")
@@ -71,11 +80,12 @@ def format_homework_multi(data_list: list[HomeworkData], group_label: str = "Gru
 
         for subject, tasks in grouped.items():
             lines.append(f"  <i>{_e(subject)}</i>")
-            for i, hw in enumerate(tasks, 1):
-                date = hw.delivery_date.strftime("%d/%m/%Y") if hw.delivery_date else "Sin fecha"
-                icon = "🟢" if hw.is_open else "🔴"
-                lines.append(f"    <b>{i}.</b>  {_e(hw.description)}")
-                lines.append(f"    📅 {date}  {icon}")
+            for hw in tasks:
+                date_str = hw.delivery_date.strftime("%d/%m/%Y") if hw.delivery_date else "Sin fecha"
+                state = "🟢" if hw.is_open else "🔴"
+                seq = f"#{hw.sequence_num}" if hw.sequence_num else ""
+                lines.append(f"    <b>{seq}</b>  {_e(hw.description)}")
+                lines.append(f"    📅 {date_str}  {state}")
 
     return "\n".join(lines)
 

@@ -219,7 +219,7 @@ async def _sel_hw_task(user_id: int, hw_id: int, pending, bot) -> None:
         "partial": "Entrega parcial",
     }.get(p["status"], "No entregaron")
     missing = len(student_ids)
-    lines = [f"📋 *Tarea #{hw.sequence_num} — {subj}*\n"]
+    lines = [f"📊 *CUMPLIMIENTO — Tarea #{hw.sequence_num}*", f"_{subj}_\n"]
     lines.append(f"✗ *{status_label} ({missing}):*")
     lines.extend(f"  • {name}" for name in p["student_names"])
     lines.append(f"\n✓ Cumplieron: *{max(0, total - missing)} de {total}*")
@@ -325,7 +325,7 @@ async def _sel_hw_student(user_id: int, student_id: int, pending, bot) -> None:
         }.get(status, "No entregaron")
         tareas_str = ", ".join(f"#{hw.sequence_num}" for hw in hws)
         missing = len(student_ids)
-        lines = [f"📋 *Tareas {tareas_str}* (todas abiertas)\n"]
+        lines = [f"📊 *CUMPLIMIENTO — Tareas {tareas_str}*", "(todas abiertas)\n"]
         lines.append(f"✗ *{status_label} ({missing}):*")
         lines.extend(f"  • {name}" for name in student_names)
         lines.append(f"\n✓ Cumplieron: *{max(0, total - missing)} de {total}*")
@@ -376,7 +376,7 @@ async def _reply_hw_report(bot, chat_id, hw, student_ids, student_names, not_fou
         "missing": "No entregaron", "late": "Entregaron tarde", "partial": "Entrega parcial",
     }.get(status, "No entregaron")
     missing = len(student_ids)
-    lines = [f"📋 *Tarea #{hw.sequence_num} — {subj}*\n"]
+    lines = [f"📊 *CUMPLIMIENTO — Tarea #{hw.sequence_num}*", f"_{subj}_\n"]
     lines.append(f"✗ *{status_label} ({missing}):*")
     lines.extend(f"  • {name}" for name in student_names)
     lines.append(f"\n✓ Cumplieron: *{max(0, total - missing)} de {total}*")
@@ -800,10 +800,10 @@ async def _save_homework_report(reply_fn, user_id: int, data: HomeworkReportExtr
         if len(homeworks) == 1:
             hw = homeworks[0]
             subj_name = hw.subject.name if hw.subject else "sin materia"
-            lines = [f"📋 *Tarea #{hw.sequence_num} — {subj_name} / {grade.name}*\n"]
+            lines = [f"📊 *CUMPLIMIENTO — Tarea #{hw.sequence_num}*", f"_{subj_name} / {grade.name}_\n"]
         else:
             tareas_str = ", ".join(f"#{hw.sequence_num}" for hw in homeworks)
-            lines = [f"📋 *Tareas {tareas_str} — {grade.name}* (todas abiertas)\n"]
+            lines = [f"📊 *CUMPLIMIENTO — Tareas {tareas_str}*", f"_{grade.name}_ (todas abiertas)\n"]
 
         lines.append(f"✗ *{status_label} ({missing}):*")
         lines.extend(f"  • {r.matched_name}" for r in resolved_names)

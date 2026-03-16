@@ -60,9 +60,17 @@ Analyze the teacher's message (written in Spanish) and reply ONLY with valid JSO
 Intents:
 - attendance: recording absences, tardiness, or justified absences
 - homework: registering an assignment, project, or evaluation
-- query: requesting existing data (keywords: ver, dame, muestra, lista, tareas de, asistencia de)
-- homework_report: reporting who did not complete an assignment
+- query: LIST existing data — what tasks or absences exist (keywords: ver, dame, muestra, lista, tareas de, asistencia de, qué tareas)
+- homework_report: WHO did not deliver — reporting specific students (keywords: no entregó, no cumplió, faltó entregar, quién no entregó, cumplimiento)
 - chat: anything else
+
+CRITICAL DISTINCTION — query vs homework_report:
+- "tareas de 1bt" → query (listing what tasks exist)
+- "dame las tareas de 2bt" → query (listing)
+- "quién no entregó en 3bt" → homework_report (compliance, but complete=false — no names)
+- "Carlos no entregó" → homework_report (specific student)
+- "cumplimiento de 1bt" → homework_report with names=[] complete=false
+- ANY message asking to SEE/LIST tasks without mentioning a specific student → query
 
 attendance:
 {{"intent":"attendance","names":["full name"],"course":"course or null","date":"today|yesterday|YYYY-MM-DD","status":"absent|late|justified","complete":true/false}}
