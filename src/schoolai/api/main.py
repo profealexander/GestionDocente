@@ -4,7 +4,7 @@ from fastapi import FastAPI
 from fastapi.openapi.docs import get_redoc_html, get_swagger_ui_html
 from fastapi.openapi.utils import get_openapi
 
-from schoolai.api.routers import attendance, auth, grades, homework, students, subjects
+from schoolai.api.routers import attendance, auth, grades, health, homework, students, subjects
 
 # ── App ───────────────────────────────────────────────────────────────────────
 
@@ -39,6 +39,7 @@ app = FastAPI(
 
 # ── Routers ───────────────────────────────────────────────────────────────────
 
+app.include_router(health.router)
 app.include_router(auth.router)
 app.include_router(grades.router)
 app.include_router(subjects.router)
