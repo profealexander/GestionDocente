@@ -1,17 +1,26 @@
 from loguru import logger
-from telegram import KeyboardButton, ReplyKeyboardMarkup, ReplyKeyboardRemove, Update
+from telegram import InlineKeyboardButton, InlineKeyboardMarkup, KeyboardButton, ReplyKeyboardMarkup, ReplyKeyboardRemove, Update
 from telegram.ext import ContextTypes
+from telegram.constants import ParseMode
 
+from schoolai.bot.action_handler import handle_extraction, resolve_selection_text
+from schoolai.bot.mode import is_jornada
+from schoolai.bot.state import get_jornada
 from schoolai.bot.transcription import transcribe
+from schoolai.bot.whatsapp_handler import handle_wa_setup_text
 from schoolai.config import settings
+from schoolai.skills.extractor.llm import _ABBREV_TO_NAME, _NAME_TO_ABBREV, course_abbrev_map, extract
+from schoolai.skills.extractor.rules import extract_fallback
 from schoolai.skills.ia.agent import chat
+from schoolai.skills.ia.history import get as get_history, append as append_history
 
 # Teclas de acceso rápido para iniciar Modo Jornada
-_JORNADA_TRIGGERS = {"j", "J", "1", "jornada", "Jornada", "📅 Jornada"}
+_JORNADA_TRIGGERS = {"j", "J", "1", "jornada", "Jornada", "iniciar", "Iniciar", "📅 Jornada"}
 
 JORNADA_KEYBOARD = ReplyKeyboardMarkup(
     [[KeyboardButton("📅 Jornada")]],
     resize_keyboard=True,
+    is_persistent=True,
     input_field_placeholder="Escribe o toca 📅 Jornada...",
 )
 REMOVE_KEYBOARD = ReplyKeyboardRemove()
@@ -63,9 +72,48 @@ async def handle_voice(update: Update, context: ContextTypes.DEFAULT_TYPE) -> No
     await _dispatch(update, user.id, text)
 
 
+def _detect_course_only(text: str) -> tuple[str, int, str] | None:
+    """Returns (abbrev, grade_id, grade_name) when the message is just a course reference."""
+    t = text.strip()
+
+    # Path 1: verbal name  ("primero bt", "octavo egb")
+    canonical = t.upper()
+    abbrev = _NAME_TO_ABBREV.get(canonical)
+    if abbrev and abbrev in course_abbrev_map:
+        return abbrev, course_abbrev_map[abbrev], canonical
+
+    # Path 2: abbreviation ("1bt", "8egb", "prep")
+    abbrev = t.lower().replace(" ", "")
+    if abbrev in course_abbrev_map:
+        grade_name = _ABBREV_TO_NAME.get(abbrev, abbrev.upper())
+        return abbrev, course_abbrev_map[abbrev], grade_name
+
+    return None
+
+
+async def _show_course_action_menu(update: Update, course_info: tuple) -> None:
+    abbrev, _grade_id, grade_name = course_info
+    keyboard = InlineKeyboardMarkup([
+        [
+            InlineKeyboardButton("📝 Registrar tarea",       callback_data=f"course_action:hw:{abbrev}"),
+            InlineKeyboardButton("✅ Registrar asistencia",  callback_data=f"course_action:att:{abbrev}"),
+        ],
+        [
+            InlineKeyboardButton("📋 Ver tareas",            callback_data=f"course_action:query_hw:{abbrev}"),
+            InlineKeyboardButton("📊 Cumplimiento",          callback_data=f"course_action:compliance:{abbrev}"),
+        ],
+        [
+            InlineKeyboardButton("📈 Ver asistencia hoy",   callback_data=f"course_action:query_att:{abbrev}"),
+        ],
+    ])
+    await update.message.reply_text(
+        f"¿Qué deseas hacer con <b>{grade_name.title()}</b>?",
+        parse_mode=ParseMode.HTML,
+        reply_markup=keyboard,
+    )
+
+
 async def _dispatch(update: Update, user_id: int, text: str) -> None:
-    from schoolai.bot.mode import is_jornada
-    from schoolai.bot.state import get_jornada
     if is_jornada():
         session = get_jornada(user_id)
         # Atajo de teclado para iniciar jornada
@@ -80,17 +128,21 @@ async def _dispatch(update: Update, user_id: int, text: str) -> None:
                 reply_markup=JORNADA_KEYBOARD,
             )
             return
-    from schoolai.skills.extractor.llm import extract
-    from schoolai.skills.extractor.rules import extract_fallback
-    from schoolai.skills.ia.history import get as get_history, append as append_history
-    from schoolai.bot.action_handler import handle_extraction, resolve_selection_text
 
     # Estados pendientes: si el usuario escribió un número (1, 2, 3...)
     if await resolve_selection_text(update, user_id):
         return
 
-    # Obtener historial para contexto
-    history = get_history(user_id)
+    # Flujo de setup WhatsApp (colección de phone)
+    if await handle_wa_setup_text(update):
+        return
+
+    # Filtrar marcadores internos antes de pasarlo al extractor —
+    # "[X procesado]" es útil para el chat IA pero confunde al extractor LLM.
+    history = [
+        m for m in get_history(user_id)
+        if not (m["role"] == "assistant" and m["content"].startswith("[") and m["content"].endswith("procesado]"))
+    ]
 
     # Extraer intent y entidades con LLM
     result = await extract(text, history)
@@ -112,6 +164,12 @@ async def _dispatch(update: Update, user_id: int, text: str) -> None:
             return
 
     if result.intent == "chat":
+        # Modo Libre: if message is only a course name, show action menu
+        if not is_jornada():
+            course_info = _detect_course_only(text)
+            if course_info:
+                await _show_course_action_menu(update, course_info)
+                return
         await _run_ia_skill(update, user_id, text)
         return
 

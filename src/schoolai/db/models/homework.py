@@ -21,8 +21,11 @@ class Homework(Base):
     sequence_num: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
     trimester_num: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
 
+    teacher_id: Mapped[int | None] = mapped_column(Integer, ForeignKey("teachers.id"), nullable=True)
+
     grade: Mapped["Grade"] = relationship("Grade", lazy="joined")  # noqa: F821
     subject: Mapped["Subject"] = relationship("Subject", lazy="joined")  # noqa: F821
+    teacher: Mapped["Teacher | None"] = relationship("Teacher", lazy="joined")  # noqa: F821
     submissions: Mapped[list["HomeworkSubmission"]] = relationship("HomeworkSubmission", back_populates="homework", cascade="all, delete-orphan")  # noqa: F821
 
     def __repr__(self) -> str:

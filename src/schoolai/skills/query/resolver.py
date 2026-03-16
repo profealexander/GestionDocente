@@ -38,6 +38,7 @@ class HomeworkRecord:
     delivery_date: date | None
     is_open: bool
     sequence_num: int = 0
+    teacher_name: str | None = None
 
 
 @dataclass
@@ -149,6 +150,10 @@ async def resolve_homework(
             delivery_date=hw.delivery_date.date() if hw.delivery_date else None,
             is_open=hw.is_open,
             sequence_num=hw.sequence_num,
+            teacher_name=(
+                f"{hw.teacher.person.first_name} {hw.teacher.person.last_name}".strip()
+                if hw.teacher and hw.teacher.person else None
+            ),
         )
         for hw in rows
         if sf is None or (hw.subject and sf in hw.subject.name.lower())

@@ -48,7 +48,7 @@ async def start_schedule_flow(update: Update, context: ContextTypes.DEFAULT_TYPE
         # Already linked — go straight to day selection
         flow = ScheduleFlow(step="await_day", teacher_id=teacher.id)
         set_schedule_flow(user_id, flow)
-        await update.message.reply_text(
+        await update.effective_message.reply_text(
             "¿Para qué día vas a registrar el horario?",
             reply_markup=_DAY_KEYBOARD,
         )
@@ -58,7 +58,7 @@ async def start_schedule_flow(update: Update, context: ContextTypes.DEFAULT_TYPE
             docentes = await get_docentes(session)
 
         if not docentes:
-            await update.message.reply_text(
+            await update.effective_message.reply_text(
                 "No hay docentes registrados. Primero regístralos con /db → Docente."
             )
             return
@@ -73,7 +73,7 @@ async def start_schedule_flow(update: Update, context: ContextTypes.DEFAULT_TYPE
             )]
             for p in docentes
         ]
-        await update.message.reply_text(
+        await update.effective_message.reply_text(
             "¿Cuál de estos docentes eres tú?\n_Se vinculará tu cuenta de Telegram._",
             parse_mode=ParseMode.MARKDOWN,
             reply_markup=InlineKeyboardMarkup(buttons),

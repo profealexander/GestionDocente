@@ -1,5 +1,5 @@
 from sqlalchemy import Integer, String
-from sqlalchemy.orm import Mapped, mapped_column
+from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from schoolai.db.connection import Base
 
@@ -22,6 +22,12 @@ class Person(Base):
     email: Mapped[str | None] = mapped_column(String, nullable=True)
     telegram_handle: Mapped[str | None] = mapped_column(String, nullable=True)
     status: Mapped[str] = mapped_column(String, nullable=False, default="active")
+
+    whatsapp_contacts: Mapped[list["WhatsAppContact"]] = relationship(  # noqa: F821
+        "WhatsAppContact", back_populates="person", lazy="selectin",
+        primaryjoin="Person.id == WhatsAppContact.person_id",
+        order_by="WhatsAppContact.is_primary.desc()",
+    )
 
     def full_name(self) -> str:
         parts = [self.first_name, self.middle_name, self.last_name, self.second_last_name]

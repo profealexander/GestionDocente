@@ -6,6 +6,7 @@ Flow:
 """
 
 from loguru import logger
+from sqlalchemy import select, func, or_
 from telegram import InlineKeyboardButton, InlineKeyboardMarkup, Update
 from telegram.constants import ParseMode
 from telegram.ext import ContextTypes
@@ -13,12 +14,13 @@ from telegram.ext import ContextTypes
 from schoolai.bot.state import DbFlow, clear_db_flow, get_db_flow, set_db_flow
 from schoolai.db.connection import async_session
 from schoolai.db.models.grade import Grade
+from schoolai.db.models.person import Person
+from schoolai.db.models.student import Student
 from schoolai.skills.db.deduplicator import build_preview_lines, deduplicate
 from schoolai.skills.db.parser import parse_list
-from schoolai.skills.db.service import save_people
+from schoolai.skills.db.service import link_representative, save_people
 from schoolai.skills.utils.keyboards import grade_keyboard
-
-from sqlalchemy import select
+from schoolai.skills.utils.text import normalize
 
 # ── Roles ─────────────────────────────────────────────────────────────────────
 
@@ -75,6 +77,14 @@ async def handle_db_callback(update: Update, context: ContextTypes.DEFAULT_TYPE)
 
     elif data.startswith("db_section:"):
         await _on_section(query, user_id, data.split(":", 1)[1])
+
+    elif data.startswith("db_link:"):
+        value = data.split(":", 1)[1]
+        if value == "skip":
+            clear_db_flow(user_id)
+            await query.edit_message_text("Vinculación omitida.")
+        else:
+            await _on_link_confirm(query, user_id, int(value))
 
     elif data == "db_confirm":
         await _on_confirm(query, user_id)
@@ -138,16 +148,32 @@ async def _on_confirm(query, user_id: int) -> None:
             grade_id=flow.grade_id,
             section=flow.section,
         )
-
-    clear_db_flow(user_id)
+        # Guardar IDs creados para poder vincularlos después
+        flow.saved_person_ids = [
+            r.existing_id
+            for r in flow.dedup_results
+            if r.match_type.name == "NEW" and r.existing_id
+        ]
 
     summary = (
         f"✅ *Guardado correctamente*\n\n"
         f"• Personas nuevas: {result.created}\n"
         f"• Omitidos (ya existen): {result.skipped}"
     )
-    await query.edit_message_text(summary, parse_mode=ParseMode.MARKDOWN)
     logger.info(f"[db] user={user_id} saved: {result}")
+
+    # Si es representante, ofrecer vinculación a estudiante
+    if flow.role == "representante" and result.created > 0:
+        flow.step = "await_link_student"
+        set_db_flow(user_id, flow)
+        await query.edit_message_text(
+            summary + "\n\n¿Deseas vincular este representante a un estudiante?\n"
+            "_Envía el nombre del estudiante o escribe_ /cancelar _para saltar._",
+            parse_mode=ParseMode.MARKDOWN,
+        )
+    else:
+        clear_db_flow(user_id)
+        await query.edit_message_text(summary, parse_mode=ParseMode.MARKDOWN)
 
 
 # ── Text message while DB flow is active ─────────────────────────────────────
@@ -156,7 +182,14 @@ async def handle_db_text(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
     user_id = update.effective_user.id
     flow = get_db_flow(user_id)
 
-    if not flow or flow.step != "await_list":
+    if not flow:
+        return
+
+    if flow.step == "await_link_student":
+        await _on_link_student_search(update, user_id, flow)
+        return
+
+    if flow.step != "await_list":
         return
 
     parsed = parse_list(update.message.text)
@@ -243,3 +276,89 @@ def _confirm_keyboard() -> InlineKeyboardMarkup:
             InlineKeyboardButton("❌ Cancelar", callback_data="db_cancel"),
         ]
     ])
+
+
+# ── Vinculación representante ↔ estudiante ────────────────────────────────────
+
+async def _on_link_student_search(update: Update, user_id: int, flow: DbFlow) -> None:
+    """Busca el estudiante por nombre y muestra opciones para vincular."""
+    query_text = update.message.text.strip()
+    norm = normalize(query_text)
+
+    async with async_session() as session:
+        full_name = func.lower(Person.first_name + " " + Person.last_name)
+        students = (await session.execute(
+            select(Student)
+            .join(Student.person)
+            .where(
+                Student.status == "active",
+                or_(
+                    full_name.contains(norm),
+                    func.lower(Person.last_name + " " + Person.first_name).contains(norm),
+                ),
+            )
+        )).unique().scalars().all()
+
+    # Final Python-side filter for normalized accents / special chars
+    matches = [
+        s for s in students
+        if s.person and (
+            norm in normalize(f"{s.person.first_name} {s.person.last_name}")
+            or normalize(f"{s.person.first_name} {s.person.last_name}") in norm
+        )
+    ]
+
+    if not matches:
+        await update.message.reply_text(
+            f"No encontré estudiantes con el nombre *{query_text}*.\n"
+            "Intenta de nuevo o usa /cancelar para saltar.",
+            parse_mode=ParseMode.MARKDOWN,
+        )
+        return
+
+    if len(matches) > 8:
+        await update.message.reply_text(
+            f"Encontré {len(matches)} coincidencias, sé más específico."
+        )
+        return
+
+    buttons = [
+        [InlineKeyboardButton(
+            f"{s.person.first_name} {s.person.last_name} — {s.grade.name}",
+            callback_data=f"db_link:{s.id}",
+        )]
+        for s in matches
+    ]
+    buttons.append([InlineKeyboardButton("❌ Saltar", callback_data="db_link:skip")])
+    await update.message.reply_text(
+        "¿A cuál estudiante vincular?",
+        reply_markup=InlineKeyboardMarkup(buttons),
+    )
+
+
+async def _on_link_confirm(query, user_id: int, student_id: int) -> None:
+    """Guarda el vínculo representante ↔ estudiante."""
+    flow = get_db_flow(user_id)
+    if not flow or not flow.saved_person_ids:
+        await query.edit_message_reply_markup(reply_markup=None)
+        clear_db_flow(user_id)
+        return
+
+    person_id = flow.saved_person_ids[0]
+
+    async with async_session() as session:
+        await link_representative(
+            session=session,
+            student_id=student_id,
+            person_id=person_id,
+            make_primary=True,
+        )
+        student = await session.get(Student, student_id)
+        name = f"{student.person.first_name} {student.person.last_name}" if student and student.person else str(student_id)
+
+    clear_db_flow(user_id)
+    await query.edit_message_text(
+        f"✅ Representante vinculado a *{name}* como contacto primario.",
+        parse_mode=ParseMode.MARKDOWN,
+    )
+    logger.info(f"[db] link rep person={person_id} → student={student_id}")

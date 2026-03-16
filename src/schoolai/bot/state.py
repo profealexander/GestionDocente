@@ -73,7 +73,7 @@ def _rdel(key: str) -> None:
 
 # ── DB Skill state ────────────────────────────────────────────────────────────
 
-DbStep = Literal["await_list", "await_grade", "await_section", "await_confirm"]
+DbStep = Literal["await_list", "await_grade", "await_section", "await_confirm", "await_link_student"]
 
 
 @dataclass
@@ -85,6 +85,7 @@ class DbFlow:
     grade_name: str | None = None
     section: str | None = None
     dedup_results: list | None = None  # list[DedupeResult]
+    saved_person_ids: list[int] = field(default_factory=list)   # IDs creados tras confirmar
 
 
 _db_flows: dict[int, DbFlow] = {}
@@ -363,6 +364,121 @@ def clear_jornada_all_stale() -> int:
     return len(stale)
 
 
+# ── Pending course context (course-only message awaiting intent) ──────────────
+#
+# When a teacher sends just a course name (e.g. "primero bt"), the bot shows
+# a menu of actions. Once the teacher picks one, a PendingCourseContext is
+# stored so the next message has the course pre-filled.
+
+
+@dataclass
+class PendingCourseContext:
+    course_abbrev: str
+    grade_id: int
+    grade_name: str
+    pending_intent: str   # "homework" | "attendance" | "homework_report"
+
+
+_course_contexts: dict[int, PendingCourseContext] = {}
+
+
+def set_course_context(user_id: int, ctx: PendingCourseContext) -> None:
+    _course_contexts[user_id] = ctx
+    _touch("course", user_id)
+    _rset(f"course:{user_id}", ctx, _REDIS_TTL_SHORT)
+
+
+def get_course_context(user_id: int) -> PendingCourseContext | None:
+    if user_id not in _course_contexts:
+        obj = _rget(f"course:{user_id}")
+        if obj is not None:
+            _course_contexts[user_id] = obj
+            _touch("course", user_id)
+    return _course_contexts.get(user_id)
+
+
+def clear_course_context(user_id: int) -> None:
+    _course_contexts.pop(user_id, None)
+    _expire("course", user_id)
+    _rdel(f"course:{user_id}")
+
+
+# ── WhatsApp notification state ───────────────────────────────────────────────
+#
+# PendingWhatsAppNotification: tarea + alumnos que no cumplieron.
+#   Creado cuando el docente presiona [📱 Notificar].
+#
+# PendingWhatsAppSetup: flujo para completar phone/apikey de un representante
+#   cuando faltan datos. Al terminar, reintenta el envío pendiente.
+
+WhatsAppSetupStep = Literal["await_rep_name", "await_phone"]
+
+
+@dataclass
+class PendingWhatsAppNotification:
+    chat_id: int
+    hw_id: int
+    hw_seq: int
+    subject: str
+    grade_name: str
+    delivery_date: str       # "dd/mm/YYYY" or ""
+    student_ids: list[int]
+    student_names: list[str]
+
+
+@dataclass
+class PendingWhatsAppSetup:
+    step: WhatsAppSetupStep
+    guardian_id: int       # 0 si aún no se ha creado (step await_rep_name)
+    guardian_name: str
+    student_name: str
+    student_id: int = 0    # para vincular al crear representante nuevo
+    phone: str = ""
+
+
+_wa_notifications: dict[int, PendingWhatsAppNotification] = {}
+_wa_setups: dict[int, PendingWhatsAppSetup] = {}
+
+
+def set_wa_notification(user_id: int, n: PendingWhatsAppNotification) -> None:
+    _wa_notifications[user_id] = n
+    _rset(f"wan:{user_id}", n, _REDIS_TTL_SHORT)
+
+
+def get_wa_notification(user_id: int) -> PendingWhatsAppNotification | None:
+    if user_id not in _wa_notifications:
+        obj = _rget(f"wan:{user_id}")
+        if obj is not None:
+            _wa_notifications[user_id] = obj
+    return _wa_notifications.get(user_id)
+
+
+def clear_wa_notification(user_id: int) -> None:
+    _wa_notifications.pop(user_id, None)
+    _rdel(f"wan:{user_id}")
+
+
+def set_wa_setup(user_id: int, s: PendingWhatsAppSetup) -> None:
+    _wa_setups[user_id] = s
+    _touch("wa_setup", user_id)
+    _rset(f"was:{user_id}", s, _REDIS_TTL_SHORT)
+
+
+def get_wa_setup(user_id: int) -> PendingWhatsAppSetup | None:
+    if user_id not in _wa_setups:
+        obj = _rget(f"was:{user_id}")
+        if obj is not None:
+            _wa_setups[user_id] = obj
+            _touch("wa_setup", user_id)
+    return _wa_setups.get(user_id)
+
+
+def clear_wa_setup(user_id: int) -> None:
+    _wa_setups.pop(user_id, None)
+    _expire("wa_setup", user_id)
+    _rdel(f"was:{user_id}")
+
+
 # ── TTL cleanup ───────────────────────────────────────────────────────────────
 
 _timestamps: dict[str, dict[int, float]] = {
@@ -371,6 +487,8 @@ _timestamps: dict[str, dict[int, float]] = {
     "sel": {},
     "schedule": {},
     "position": {},
+    "course": {},
+    "wa_setup": {},
 }
 _TTL = 3600  # 60 minutos
 
@@ -393,6 +511,8 @@ def cleanup_stale() -> int:
         ("sel", _selections),
         ("schedule", _schedule_flows),
         ("position", _position_flows),
+        ("course", _course_contexts),
+        ("wa_setup", _wa_setups),
     ]:
         expired = [uid for uid, ts in _timestamps[store].items() if now - ts > _TTL]
         for uid in expired:

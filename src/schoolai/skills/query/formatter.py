@@ -20,7 +20,7 @@ def format_homework(data: HomeworkData) -> str:
     period = _period_label(data)
     n = len(data.records)
     lines = [
-        f'📋 <b>LISTADO DE TAREAS</b>',
+        '📋 <b>LISTADO DE TAREAS</b>',
         f'<b>{_e(data.grade_name)}</b>  ·  {period}  ·  {n} tarea(s)',
         '──────────────────────',
     ]
@@ -43,7 +43,8 @@ def format_homework(data: HomeworkData) -> str:
             state = "🟢 Abierta" if hw.is_open else "🔴 Cerrada"
             seq = f"#{hw.sequence_num}" if hw.sequence_num else ""
             lines.append(f"  <b>{seq}</b>  {_e(hw.description)}")
-            lines.append(f"  📅 {date_str}  ·  {state}")
+            teacher_str = f"  · 👤 {_e(hw.teacher_name)}" if hw.teacher_name else ""
+            lines.append(f"  📅 {date_str}  ·  {state}{teacher_str}")
 
     return "\n".join(lines)
 
@@ -59,7 +60,7 @@ def format_homework_multi(data_list: list[HomeworkData], group_label: str = "Gru
     total = sum(len(d.records) for d in data_list)
     period = _period_label(first)
     lines = [
-        f'📋 <b>LISTADO DE TAREAS</b>',
+        '📋 <b>LISTADO DE TAREAS</b>',
         f'<b>{_e(group_label)}</b>  ·  {period}  ·  {total} tarea(s)',
         '──────────────────────',
     ]
@@ -85,7 +86,8 @@ def format_homework_multi(data_list: list[HomeworkData], group_label: str = "Gru
                 state = "🟢" if hw.is_open else "🔴"
                 seq = f"#{hw.sequence_num}" if hw.sequence_num else ""
                 lines.append(f"    <b>{seq}</b>  {_e(hw.description)}")
-                lines.append(f"    📅 {date_str}  {state}")
+                teacher_str = f"  👤 {_e(hw.teacher_name)}" if hw.teacher_name else ""
+                lines.append(f"    📅 {date_str}  {state}{teacher_str}")
 
     return "\n".join(lines)
 

@@ -71,9 +71,24 @@ async def save_homework(
     grade_id: int,
     subject_id: int | None = None,
     delivery_date: date | None = None,
+    teacher_id: int | None = None,
 ) -> Homework:
     today = delivery_date or date.today()
     trimester = _get_trimester_num(today)
+
+    # Deduplication: return existing if same description+grade+trimester+subject already exists
+    dup_stmt = select(Homework).where(
+        Homework.grade_id == grade_id,
+        Homework.trimester_num == trimester,
+        func.lower(Homework.homework) == homework.lower().strip(),
+    )
+    if subject_id:
+        dup_stmt = dup_stmt.where(Homework.subject_id == subject_id)
+    else:
+        dup_stmt = dup_stmt.where(Homework.subject_id.is_(None))
+    existing = (await session.execute(dup_stmt)).scalars().first()
+    if existing:
+        return existing
 
     # Count existing homework for this grade+trimester+subject
     count_stmt = select(func.count()).select_from(Homework).where(
@@ -93,6 +108,7 @@ async def save_homework(
         is_open=True,
         sequence_num=seq_num,
         trimester_num=trimester,
+        teacher_id=teacher_id,
     )
     session.add(record)
     await session.commit()

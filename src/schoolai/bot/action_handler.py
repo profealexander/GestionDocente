@@ -9,10 +9,11 @@ from telegram.constants import ParseMode
 
 from schoolai.db.connection import async_session
 from schoolai.db.models.grade import Grade
+from schoolai.db.models.homework import Homework
 from schoolai.skills.attendance.constants import ABSENT, LATE, JUSTIFIED
 from schoolai.skills.attendance.matcher import match_names
 from schoolai.skills.attendance.service import save_absences
-from schoolai.skills.extractor.llm import _parse_date, _resolve_delivery
+from schoolai.skills.extractor.llm import _parse_date, _resolve_delivery, course_abbrev_map
 from schoolai.skills.extractor.schema import (
     AttendanceExtract,
     ExtractionResult,
@@ -29,14 +30,22 @@ from schoolai.skills.homework.repository import (
     save_non_completers,
     count_students_in_grade,
 )
+from schoolai.skills.query.detector import QueryIntent, get_current_trimester
 from schoolai.skills.utils.keyboards import grade_keyboard
 from schoolai.bot.state import (
+    PendingCourseContext,
     PendingSelection,
+    PendingWhatsAppNotification,
+    clear_course_context,
     clear_selection,
+    get_course_context,
     get_jornada_context,
     get_selection,
+    set_course_context,
     set_selection,
+    set_wa_notification,
 )
+from schoolai.bot.whatsapp_handler import notify_keyboard
 
 # Caché ligero: datos parciales esperando que el usuario elija curso
 # {user_id: ExtractionResult} — NO bloquea mensajes nuevos
@@ -46,6 +55,12 @@ STATUS_MAP = {
     "absent": ABSENT,
     "late": LATE,
     "justified": JUSTIFIED,
+}
+
+_HW_STATUS_LABELS: dict[str, str] = {
+    "missing": "No entregaron",
+    "late":    "Entregaron tarde",
+    "partial": "Entrega parcial",
 }
 
 
@@ -144,15 +159,13 @@ async def _dispatch_selection(user_id: int, value: str, pending, bot) -> None:
 
 async def _sel_att_student(user_id: int, student_id: int, pending, bot) -> None:
     """Saves attendance for the chosen student, advances the ambiguous queue."""
-    from datetime import date as _date
-
     p = pending.payload
     item = p["queue"].pop(0)
     short = next(
         (c.get("short", c["name"]) for c in item["candidates"] if c["id"] == student_id),
         "Estudiante",
     )
-    attendance_date = _date.fromisoformat(p["attendance_date"])
+    attendance_date = date.fromisoformat(p["attendance_date"])
     status = p["status"]
     status_labels = {"F": "Falta", "AT": "Atraso", "J": "Justificado"}
 
@@ -193,8 +206,6 @@ async def _sel_att_student(user_id: int, student_id: int, pending, bot) -> None:
 
 async def _sel_hw_task(user_id: int, hw_id: int, pending, bot) -> None:
     """Saves homework non-completion for the chosen task."""
-    from schoolai.db.models.homework import Homework
-
     clear_selection(user_id)
     p = pending.payload
 
@@ -213,11 +224,7 @@ async def _sel_hw_task(user_id: int, hw_id: int, pending, bot) -> None:
         total = await count_students_in_grade(session, hw.grade_id)
 
     subj = hw.subject.name if hw.subject else "sin materia"
-    status_label = {
-        "missing": "No entregaron",
-        "late":    "Entregaron tarde",
-        "partial": "Entrega parcial",
-    }.get(p["status"], "No entregaron")
+    status_label = _HW_STATUS_LABELS.get(p["status"], "No entregaron")
     missing = len(student_ids)
     lines = [f"📊 *CUMPLIMIENTO — Tarea #{hw.sequence_num}*", f"_{subj}_\n"]
     lines.append(f"✗ *{status_label} ({missing}):*")
@@ -227,6 +234,10 @@ async def _sel_hw_task(user_id: int, hw_id: int, pending, bot) -> None:
         lines.append(f"\n⚠️ No encontrados: {', '.join(p['not_found_names'])}")
 
     await bot.send_message(pending.chat_id, "\n".join(lines), parse_mode=ParseMode.MARKDOWN)
+    await _send_notify_prompt(
+        lambda t, **kw: bot.send_message(pending.chat_id, t, **kw),
+        user_id, hw, student_ids, p["student_names"],
+    )
     logger.info(
         f"[action] homework_report via sel user={user_id} hw={hw_id} missing={missing}"
     )
@@ -293,7 +304,6 @@ async def _sel_hw_student(user_id: int, student_id: int, pending, bot) -> None:
     if p.get("hw_id") is not None:
         # Single known task — save directly
         clear_selection(user_id)
-        from schoolai.db.models.homework import Homework
         async with async_session() as session:
             hw = await session.get(Homework, p["hw_id"])
             if not hw:
@@ -302,7 +312,7 @@ async def _sel_hw_student(user_id: int, student_id: int, pending, bot) -> None:
             await save_non_completers(session, p["hw_id"], student_ids, status)
             total = await count_students_in_grade(session, hw.grade_id)
 
-        await _reply_hw_report(bot, pending.chat_id, hw, student_ids, student_names, not_found, status, total)
+        await _reply_hw_report(bot, pending.chat_id, hw, student_ids, student_names, not_found, status, total, user_id)
         logger.info(
             f"[action] homework_report hw_student→direct user={user_id} hw={p['hw_id']} missing={len(student_ids)}"
         )
@@ -310,19 +320,15 @@ async def _sel_hw_student(user_id: int, student_id: int, pending, bot) -> None:
     elif p.get("hw_ids"):
         # Multiple known tasks — save to all
         clear_selection(user_id)
-        from schoolai.db.models.homework import Homework
         async with async_session() as session:
-            hws = []
-            for hw_id in p["hw_ids"]:
-                hw = await session.get(Homework, hw_id)
-                if hw:
-                    hws.append(hw)
-                    await save_non_completers(session, hw_id, student_ids, status)
+            hws = (await session.execute(
+                select(Homework).where(Homework.id.in_(p["hw_ids"]))
+            )).scalars().all()
+            for hw in hws:
+                await save_non_completers(session, hw.id, student_ids, status)
             total = await count_students_in_grade(session, p["grade_id"])
 
-        status_label = {
-            "missing": "No entregaron", "late": "Entregaron tarde", "partial": "Entrega parcial",
-        }.get(status, "No entregaron")
+        status_label = _HW_STATUS_LABELS.get(status, "No entregaron")
         tareas_str = ", ".join(f"#{hw.sequence_num}" for hw in hws)
         missing = len(student_ids)
         lines = [f"📊 *CUMPLIMIENTO — Tareas {tareas_str}*", "(todas abiertas)\n"]
@@ -369,12 +375,38 @@ async def _sel_hw_student(user_id: int, student_id: int, pending, bot) -> None:
         )
 
 
-async def _reply_hw_report(bot, chat_id, hw, student_ids, student_names, not_found, status, total):
-    """Sends the homework report summary message."""
+async def _send_notify_prompt(send_fn, user_id: int, hw, student_ids: list, student_names: list) -> None:
+    """Stores WA notification state and sends the notify button.
+
+    send_fn must be an awaitable callable: send_fn(text, **kwargs).
+    Typical usage:
+      bot path  → lambda t, **kw: bot.send_message(chat_id, t, **kw)
+      reply_fn  → update.message.reply_text
+    """
+    if not student_ids or not user_id:
+        return
+    delivery_str = hw.delivery_date.strftime("%d/%m/%Y") if hw.delivery_date else ""
     subj = hw.subject.name if hw.subject else "sin materia"
-    status_label = {
-        "missing": "No entregaron", "late": "Entregaron tarde", "partial": "Entrega parcial",
-    }.get(status, "No entregaron")
+    set_wa_notification(user_id, PendingWhatsAppNotification(
+        chat_id=0,   # not used; routing goes through bot.send_message in whatsapp_handler
+        hw_id=hw.id,
+        hw_seq=hw.sequence_num,
+        subject=subj,
+        grade_name=hw.grade.name if hw.grade else "",
+        delivery_date=delivery_str,
+        student_ids=list(student_ids),
+        student_names=list(student_names),
+    ))
+    await send_fn(
+        "¿Deseas notificar a los representantes por WhatsApp?",
+        reply_markup=notify_keyboard(student_ids),
+    )
+
+
+async def _reply_hw_report(bot, chat_id, hw, student_ids, student_names, not_found, status, total, user_id: int = 0):
+    """Sends the homework report summary message and notify button."""
+    subj = hw.subject.name if hw.subject else "sin materia"
+    status_label = _HW_STATUS_LABELS.get(status, "No entregaron")
     missing = len(student_ids)
     lines = [f"📊 *CUMPLIMIENTO — Tarea #{hw.sequence_num}*", f"_{subj}_\n"]
     lines.append(f"✗ *{status_label} ({missing}):*")
@@ -383,6 +415,10 @@ async def _reply_hw_report(bot, chat_id, hw, student_ids, student_names, not_fou
     if not_found:
         lines.append(f"\n⚠️ No encontrados: {', '.join(not_found)}")
     await bot.send_message(chat_id, "\n".join(lines), parse_mode=ParseMode.MARKDOWN)
+    await _send_notify_prompt(
+        lambda t, **kw: bot.send_message(chat_id, t, **kw),
+        user_id, hw, student_ids, student_names,
+    )
 
 
 # ── Attendance ────────────────────────────────────────────────────────────────
@@ -401,6 +437,13 @@ async def _handle_attendance(update, user_id: int, result: ExtractionResult, dat
         if grade_name:
             data.course = grade_name
             data.complete = True
+
+    if not data.course:
+        ctx = get_course_context(user_id)
+        if ctx and ctx.pending_intent == "attendance":
+            data.course = ctx.grade_name
+            data.complete = True
+            clear_course_context(user_id)
 
     if not data.course:
         store_pending(user_id, result)
@@ -507,6 +550,13 @@ async def _handle_homework(update, user_id: int, result: ExtractionResult, data:
             data.complete = True
 
     if not data.course:
+        ctx = get_course_context(user_id)
+        if ctx and ctx.pending_intent == "homework":
+            data.course = ctx.grade_name
+            data.complete = True
+            clear_course_context(user_id)
+
+    if not data.course:
         store_pending(user_id, result)
         async with async_session() as session:
             grades = (await session.execute(select(Grade).order_by(Grade.sort_order))).scalars().all()
@@ -517,10 +567,16 @@ async def _handle_homework(update, user_id: int, result: ExtractionResult, data:
         )
         return
 
+    if not data.subject:
+        data.subject = "Asignación"
+
     await _save_homework(update.message.reply_text, user_id, data)
 
 
 async def _save_homework(reply_fn, user_id: int, data: HomeworkExtract) -> None:
+    from schoolai.db.models.teacher import Teacher
+    from sqlalchemy import select as _select
+
     async with async_session() as session:
         grade = await find_grade(session, data.course)
         if not grade:
@@ -530,12 +586,22 @@ async def _save_homework(reply_fn, user_id: int, data: HomeworkExtract) -> None:
         subject = await find_subject(session, data.subject) if data.subject else None
         delivery = _resolve_delivery(data.delivery_date)
 
+        # Obtener teacher_id desde jornada o telegram_id
+        from schoolai.bot.state import get_jornada as _get_jornada
+        jornada = _get_jornada(user_id)
+        teacher_id = jornada.teacher_id if jornada else None
+        if not teacher_id:
+            teacher_id = (await session.execute(
+                _select(Teacher.id).where(Teacher.telegram_id == user_id, Teacher.is_active.is_(True))
+            )).scalar_one_or_none()
+
         record = await save_homework(
             session,
             homework=data.description,
             grade_id=grade.id,
             subject_id=subject.id if subject else None,
             delivery_date=delivery,
+            teacher_id=teacher_id,
         )
 
     delivery_str = record.delivery_date.strftime("%d/%m/%Y") if record.delivery_date else "no especificada"
@@ -552,7 +618,6 @@ async def _save_homework(reply_fn, user_id: int, data: HomeworkExtract) -> None:
 # ── Query ─────────────────────────────────────────────────────────────────────
 
 def _build_query_intent(period: str, subject_filter: str | None = None):
-    from schoolai.skills.query.detector import QueryIntent, get_current_trimester
     today = date.today()
     if period == "today":
         return QueryIntent("homework", "day", today, today, subject_filter=subject_filter)
@@ -614,9 +679,72 @@ async def _handle_query(update, user_id: int, result: ExtractionResult, data: Qu
         await update.message.reply_text(text, parse_mode=ParseMode.HTML)
 
 
+# ── Course action callback ────────────────────────────────────────────────────
+
+async def handle_course_action_callback(update, context) -> None:
+    """Handles course_action:{action}:{abbrev} — triggered from the course-only menu."""
+    from schoolai.skills.extractor.llm import _ABBREV_TO_NAME, course_abbrev_map
+
+    query = update.callback_query
+    await query.answer()
+    user_id = update.effective_user.id
+    chat_id = update.effective_chat.id
+
+    _, action, abbrev = query.data.split(":", 2)
+
+    grade_id = course_abbrev_map.get(abbrev)
+    if not grade_id:
+        await query.edit_message_text("Curso no encontrado.")
+        return
+
+    grade_name = _ABBREV_TO_NAME.get(abbrev, abbrev.upper())
+    await query.edit_message_reply_markup(reply_markup=None)
+
+    if action in ("hw", "att", "compliance"):
+        intent_map = {"hw": "homework", "att": "attendance", "compliance": "homework_report"}
+        ctx = PendingCourseContext(
+            course_abbrev=abbrev,
+            grade_id=grade_id,
+            grade_name=grade_name,
+            pending_intent=intent_map[action],
+        )
+        set_course_context(user_id, ctx)
+        prompts = {
+            "hw":         f"¿Cuál es la tarea para <b>{grade_name.title()}</b>?\n<i>Indica también la materia.</i>",
+            "att":        f"¿Quién faltó hoy en <b>{grade_name.title()}</b>?",
+            "compliance": f"¿Quién no entregó en <b>{grade_name.title()}</b>?\n<i>Puedes indicar la tarea si aplica.</i>",
+        }
+        await context.bot.send_message(chat_id, prompts[action], parse_mode=ParseMode.HTML)
+
+    elif action == "query_hw":
+        intent = _build_query_intent("trimester")
+        intent.type = "homework"
+        from schoolai.bot.query_handler import _run_query
+        await _run_query(
+            lambda t, **kw: context.bot.send_message(chat_id, t, **kw),
+            user_id, intent, grade_id,
+        )
+
+    elif action == "query_att":
+        today = date.today()
+        intent = QueryIntent(type="attendance", period="day", period_start=today, period_end=today)
+        from schoolai.bot.query_handler import _run_query
+        await _run_query(
+            lambda t, **kw: context.bot.send_message(chat_id, t, **kw),
+            user_id, intent, grade_id,
+        )
+
+
 # ── Homework Report ───────────────────────────────────────────────────────────
 
 async def _handle_homework_report(update, user_id: int, result: ExtractionResult, data: HomeworkReportExtract) -> None:
+    if not data.course:
+        ctx = get_course_context(user_id)
+        if ctx and ctx.pending_intent == "homework_report":
+            data.course = ctx.grade_name
+            data.complete = True
+            clear_course_context(user_id)
+
     if not data.course:
         store_pending(user_id, result)
         async with async_session() as session:
@@ -676,11 +804,10 @@ async def _save_homework_report(reply_fn, user_id: int, data: HomeworkReportExtr
                 ]
 
         elif subject:
-            from schoolai.db.models.homework import Homework as _HW
             stmt = (
-                select(_HW)
-                .where(_HW.grade_id == grade.id, _HW.subject_id == subject.id, _HW.is_open.is_(True))
-                .order_by(_HW.submission_date.desc())
+                select(Homework)
+                .where(Homework.grade_id == grade.id, Homework.subject_id == subject.id, Homework.is_open.is_(True))
+                .order_by(Homework.submission_date.desc())
                 .limit(1)
             )
             hw_resolved = (await session.execute(stmt)).scalars().first()
@@ -788,11 +915,7 @@ async def _save_homework_report(reply_fn, user_id: int, data: HomeworkReportExtr
             for hw in homeworks:
                 await save_non_completers(session, hw.id, student_ids, data.status)
 
-        status_label = {
-            "missing": "No entregaron",
-            "late":    "Entregaron tarde",
-            "partial": "Entrega parcial",
-        }.get(data.status, "No entregaron")
+        status_label = _HW_STATUS_LABELS.get(data.status, "No entregaron")
 
         total   = await count_students_in_grade(session, grade.id)
         missing = len(student_ids)
@@ -813,6 +936,19 @@ async def _save_homework_report(reply_fn, user_id: int, data: HomeworkReportExtr
             lines.append(f"\n⚠️ No encontrados: {', '.join(not_found_strs)}")
 
         await reply_fn("\n".join(lines), parse_mode=ParseMode.MARKDOWN)
+        if len(homeworks) == 1 and student_ids:
+            await _send_notify_prompt(reply_fn, user_id, homeworks[0], student_ids, [r.matched_name for r in resolved_names])
+
+        # Recordar el curso para el próximo reporte sin tener que preguntar de nuevo
+        if user_id:
+            abbrev = next((k for k, v in course_abbrev_map.items() if v == grade.id), "")
+            set_course_context(user_id, PendingCourseContext(
+                course_abbrev=abbrev,
+                grade_id=grade.id,
+                grade_name=grade.name,
+                pending_intent="homework_report",
+            ))
+
         logger.info(
             f"[action] homework_report user={user_id} grade={grade.id} tasks={len(homeworks)} missing={missing}"
         )

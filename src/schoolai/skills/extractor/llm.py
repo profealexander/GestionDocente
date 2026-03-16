@@ -34,6 +34,9 @@ _NAME_TO_ABBREV: dict[str, str] = {
 # abbrev → grade_id, poblado en load_course_map()
 course_abbrev_map: dict[str, int] = {}
 
+# Lookup inverso: abbrev → nombre canónico
+_ABBREV_TO_NAME: dict[str, str] = {v: k for k, v in _NAME_TO_ABBREV.items()}
+
 
 async def load_course_map() -> None:
     """Carga abrev→grade_id desde la BD. Llamar al arrancar el bot."""
@@ -98,6 +101,9 @@ homework_report:
 - complete=false if course is null
 - status default: "missing" | "tarde/atrasado" → "late" | "incompleto/parcial" → "partial"
 - homework_ref: integer if message says "tarea 3", "la 2", "#1", else null
+- names: ONLY student names — NEVER include "representante de" or "apoderado de"
+  · "notificar a representante de Ulloa no cumplió" → names=["Ulloa"]
+  · "representante de García y López no entregaron" → names=["García","López"]
 
 chat:
 {{"intent":"chat"}}
@@ -106,7 +112,11 @@ Edge cases → always return valid JSON:
 - "X no entregó esta tarea" (no ref, no subject, no course) → homework_report with complete=false
 - "dame reporte de tareas de [student]" → chat (student-level queries not supported)
 - "quién no entregó" without course → homework_report with complete=false
-- Any unclear message → chat, never return empty"""
+- Any unclear message → chat, never return empty
+
+Context from conversation history:
+- If `course` is missing from the current message but was clearly stated in a recent turn, infer that course.
+- If `names` are missing for attendance/homework_report but names appeared in the immediately prior user message, include them."""
 
 
 def _get_system_prompt() -> str:

@@ -91,7 +91,7 @@ async def start_position_flow(update: Update, context: ContextTypes.DEFAULT_TYPE
         docentes = await get_docentes(session)
 
     if not docentes:
-        await update.message.reply_text(
+        await update.effective_message.reply_text(
             "No hay docentes registrados. Usa /db → Docente para registrarlos primero."
         )
         return
@@ -104,7 +104,7 @@ async def start_position_flow(update: Update, context: ContextTypes.DEFAULT_TYPE
         )]
         for p in docentes
     ]
-    await update.message.reply_text(
+    await update.effective_message.reply_text(
         "📋 *Cargos docentes*\n\nSelecciona el docente:",
         parse_mode=ParseMode.MARKDOWN,
         reply_markup=InlineKeyboardMarkup(buttons),

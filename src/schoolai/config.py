@@ -1,3 +1,4 @@
+from pydantic import field_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
@@ -10,6 +11,16 @@ class Settings(BaseSettings):
 
     # Database
     database_url: str = "postgresql+asyncpg://schoolai:1234@localhost:5432/schoolai"
+
+    @field_validator("database_url", mode="before")
+    @classmethod
+    def fix_database_url(cls, v: str) -> str:
+        """Railway provee postgres:// — asyncpg requiere postgresql+asyncpg://"""
+        if v.startswith("postgres://"):
+            v = "postgresql+asyncpg://" + v[len("postgres://"):]
+        elif v.startswith("postgresql://"):
+            v = "postgresql+asyncpg://" + v[len("postgresql://"):]
+        return v
 
     # Telegram
     telegram_bot_token: str
@@ -46,6 +57,10 @@ class Settings(BaseSettings):
     jwt_secret_key: str = ""    # REQUIRED en producción — clave para firmar tokens
     jwt_expire_hours: int = 24  # tiempo de vida del token
     api_secret: str = ""        # clave compartida que el cliente usa para obtener un JWT
+
+    # WhatsApp — Green API
+    green_api_instance: str = ""   # idInstance, e.g. "1101234567"
+    green_api_token:    str = ""   # apiTokenInstance
 
     # Logging
     log_dir: str = "logs"
