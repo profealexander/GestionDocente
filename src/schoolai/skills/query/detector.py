@@ -52,6 +52,7 @@ class QueryIntent:
     period_start: date
     period_end: date
     trimester_num: int | None = None
+    subject_filter: str | None = None  # materia específica a filtrar
 
 
 def is_query_message(text: str) -> bool:

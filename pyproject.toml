@@ -21,9 +21,15 @@ dependencies = [
     "zhipuai>=2.1.0",
     # HTTP
     "httpx>=0.28.0",
+    # Event loop (Linux/macOS)
+    "uvloop>=0.22.1; sys_platform != 'win32'",
+    # Cache / estado persistente (opcional — degradado a RAM si no hay servidor Redis)
+    "redis>=5.0.0",
     # Logging
     "loguru>=0.7.0",
     "groq>=1.1.1",
+    "openai>=2.28.0",
+    "pyjwt>=2.8.0",
 ]
 
 [project.optional-dependencies]
@@ -34,9 +40,10 @@ dev = [
 ]
 
 [project.scripts]
-schoolai-bot = "schoolai.bot.main:run"
-schoolai-dev = "schoolai.bot.dev:run"
-schoolai-api = "schoolai.api.runner:run"
+schoolai-bot     = "schoolai.bot.main:run"
+schoolai-bot-dev = "schoolai.bot.main_dev:run_dev"
+schoolai-dev     = "schoolai.bot.dev:run"
+schoolai-api     = "schoolai.api.runner:run"
 
 [build-system]
 requires = ["hatchling"]

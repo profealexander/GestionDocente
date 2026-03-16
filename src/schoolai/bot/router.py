@@ -3,9 +3,9 @@
 import asyncio
 
 from loguru import logger
-from zhipuai import ZhipuAI
 
 from schoolai.config import settings
+from schoolai.skills.llm import get_client, parse_model
 
 CLASSIFIER_PROMPT = """Classify the following teacher message into exactly one word:
 
@@ -22,28 +22,29 @@ Classification:"""
 
 
 async def classify(text: str) -> str:
-    if not settings.glm_api_key:
-        logger.warning("No GLM API key, defaulting to homework")
-        return "homework"
+    provider, model = parse_model(settings.llm_router)
 
     try:
-        client = ZhipuAI(api_key=settings.glm_api_key)
+        client = get_client(provider, timeout=30.0)
+    except ValueError as e:
+        logger.warning(f"[router] {e}, defaulting to unknown")
+        return "unknown"
 
+    try:
         def _call():
             return client.chat.completions.create(
-                model="glm-4.5-air",
-                messages=[
-                    {"role": "user", "content": CLASSIFIER_PROMPT.format(text=text)},
-                ],
-                extra_body={"temperature": 0.0},
+                model=model,
+                messages=[{"role": "user", "content": CLASSIFIER_PROMPT.format(text=text)}],
+                temperature=0.0,
+                max_tokens=10,
             )
 
         response = await asyncio.to_thread(_call)
-        result = response.choices[0].message.content.strip().lower()
+        result = (response.choices[0].message.content or "").strip().lower()
         if result not in ("attendance", "homework", "chat", "unknown"):
             result = "unknown"
         logger.info(f"[router] '{text[:50]}' → {result}")
         return result
     except Exception as e:
-        logger.error(f"Router error: {e}")
+        logger.error(f"[router] error: {e}")
         return "unknown"

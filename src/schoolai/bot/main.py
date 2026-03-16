@@ -1,17 +1,32 @@
+import sys
+from pathlib import Path
+
+try:
+    import uvloop
+    uvloop.install()
+except ImportError:
+    pass  # uvloop no disponible (Windows/CI)
+
 from loguru import logger
 from telegram import Update
 from telegram.ext import ApplicationBuilder, CallbackQueryHandler, CommandHandler, ContextTypes, MessageHandler, filters
 from telegram.request import HTTPXRequest
 
-from loguru import logger
-
-from schoolai.bot.action_handler import handle_act_callback
+from schoolai.bot.action_handler import handle_act_callback, handle_selection_callback
 from schoolai.bot.attendance_handler import handle_attendance_callback
 from schoolai.bot.db_handler import handle_db_callback, handle_db_command, handle_db_text
 from schoolai.bot.help_handler import handle_help_back, handle_help_callback, handle_help_command
-from schoolai.bot.query_handler import handle_query_callback
 from schoolai.bot.handlers import handle_text, handle_voice
-from schoolai.bot.state import cleanup_stale, clear_attendance, clear_db_flow, clear_pending, clear_query, get_db_flow
+from schoolai.bot.jornada_handler import handle_jornada_callback, handle_jornada_command, job_morning_notify
+from schoolai.bot.position_handler import handle_position_callback, handle_position_text
+from schoolai.bot.schedule_handler import handle_schedule_callback, handle_schedule_text
+from schoolai.bot.state import (
+    cleanup_stale, clear_attendance, clear_db_flow, clear_jornada,
+    clear_position_flow, clear_schedule_flow, clear_selection,
+    get_db_flow, get_position_flow, get_schedule_flow,
+    clear_jornada_all_stale,
+)
+from schoolai.bot.mode import set_mode
 from schoolai.config import settings
 
 
@@ -19,22 +34,31 @@ async def _handle_cancel(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
     user_id = update.effective_user.id
     clear_db_flow(user_id)
     clear_attendance(user_id)
-    clear_pending(user_id)
-    clear_query(user_id)
+    clear_selection(user_id)
+    clear_schedule_flow(user_id)
+    clear_position_flow(user_id)
+    clear_jornada(user_id)
     await update.message.reply_text("Operación cancelada.")
 
 
 async def _run_cleanup(context: ContextTypes.DEFAULT_TYPE) -> None:
     removed = cleanup_stale()
+    removed += clear_jornada_all_stale()
     if removed:
         logger.info(f"[TTL] cleanup removed {removed} stale states")
 
 
 class _DbFlowFilter(filters.MessageFilter):
-    """Only matches messages while a /db flow is active for the sender."""
+    """Matches messages while a /db or schedule flow is active for the sender."""
     def filter(self, message) -> bool:
         user = message.from_user
-        return user is not None and get_db_flow(user.id) is not None
+        if user is None:
+            return False
+        return (
+            get_db_flow(user.id) is not None
+            or get_schedule_flow(user.id) is not None
+            or get_position_flow(user.id) is not None
+        )
 
 
 async def _debug_callback(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
@@ -46,15 +70,71 @@ async def _debug_callback(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
 
 async def _error_handler(update: object, context: ContextTypes.DEFAULT_TYPE) -> None:
     logger.error(f"[bot error] {context.error}", exc_info=context.error)
+    if settings.admin_telegram_id:
+        try:
+            user = getattr(update, "effective_user", None)
+            msg  = getattr(getattr(update, "message", None), "text", "—")
+            text = (
+                f"⚠️ <b>Error en SchoolAI</b>\n"
+                f"Usuario: {user.id if user else '?'} (@{user.username if user else '?'})\n"
+                f"Mensaje: <code>{msg[:200]}</code>\n"
+                f"Error: <code>{context.error}</code>"
+            )
+            await context.bot.send_message(settings.admin_telegram_id, text, parse_mode="HTML")
+        except Exception:
+            pass
 
 
-def run() -> None:
-    logger.info("Starting SchoolAI bot...")
+async def _handle_db_or_schedule_text(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    """Routes text to schedule/position handlers first, falls back to db handler."""
+    if await handle_schedule_text(update, context):
+        return
+    if await handle_position_text(update, context):
+        return
+    await handle_db_text(update, context)
+
+
+async def _post_init(app) -> None:
+    from schoolai.skills.extractor.llm import load_course_map
+    from schoolai.bot.mode import is_jornada
+    from schoolai.bot.state import init_redis
+    init_redis(settings.redis_url)
+    await load_course_map()
+    app.bot_data["jornada_mode"] = is_jornada()
+
+
+def _setup_logging() -> None:
+    log_dir = Path(settings.log_dir)
+    log_dir.mkdir(parents=True, exist_ok=True)
+    logger.remove()
+    logger.add(sys.stderr, level="INFO", colorize=True,
+               format="<green>{time:HH:mm:ss}</green> | <level>{level:<7}</level> | {message}")
+    logger.add(log_dir / "schoolai_{time:YYYY-MM-DD}.log",
+               level="DEBUG", rotation="00:00", retention="30 days", compression="gz",
+               format="{time:YYYY-MM-DD HH:mm:ss} | {level:<7} | {message}")
+
+
+def run(dev: bool = False) -> None:
+    import datetime as _dt
+
+    _setup_logging()
+
+    if dev and settings.telegram_bot_token_dev:
+        token = settings.telegram_bot_token_dev
+        set_mode("jornada")
+        label = "JORNADA"
+    else:
+        token = settings.telegram_bot_token
+        set_mode("libre")
+        label = "LIBRE"
+
+    logger.info(f"Starting SchoolAI bot [Modo {label}]...")
     request = HTTPXRequest(connect_timeout=20, read_timeout=20, write_timeout=20)
     app = (
         ApplicationBuilder()
-        .token(settings.telegram_bot_token)
+        .token(token)
         .request(request)
+        .post_init(_post_init)
         .build()
     )
 
@@ -63,25 +143,30 @@ def run() -> None:
 
     app.add_error_handler(_error_handler)
 
-    # Cancelar cualquier flujo activo
+    # ── Handlers comunes a ambos modos ────────────────────────────────────────
     app.add_handler(CommandHandler("cancelar", _handle_cancel))
-    # Help
     app.add_handler(CommandHandler("ayuda", handle_help_command))
     app.add_handler(CallbackQueryHandler(handle_help_back, pattern=r"^help:back$"))
     app.add_handler(CallbackQueryHandler(handle_help_callback, pattern=r"^help:"))
-    # DB skill
     app.add_handler(CommandHandler("db", handle_db_command))
     app.add_handler(CallbackQueryHandler(handle_db_callback, pattern=r"^db_"))
-    # Attendance skill
+    app.add_handler(CallbackQueryHandler(handle_schedule_callback, pattern=r"^sch_"))
     app.add_handler(CallbackQueryHandler(handle_attendance_callback, pattern=r"^att_"))
-    # Query skill
-    app.add_handler(CallbackQueryHandler(handle_query_callback, pattern=r"^qry_"))
-    # Action handler (LLM extractor course selection)
     app.add_handler(CallbackQueryHandler(handle_act_callback, pattern=r"^act_grade:"))
-    # Catch-all for unhandled callbacks (debug)
+    app.add_handler(CallbackQueryHandler(handle_selection_callback, pattern=r"^sel:"))
+    app.add_handler(CallbackQueryHandler(handle_position_callback, pattern=r"^pos_"))
+
+    # ── Handlers exclusivos de Modo Jornada ───────────────────────────────────
+    if dev:
+        app.job_queue.run_daily(job_morning_notify, time=_dt.time(6, 0, 0))
+        app.add_handler(CommandHandler("jornada", handle_jornada_command))
+        app.add_handler(CallbackQueryHandler(handle_jornada_callback, pattern=r"^jor_"))
+
+    # ── Catch-all callbacks (debug) ───────────────────────────────────────────
     app.add_handler(CallbackQueryHandler(_debug_callback))
 
-    app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND & _DbFlowFilter(), handle_db_text))
+    # ── Mensajes de texto ─────────────────────────────────────────────────────
+    app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND & _DbFlowFilter(), _handle_db_or_schedule_text))
     app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_text))
     app.add_handler(MessageHandler(filters.VOICE | filters.AUDIO, handle_voice))
 

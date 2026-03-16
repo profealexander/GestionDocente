@@ -6,8 +6,9 @@ from enum import Enum
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from schoolai.db.models.person import Person, PersonRole
-from schoolai.skills.db.parser import normalize
+from schoolai.db.models.person import Person
+from schoolai.skills.db.parser import format_name
+from schoolai.skills.utils.text import normalize
 
 
 class MatchType(Enum):
@@ -97,7 +98,6 @@ def build_preview_lines(results: list[DedupeResult], new_role: str) -> list[str]
     """Format results for display in Telegram."""
     lines = []
     for r in results:
-        from schoolai.skills.db.parser import format_name
         name = format_name(r.parsed)
         match r.match_type:
             case MatchType.NEW:

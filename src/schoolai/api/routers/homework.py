@@ -6,21 +6,28 @@ from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from schoolai.api.auth import get_current_user
 from schoolai.api.schemas import HomeworkClose, HomeworkOut, MessageOut
 from schoolai.db.connection import get_session
 from schoolai.db.models.homework import Homework
 
-router = APIRouter(prefix="/homework", tags=["Homework"])
+router = APIRouter(
+    prefix="/homework",
+    tags=["Homework"],
+    dependencies=[Depends(get_current_user)],
+)
 
 
 def _to_out(hw: Homework) -> HomeworkOut:
     return HomeworkOut(
         id=hw.id,
-        homework=hw.homework,
+        description=hw.homework,
         grade_id=hw.grade_id,
         grade_name=hw.grade.name if hw.grade else "",
         subject_id=hw.subject_id,
         subject_name=hw.subject.name if hw.subject else None,
+        sequence_num=hw.sequence_num,
+        trimester_num=hw.trimester_num,
         submission_date=hw.submission_date,
         delivery_date=hw.delivery_date,
         is_open=hw.is_open,

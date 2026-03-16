@@ -1,5 +1,5 @@
 """Esquemas de datos extraídos por el LLM."""
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from typing import Literal
 
 
@@ -24,9 +24,20 @@ class HomeworkExtract:
 @dataclass
 class QueryExtract:
     query_type: Literal["attendance", "homework"]
-    course: str | None
+    courses: list[str]   # abreviaturas de cursos, [] si no se mencionó ninguno
     period: Literal["today", "yesterday", "week", "last_week", "month", "last_month", "trimester"]
-    complete: bool     # False si falta course
+    complete: bool       # False si courses está vacío
+    subject: str | None = None  # materia específica si se mencionó, ej: "Filosofía"
+
+
+@dataclass
+class HomeworkReportExtract:
+    names: list[str]           # quienes no cumplieron
+    homework_ref: int | None   # número de tarea (ej: 3)
+    course: str | None
+    subject: str | None
+    status: str                # "missing" | "late" | "partial"
+    complete: bool             # False si falta course o homework_ref
 
 
 @dataclass
@@ -36,5 +47,5 @@ class ChatExtract:
 
 @dataclass
 class ExtractionResult:
-    intent: Literal["attendance", "homework", "query", "chat"]
-    data: AttendanceExtract | HomeworkExtract | QueryExtract | ChatExtract
+    intent: Literal["attendance", "homework", "homework_report", "query", "chat"]
+    data: AttendanceExtract | HomeworkExtract | HomeworkReportExtract | QueryExtract | ChatExtract

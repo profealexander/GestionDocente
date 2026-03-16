@@ -18,9 +18,12 @@ class Homework(Base):
     )
     delivery_date: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     is_open: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False)
+    sequence_num: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    trimester_num: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
 
     grade: Mapped["Grade"] = relationship("Grade", lazy="joined")  # noqa: F821
     subject: Mapped["Subject"] = relationship("Subject", lazy="joined")  # noqa: F821
+    submissions: Mapped[list["HomeworkSubmission"]] = relationship("HomeworkSubmission", back_populates="homework", cascade="all, delete-orphan")  # noqa: F821
 
     def __repr__(self) -> str:
         return f"<Homework id={self.id} grade_id={self.grade_id}>"
