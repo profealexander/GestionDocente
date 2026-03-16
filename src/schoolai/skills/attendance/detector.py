@@ -3,6 +3,7 @@
 import re
 import unicodedata
 from difflib import SequenceMatcher
+from functools import lru_cache
 
 from schoolai.skills.attendance.constants import ABSENT, LATE, JUSTIFIED
 
@@ -53,16 +54,29 @@ NAME_SEP_RE = re.compile(r"\s*(?:,|;|\sy\s|\se\s)\s*")
 # Course-like tokens e.g. "3ro", "1ro", "2do"
 COURSE_TOKEN_RE = re.compile(r"^\d+[a-záéíóú°]*$", re.IGNORECASE)
 
+# Pre-compiled keyword patterns (avoids recompilation on every message)
+_ALL_KW_RE = re.compile(
+    r"\b(?:" + "|".join(re.escape(kw) for kw in ALL_KEYWORDS) + r")\b"
+)
+_JUSTIFIED_RES = [re.compile(rf"\b{re.escape(kw)}\b") for kw in JUSTIFIED_KEYWORDS]
+_LATE_RES      = [re.compile(rf"\b{re.escape(kw)}\b") for kw in LATE_KEYWORDS]
+_ABSENCE_RES   = [re.compile(rf"\b{re.escape(kw)}\b") for kw in ABSENCE_KEYWORDS]
+_CLEAN_NAME_RE = re.compile(r"[^\w\sáéíóúüñÁÉÍÓÚÜÑ]")
+_AFTER_SPLIT_RE = re.compile(r"[.!?\n]")
+_TRIM_PRE_RE    = re.compile(r"^[\s:,;]+")
+_TRIM_POST_RE   = re.compile(r"[\s:,;]+$")
 
+
+@lru_cache(maxsize=4096)
 def _normalize(text: str) -> str:
+    """Cache LRU: keywords y fragmentos de nombres se repiten en cada mensaje."""
     nfkd = unicodedata.normalize("NFKD", text.lower())
     return "".join(c for c in nfkd if not unicodedata.combining(c))
 
 
 def is_attendance_message(text: str) -> bool:
     """Exact keyword match."""
-    t = _normalize(text)
-    return any(re.search(rf"\b{re.escape(kw)}\b", t) for kw in ALL_KEYWORDS)
+    return bool(_ALL_KW_RE.search(_normalize(text)))
 
 
 def is_attendance_message_fuzzy(text: str) -> bool:
@@ -88,15 +102,15 @@ def extract_absences(text: str) -> list[dict]:
     # Find all keyword positions with their status
     # Order: J > AT > F so higher priority wins on overlap
     keyword_groups = [
-        (JUSTIFIED_KEYWORDS, JUSTIFIED),
-        (LATE_KEYWORDS, LATE),
-        (ABSENCE_KEYWORDS, ABSENT),
+        (_JUSTIFIED_RES, JUSTIFIED),
+        (_LATE_RES, LATE),
+        (_ABSENCE_RES, ABSENT),
     ]
 
     spans: list[tuple[int, int, str]] = []  # (kw_start, kw_end, status)
-    for keywords, status in keyword_groups:
-        for kw in keywords:
-            for m in re.finditer(rf"\b{re.escape(kw)}\b", t_lower):
+    for patterns, status in keyword_groups:
+        for pat in patterns:
+            for m in pat.finditer(t_lower):
                 spans.append((m.start(), m.end(), status))
 
     if not spans:
@@ -109,16 +123,16 @@ def extract_absences(text: str) -> list[dict]:
 
         # Text AFTER keyword (most common: "faltaron Juan, María")
         after = text[kw_end:next_kw_start].strip()
-        after = re.split(r"[.!?\n]", after)[0]
-        after = re.sub(r"^[\s:,;]+", "", after)
+        after = _AFTER_SPLIT_RE.split(after)[0]
+        after = _TRIM_PRE_RE.sub("", after)
         _extract_names(after, status, seen, results)
 
         # Text BEFORE keyword on same clause (handles: "Juan llegó tarde")
         # Take up to previous keyword end or sentence start
         prev_end = spans[i - 1][1] if i > 0 else 0
         before = text[prev_end:kw_start].strip()
-        before = re.split(r"[.!?\n]", before)[-1]  # last sentence fragment
-        before = re.sub(r"[\s:,;]+$", "", before)
+        before = _AFTER_SPLIT_RE.split(before)[-1]  # last sentence fragment
+        before = _TRIM_POST_RE.sub("", before)
         _extract_names(before, status, seen, results)
 
     return results
@@ -135,7 +149,7 @@ def _extract_names(fragment: str, status: str, seen: set, results: list) -> None
 
 
 def _clean_name(raw: str) -> str:
-    raw = re.sub(r"[^\w\sáéíóúüñÁÉÍÓÚÜÑ]", " ", raw).strip()
+    raw = _CLEAN_NAME_RE.sub(" ", raw).strip()
     words = [
         w for w in raw.split()
         if _normalize(w) not in NOISE_WORDS

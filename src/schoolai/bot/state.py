@@ -3,33 +3,7 @@
 import time
 from dataclasses import dataclass, field
 from datetime import date
-from typing import Literal
-
-
-@dataclass
-class PendingHomework:
-    text: str
-    grade_id: int
-    grade_name: str
-    delivery: date | None
-
-
-# user_id -> pending homework waiting for subject
-_pending: dict[int, PendingHomework] = {}
-
-
-def set_pending(user_id: int, pending: PendingHomework) -> None:
-    _pending[user_id] = pending
-    _touch("pending", user_id)
-
-
-def get_pending(user_id: int) -> PendingHomework | None:
-    return _pending.get(user_id)
-
-
-def clear_pending(user_id: int) -> None:
-    _pending.pop(user_id, None)
-    _expire("pending", user_id)
+from typing import Any, Literal
 
 
 # ── DB Skill state ────────────────────────────────────────────────────────────
@@ -65,6 +39,45 @@ def clear_db_flow(user_id: int) -> None:
     _expire("db", user_id)
 
 
+# ── Unified selection state ───────────────────────────────────────────────────
+#
+# Covers three disambiguation flows:
+#   "att_student"  — pick which student was absent (attendance)
+#   "hw_task"      — pick which homework task (report)
+#   "hw_student"   — pick which student for homework report; may chain to hw_task
+#
+# options: [{label: str, value: str}]   (value is the DB id as string)
+# payload: action-specific dict (see action_handler.py for details)
+
+SelectionAction = Literal["att_student", "hw_task", "hw_student"]
+
+
+@dataclass
+class PendingSelection:
+    chat_id: int
+    prompt: str
+    options: list[dict]          # [{label: str, value: str}]
+    action: SelectionAction
+    payload: dict[str, Any]      # depends on action
+
+
+_selections: dict[int, PendingSelection] = {}
+
+
+def set_selection(user_id: int, pending: PendingSelection) -> None:
+    _selections[user_id] = pending
+    _touch("sel", user_id)
+
+
+def get_selection(user_id: int) -> PendingSelection | None:
+    return _selections.get(user_id)
+
+
+def clear_selection(user_id: int) -> None:
+    _selections.pop(user_id, None)
+    _expire("sel", user_id)
+
+
 # ── Attendance state ──────────────────────────────────────────────────────────
 
 AttendanceStep = Literal["await_grade", "await_ambiguous"]
@@ -98,37 +111,12 @@ def clear_attendance(user_id: int) -> None:
     _expire("attendance", user_id)
 
 
-# ── Query state ───────────────────────────────────────────────────────────────
-
-@dataclass
-class QueryFlow:
-    intent: object  # QueryIntent
-
-
-_queries: dict[int, QueryFlow] = {}
-
-
-def set_query(user_id: int, flow: QueryFlow) -> None:
-    _queries[user_id] = flow
-    _touch("query", user_id)
-
-
-def get_query(user_id: int) -> QueryFlow | None:
-    return _queries.get(user_id)
-
-
-def clear_query(user_id: int) -> None:
-    _queries.pop(user_id, None)
-    _expire("query", user_id)
-
-
 # ── TTL cleanup ───────────────────────────────────────────────────────────────
 
 _timestamps: dict[str, dict[int, float]] = {
-    "pending": {},
     "db": {},
     "attendance": {},
-    "query": {},
+    "sel": {},
 }
 _TTL = 3600  # 60 minutos
 
@@ -146,10 +134,9 @@ def cleanup_stale() -> int:
     now = time.monotonic()
     removed = 0
     for store, data_dict in [
-        ("pending", _pending),
         ("db", _db_flows),
         ("attendance", _attendance),
-        ("query", _queries),
+        ("sel", _selections),
     ]:
         expired = [uid for uid, ts in _timestamps[store].items() if now - ts > _TTL]
         for uid in expired:

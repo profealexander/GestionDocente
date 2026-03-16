@@ -17,7 +17,7 @@ _GRADE_ALIASES = {
     # Segundo BT
     "2bt": "SEGUNDO BT", "2 bt": "SEGUNDO BT", "2bachi": "SEGUNDO BT",
     "2bachillerato": "SEGUNDO BT", "2do bt": "SEGUNDO BT", "2dobt": "SEGUNDO BT",
-    "2° bt": "SEGUNDO BT", "2da bt": "SEGUNDO BT", "2da bt": "SEGUNDO BT",
+    "2° bt": "SEGUNDO BT", "2da bt": "SEGUNDO BT",
     "segundo bt": "SEGUNDO BT", "segunda bt": "SEGUNDO BT",
     "segundo bachillerato": "SEGUNDO BT", "segunda bachillerato": "SEGUNDO BT",
     # Tercero BT

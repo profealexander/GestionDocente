@@ -16,11 +16,13 @@ router = APIRouter(prefix="/homework", tags=["Homework"])
 def _to_out(hw: Homework) -> HomeworkOut:
     return HomeworkOut(
         id=hw.id,
-        homework=hw.homework,
+        description=hw.homework,
         grade_id=hw.grade_id,
         grade_name=hw.grade.name if hw.grade else "",
         subject_id=hw.subject_id,
         subject_name=hw.subject.name if hw.subject else None,
+        sequence_num=hw.sequence_num,
+        trimester_num=hw.trimester_num,
         submission_date=hw.submission_date,
         delivery_date=hw.delivery_date,
         is_open=hw.is_open,

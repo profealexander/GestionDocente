@@ -1,6 +1,5 @@
 from loguru import logger
 from telegram import Update
-from telegram.constants import ParseMode
 from telegram.ext import ContextTypes
 
 from schoolai.bot.transcription import transcribe
@@ -20,7 +19,8 @@ async def handle_text(update: Update, context: ContextTypes.DEFAULT_TYPE) -> Non
         return
 
     text = update.message.text.strip()
-    logger.info(f"[text] {user.id}: {text[:80]}")
+    logger.info(f"[text] user={user.id} (@{user.username}): {text[:200]}")
+    logger.debug(f"[text:full] user={user.id}: {text}")
 
     await _dispatch(update, user.id, text)
 
@@ -56,7 +56,11 @@ async def handle_voice(update: Update, context: ContextTypes.DEFAULT_TYPE) -> No
 async def _dispatch(update: Update, user_id: int, text: str) -> None:
     from schoolai.skills.extractor.llm import extract
     from schoolai.skills.ia.history import get as get_history, append as append_history
-    from schoolai.bot.action_handler import handle_extraction
+    from schoolai.bot.action_handler import handle_extraction, resolve_selection_text
+
+    # Estados pendientes: si el usuario escribió un número (1, 2, 3...)
+    if await resolve_selection_text(update, user_id):
+        return
 
     # Obtener historial para contexto
     history = get_history(user_id)
@@ -66,6 +70,14 @@ async def _dispatch(update: Update, user_id: int, text: str) -> None:
 
     # Guardar en historial
     append_history(user_id, "user", text)
+
+    if result is None:
+        await update.message.reply_text(
+            "No pude interpretar el mensaje. ¿Puedes reformularlo?\n"
+            "Ejemplo: _\"Recalde no asistió el viernes, décimo EGB\"_",
+            parse_mode="Markdown",
+        )
+        return
 
     if result.intent == "chat":
         await _run_ia_skill(update, user_id, text)

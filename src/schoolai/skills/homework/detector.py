@@ -10,7 +10,11 @@ HOMEWORK_KEYWORDS = [
 
 COURSE_PATTERNS = [
     r"\b(inicial\s+[12]|preparatoria)\b",
-    r"\b(segundo|tercero|cuarto|quinto|sexto|séptimo|septimo|octavo|noveno|décimo|decimo)\s+egb\b",
+    # EGB con sufijo explícito (cubre segundo y tercero que son ambiguos con BT)
+    r"\b(segundo|tercero|cuarto|quinto|sexto|s[eé]ptimo|octavo|noveno|d[eé]cimo)\s+egb\b",
+    # EGB sin sufijo — solo los que no son ambiguos con bachillerato (4to en adelante)
+    r"\b(cuarto|quinto|sexto|s[eé]ptimo|octavo|noveno|d[eé]cimo)\b(?!\s*(bt|bachi|bachillerato|egb))",
+    # Bachillerato
     r"\b(primero|1ero|1ro|1er|1°|1o|primer)\s*(bt|bachillerato|bachi)\b",
     r"\b(segundo|segunda|2do|2da|2°|2o)\s*(bt|bachillerato|bachi)\b",
     r"\b(tercero|tercera|3ero|3ro|3°|3o)\s*(bt|bachillerato|bachi)\b",
@@ -37,6 +41,11 @@ WEEKDAY_MAP = {
     "jueves": 3, "viernes": 4, "sábado": 5, "sabado": 5, "domingo": 6,
 }
 
+# Pre-compiled at module load — avoids recompilation on every call
+_COURSE_PATTERNS_RE   = [re.compile(p) for p in COURSE_PATTERNS]
+_SUBJECT_PATTERNS_RE  = [re.compile(p) for p in SUBJECT_PATTERNS]
+_DATE_PATTERNS_RE     = [(re.compile(p), kind) for p, kind in DATE_PATTERNS]
+
 
 def is_homework_message(text: str) -> bool:
     text_lower = text.lower()
@@ -45,8 +54,8 @@ def is_homework_message(text: str) -> bool:
 
 def extract_course(text: str) -> str | None:
     text_lower = text.lower()
-    for pattern in COURSE_PATTERNS:
-        match = re.search(pattern, text_lower)
+    for pat in _COURSE_PATTERNS_RE:
+        match = pat.search(text_lower)
         if match:
             return match.group(0).strip()
     return None
@@ -54,8 +63,8 @@ def extract_course(text: str) -> str | None:
 
 def extract_subject(text: str) -> str | None:
     text_lower = text.lower()
-    for pattern in SUBJECT_PATTERNS:
-        match = re.search(pattern, text_lower)
+    for pat in _SUBJECT_PATTERNS_RE:
+        match = pat.search(text_lower)
         if match:
             return match.group(0).strip()
     return None
@@ -65,8 +74,8 @@ def extract_date(text: str) -> date | None:
     text_lower = text.lower()
     today = date.today()
 
-    for pattern, kind in DATE_PATTERNS:
-        match = re.search(pattern, text_lower)
+    for pat, kind in _DATE_PATTERNS_RE:
+        match = pat.search(text_lower)
         if not match:
             continue
 

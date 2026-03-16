@@ -1,6 +1,7 @@
 """Query the DB and return structured data."""
 
-from dataclasses import dataclass, field
+import asyncio
+from dataclasses import dataclass
 from datetime import date
 
 from sqlalchemy import select, and_
@@ -102,6 +103,14 @@ async def resolve_attendance(
         records=records,
         total_students=total,
     )
+
+
+async def resolve_homework_multi(
+    intent: QueryIntent,
+    grade_ids: list[int],
+    session: AsyncSession,
+) -> list["HomeworkData"]:
+    return list(await asyncio.gather(*[resolve_homework(intent, gid, session) for gid in grade_ids]))
 
 
 async def resolve_homework(

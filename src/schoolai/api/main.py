@@ -4,7 +4,7 @@ from fastapi import FastAPI
 from fastapi.openapi.docs import get_redoc_html, get_swagger_ui_html
 from fastapi.openapi.utils import get_openapi
 
-from schoolai.api.routers import grades, homework, subjects
+from schoolai.api.routers import attendance, grades, homework, students, subjects
 
 # ── App ───────────────────────────────────────────────────────────────────────
 
@@ -17,10 +17,12 @@ app = FastAPI(
         "- **`/docs`** — Interactive API explorer (Swagger UI)\n"
         "- **`/redoc`** — Technical reference (ReDoc)\n"
         "- **`/openapi.json`** — OpenAPI schema\n\n"
-        "## Skills\n"
-        "- **Homework** — Register and query academic tasks\n"
-        "- **Grades** — School grade catalog\n"
+        "## Resources\n"
+        "- **Grades** — School grade catalog with level and sublevel\n"
         "- **Subjects** — Academic subject catalog\n"
+        "- **Students** — Student roster by grade\n"
+        "- **Homework** — Register and query academic tasks\n"
+        "- **Attendance** — Absence, tardiness and justified records\n"
     ),
     contact={
         "name": "SchoolAI",
@@ -36,9 +38,11 @@ app = FastAPI(
 
 # ── Routers ───────────────────────────────────────────────────────────────────
 
-app.include_router(homework.router)
 app.include_router(grades.router)
 app.include_router(subjects.router)
+app.include_router(students.router)
+app.include_router(homework.router)
+app.include_router(attendance.router)
 
 
 # ── Custom docs ───────────────────────────────────────────────────────────────

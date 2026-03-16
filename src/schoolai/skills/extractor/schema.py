@@ -1,5 +1,5 @@
 """Esquemas de datos extraídos por el LLM."""
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from typing import Literal
 
 
@@ -24,9 +24,9 @@ class HomeworkExtract:
 @dataclass
 class QueryExtract:
     query_type: Literal["attendance", "homework"]
-    course: str | None
+    courses: list[str]   # abreviaturas de cursos, [] si no se mencionó ninguno
     period: Literal["today", "yesterday", "week", "last_week", "month", "last_month", "trimester"]
-    complete: bool     # False si falta course
+    complete: bool       # False si courses está vacío
 
 
 @dataclass
