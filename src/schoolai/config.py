@@ -28,9 +28,9 @@ class Settings(BaseSettings):
     telegram_allowed_users: str = ""  # comma-separated user IDs
 
     # ── LLM model per skill (format: "provider/model") ────────────────────────
-    llm_extractor: str = "zhipu/glm-4-flash"    # extractor JSON — rápido
-    llm_chat:      str = "zhipu/glm-4.5-air"    # asistente IA — thinking model
-    llm_router:    str = "zhipu/glm-4-flash"    # clasificador de mensajes
+    llm_extractor: str = "groq/llama-3.1-8b-instant"   # extractor JSON — rápido
+    llm_chat:      str = "groq/llama-3.3-70b-versatile" # asistente IA
+    llm_router:    str = "groq/llama-3.1-8b-instant"   # clasificador de mensajes
 
     # ── API keys por proveedor ─────────────────────────────────────────────────
     zhipu_api_key:      str = ""
