@@ -82,8 +82,9 @@ CRITICAL DISTINCTION — query vs homework_report:
 attendance:
 {{"intent":"attendance","names":["full name"],"course":"course or null","date":"today|yesterday|YYYY-MM-DD","status":"absent|late|justified","complete":true/false}}
 - complete=false if course is null
-- status default: "absent" | "tardó/atraso" → "late" | "justificado" → "justified"
+- status default: "absent" | "tardó/atraso" → "late" | "justificado" → "justified" | "todos asistieron/todos presentes/nadie faltó" → "all_present" with names=[]
 - date default: "today"
+- "todos asistieron hoy en bachillerato" → {{"intent":"attendance","names":[],"course":"1bt","date":"today","status":"all_present","complete":true}}
 
 homework:
 {{"intent":"homework","description":"corrected full description","course":"course or null","subject":"subject or null","delivery_date":"YYYY-MM-DD|weekday name|null","complete":true/false}}

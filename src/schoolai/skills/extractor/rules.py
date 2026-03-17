@@ -90,6 +90,11 @@ _JUSTIFIED_RE = re.compile(
     r"\b(justificad[ao]|con\s+permiso|permiso\s+m[eé]dico|enferm[ao])\b", re.IGNORECASE
 )
 _YESTERDAY_RE = re.compile(r"\bayer\b", re.IGNORECASE)
+_ALL_PRESENT_RE = re.compile(
+    r"\b(todos\s+asistieron|asistieron\s+todos|todos\s+presentes?|nadie\s+falt[oó]"
+    r"|todos\s+vinieron|sin\s+ausencias?|asistencia\s+completa)\b",
+    re.IGNORECASE,
+)
 
 # ── Homework keywords ─────────────────────────────────────────────────────────
 
@@ -268,6 +273,26 @@ def extract_prefilter(text: str) -> ExtractionResult | None:
     norm   = normalize(t)
     tokens = _norm_tokens(norm)
 
+    # Asistencia completa — patrón más específico, antes de queries
+    if _ALL_PRESENT_RE.search(t):
+        course = _extract_course(t)
+        if not course:
+            for group_norm in _COURSE_GROUPS:
+                if group_norm in norm:
+                    course = group_norm
+                    break
+        at_date = "yesterday" if _YESTERDAY_RE.search(t) else "today"
+        return ExtractionResult(
+            intent="attendance",
+            data=AttendanceExtract(
+                names=[],
+                course=course,
+                date=at_date,
+                status="all_present",
+                complete=True,
+            ),
+        )
+
     is_att = bool(_QUERY_ATT_RE.search(t)) or bool(tokens & _ATT_KW)
     is_hw  = bool(_QUERY_HW_RE.search(t))  or bool(tokens & _HW_KW)
 
@@ -297,6 +322,21 @@ def extract_fallback(text: str) -> ExtractionResult | None:
     """
     if not text.strip():
         return None
+
+    # ── Asistencia completa ───────────────────────────────────────────────────
+    if _ALL_PRESENT_RE.search(text):
+        course = _extract_course(text)
+        at_date = "yesterday" if _YESTERDAY_RE.search(text) else "today"
+        return ExtractionResult(
+            intent="attendance",
+            data=AttendanceExtract(
+                names=[],
+                course=course,
+                date=at_date,
+                status="all_present",
+                complete=True,
+            ),
+        )
 
     # ── Attendance ────────────────────────────────────────────────────────────
     pat, status = _first_status_re(text)

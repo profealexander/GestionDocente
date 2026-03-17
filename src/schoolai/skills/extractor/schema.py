@@ -8,7 +8,7 @@ class AttendanceExtract:
     names: list[str]
     course: str | None
     date: str          # "today" | "yesterday" | "YYYY-MM-DD"
-    status: Literal["absent", "late", "justified"]
+    status: Literal["absent", "late", "justified", "all_present"]
     complete: bool     # False si falta course
 
 

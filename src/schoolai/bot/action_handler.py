@@ -429,6 +429,17 @@ async def _reply_hw_report(bot, chat_id, hw, student_ids, student_names, not_fou
 # ── Attendance ────────────────────────────────────────────────────────────────
 
 async def _handle_attendance(update, user_id: int, result: ExtractionResult, data: AttendanceExtract) -> None:
+    if data.status == "all_present":
+        att_date = _parse_date(data.date)
+        course_str = (data.course or "el curso").upper()
+        await update.message.reply_text(
+            f"✅ *{course_str} — {att_date.strftime('%d/%m/%Y')}*\n"
+            f"Asistencia completa — sin ausencias registradas.",
+            parse_mode=ParseMode.MARKDOWN,
+        )
+        logger.info(f"[action] all_present user={user_id} course={data.course}")
+        return
+
     if not data.names:
         await update.message.reply_text(
             "Entendí que es asistencia pero no identifiqué nombres.\n"
