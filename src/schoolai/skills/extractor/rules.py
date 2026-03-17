@@ -15,31 +15,61 @@ from schoolai.skills.extractor.schema import (
 )
 from schoolai.skills.utils.text import normalize
 
-# ── Query pre-filter patterns ─────────────────────────────────────────────────
+# ── Query pre-filter — constantes compiladas al nivel de módulo (0 alloc por llamada) ──
 
+# Regex compilados una sola vez
 _QUERY_ATT_RE = re.compile(
-    r"\b(asistencia|inasistencias?|faltas?)\s+(de|del|en|hoy|ayer|esta\s+semana)?\b",
-    re.I,
+    r"\b(asistencia|inasistencias?|faltas?)\b", re.I,
 )
 _QUERY_HW_RE = re.compile(
-    r"\b(tareas?|deberes?|actividades?)\s+(de|del|en|para|pendientes?)?\b",
-    re.I,
+    r"\b(tareas?|deberes?|actividades?|pendientes?)\b", re.I,
 )
 _QUERY_TRIGGER_RE = re.compile(
-    r"^\s*(ver|dame|muestra|lista|mostrar|qu[eé]\s+hay|hay|cuántas?|cuantas?|"
-    r"reporte|listado)\b",
+    r"^\s*(ver|dame|muestra|lista|mostrar|que\s+hay|hay|cuantas?|reporte|listado)\b",
     re.I,
 )
 
-# Grupos de cursos para pre-filtro
+# Keywords pre-normalizados → frozenset para O(1) lookup
+_ATT_KW: frozenset[str] = frozenset(normalize(w) for w in (
+    "asistencia", "inasistencia", "inasistencias", "falta", "faltas",
+    "atrasos", "justificados", "quien falto", "quién faltó",
+))
+_HW_KW: frozenset[str] = frozenset(normalize(w) for w in (
+    "tareas", "tarea", "actividades", "actividad", "deberes", "pendientes",
+))
+_TRIGGER_KW: frozenset[str] = frozenset(normalize(w) for w in (
+    "ver", "dame", "muestra", "lista", "mostrar", "hay", "cuantas",
+    "cuántas", "reporte", "listado",
+))
+
+# Grupos de cursos pre-normalizados → O(1) lookup
 _COURSE_GROUPS: dict[str, list[str]] = {
-    "bachillerato": ["1bt", "2bt", "3bt"],
-    "basica superior": ["8egb", "9egb", "10egb"],
-    "basica media": ["5egb", "6egb", "7egb"],
-    "basica elemental": ["2egb", "3egb", "4egb"],
-    "egb": ["2egb", "3egb", "4egb", "5egb", "6egb", "7egb", "8egb", "9egb", "10egb"],
-    "inicial": ["i1", "i2"],
+    normalize("bachillerato"):      ["1bt", "2bt", "3bt"],
+    normalize("basica superior"):   ["8egb", "9egb", "10egb"],
+    normalize("basica media"):      ["5egb", "6egb", "7egb"],
+    normalize("basica elemental"):  ["2egb", "3egb", "4egb"],
+    normalize("egb"):               ["2egb", "3egb", "4egb", "5egb", "6egb",
+                                     "7egb", "8egb", "9egb", "10egb"],
+    normalize("inicial"):           ["i1", "i2"],
 }
+
+# Periodos: tokens normalizados → valor de período (orden importa: más específico primero)
+_PERIOD_TOKENS: tuple[tuple[str, str], ...] = (
+    (normalize("primer trimestre"),  "trimester_1"),
+    (normalize("trimestre 1"),       "trimester_1"),
+    (normalize("segundo trimestre"), "trimester_2"),
+    (normalize("trimestre 2"),       "trimester_2"),
+    (normalize("tercer trimestre"),  "trimester_3"),
+    (normalize("trimestre 3"),       "trimester_3"),
+    (normalize("semana pasada"),     "last_week"),
+    (normalize("esta semana"),       "week"),
+    (normalize("semana"),            "week"),
+    (normalize("mes pasado"),        "last_month"),
+    (normalize("este mes"),          "month"),
+    (normalize("mes"),               "month"),
+    (normalize("ayer"),              "yesterday"),
+    (normalize("hoy"),               "today"),
+)
 
 # ── Attendance keywords ───────────────────────────────────────────────────────
 
@@ -77,13 +107,13 @@ _COURSE_ALIASES: dict[str, str] = {
     "prep": "prep", "i1": "i1", "i2": "i2",
 }
 
-# Verbal names → abbrev (checked against normalize() output, lowercase no accents)
+# Verbal names → abbrev — keys pre-normalizados para comparar contra normalize(text)
 _COURSE_VERBAL: dict[str, str] = {
-    "primero bt": "1bt",    "segundo bt": "2bt",   "tercero bt": "3bt",
-    "segundo egb": "2egb",  "tercero egb": "3egb", "cuarto egb": "4egb",
-    "quinto egb": "5egb",   "sexto egb": "6egb",   "septimo egb": "7egb",
-    "octavo egb": "8egb",   "noveno egb": "9egb",  "decimo egb": "10egb",
-    "inicial 1": "i1",      "inicial 2": "i2",     "preparatoria": "prep",
+    normalize("primero bt"): "1bt",   normalize("segundo bt"): "2bt",   normalize("tercero bt"): "3bt",
+    normalize("segundo egb"): "2egb", normalize("tercero egb"): "3egb", normalize("cuarto egb"): "4egb",
+    normalize("quinto egb"): "5egb",  normalize("sexto egb"): "6egb",   normalize("septimo egb"): "7egb",
+    normalize("octavo egb"): "8egb",  normalize("noveno egb"): "9egb",  normalize("decimo egb"): "10egb",
+    normalize("inicial 1"): "i1",     normalize("inicial 2"): "i2",     normalize("preparatoria"): "prep",
 }
 
 # ── Helpers ───────────────────────────────────────────────────────────────────
@@ -141,24 +171,51 @@ def _first_status_re(text: str) -> tuple[re.Pattern | None, str]:
 
 # ── Helpers para pre-filtro ───────────────────────────────────────────────────
 
-def _extract_courses_prefilter(text: str) -> list[str]:
-    """Extrae lista de abreviaturas de cursos del texto (grupos + individuales)."""
-    norm = normalize(text).lower()
-    # Grupos primero
-    for group_name, abbrevs in _COURSE_GROUPS.items():
-        if group_name in norm:
-            return abbrevs
-    # Cursos verbales
-    found = []
-    for phrase, abbrev in _COURSE_VERBAL.items():
-        if phrase in norm:
-            found.append(abbrev)
+def _norm_tokens(text: str) -> frozenset[str]:
+    """Divide el texto normalizado en tokens → frozenset para O(1) lookup."""
+    return frozenset(normalize(text).split())
+
+
+def _extract_courses_prefilter(norm_text: str) -> list[str]:
+    """Extrae abreviaturas de cursos del texto ya normalizado.
+
+    Orden: verbales > abreviaturas directas > grupos.
+    Los verbales y abreviaturas son más específicos que los grupos
+    (evita que "noveno egb" devuelva todo EGB en vez de 9egb).
+    norm_text debe ser normalize(text) — evita re-normalizar en cada llamada.
+    """
+    # 1. Nombres verbales (más específicos: "noveno egb" → 9egb)
+    found = [abbrev for phrase, abbrev in _COURSE_VERBAL.items() if phrase in norm_text]
     if found:
         return found
-    # Abreviaturas directas
-    return [_COURSE_ALIASES[m.group(0).lower()]
-            for m in _COURSE_RE.finditer(text)
-            if m.group(0).lower() in _COURSE_ALIASES]
+    # 2. Abreviaturas directas (1BT, 9EGB, etc.)
+    direct = [_COURSE_ALIASES[m.group(0).lower()]
+              for m in _COURSE_RE.finditer(norm_text)
+              if m.group(0).lower() in _COURSE_ALIASES]
+    if direct:
+        return direct
+    # 3. Grupos (bachillerato, egb, inicial…) — solo si no hay curso específico
+    for group_norm, abbrevs in _COURSE_GROUPS.items():
+        if group_norm in norm_text:
+            return abbrevs
+    return []
+
+
+def _extract_period(norm_text: str, default: str) -> str:
+    """Detecta el período en el texto ya normalizado.
+
+    Recorre _PERIOD_TOKENS en orden (más específico primero) y retorna
+    el primer match. O(n) sobre una tupla pequeña y constante.
+    """
+    for token, period in _PERIOD_TOKENS:
+        if token in norm_text:
+            return period
+    return default
+
+
+def _is_query_type(norm_text: str, kw_set: frozenset[str]) -> bool:
+    """True si algún token del texto está en el conjunto de keywords."""
+    return bool(_norm_tokens(norm_text) & kw_set)
 
 
 # ── Public API ────────────────────────────────────────────────────────────────
@@ -167,70 +224,59 @@ def _extract_courses_prefilter(text: str) -> list[str]:
 def extract_prefilter(text: str) -> ExtractionResult | None:
     """Pre-filtro de reglas que corre ANTES del LLM para patrones obvios.
 
-    Captura consultas del tipo "asistencia de bachillerato", "tareas de 1bt",
-    "ver asistencia hoy", etc. sin necesidad de llamar al LLM.
-    Retorna None si el mensaje no es un patrón claro → pasar al LLM.
+    Técnicas aplicadas:
+    - Regex compilados al módulo (0 alloc por llamada)
+    - Keywords pre-normalizados en frozensets (O(1) lookup)
+    - normalize() con lru_cache(4096) — 1 sola llamada por mensaje
+    - Grupos de cursos pre-normalizados (O(1) substring)
+    - Período detectado con tuple ordenada (más específico primero)
+
+    Retorna None si el mensaje es ambiguo → pasar al LLM.
     """
     t = text.strip()
     if not t:
         return None
 
-    norm = normalize(t).lower()
-    is_query_trigger = bool(_QUERY_TRIGGER_RE.match(t))
+    # normalize() una sola vez — cacheada si el mismo texto se repite
+    norm = normalize(t)
 
-    # ── Consulta de asistencia ────────────────────────────────────────────────
-    is_att_query = bool(_QUERY_ATT_RE.search(t))
-    if is_att_query and (is_query_trigger or _QUERY_ATT_RE.match(t)):
-        courses = _extract_courses_prefilter(t)
-        # period
-        if "ayer" in norm:
-            period = "yesterday"
-        elif "semana" in norm:
-            period = "week"
-        elif "mes" in norm:
-            period = "month"
-        else:
-            period = "today"
+    is_att      = bool(_QUERY_ATT_RE.search(t)) or _is_query_type(norm, _ATT_KW)
+    is_hw       = bool(_QUERY_HW_RE.search(t))  or _is_query_type(norm, _HW_KW)
+    trigger     = bool(_QUERY_TRIGGER_RE.match(t)) or _is_query_type(norm, _TRIGGER_KW)
+    att_start   = bool(_QUERY_ATT_RE.match(t))   # mensaje empieza con keyword de asistencia
+    hw_start    = bool(_QUERY_HW_RE.match(t))    # mensaje empieza con keyword de tarea
+
+    # Ambiguo (ambos keywords presentes) → LLM
+    if is_att and is_hw:
+        return None
+
+    if is_att and (trigger or att_start):
+        courses = _extract_courses_prefilter(norm)
         return ExtractionResult(
             intent="query",
             data=QueryExtract(
                 query_type="attendance",
                 courses=courses,
-                period=period,
+                period=_extract_period(norm, "today"),
                 complete=bool(courses),
                 subject=None,
             ),
         )
 
-    # ── Consulta de tareas ────────────────────────────────────────────────────
-    is_hw_query = bool(_QUERY_HW_RE.search(t))
-    if is_hw_query and (is_query_trigger or _QUERY_HW_RE.match(t)):
-        courses = _extract_courses_prefilter(t)
-        # period
-        if "hoy" in norm:
-            period = "today"
-        elif "semana" in norm:
-            period = "week"
-        elif "trimestre 1" in norm or "primer trimestre" in norm:
-            period = "trimester_1"
-        elif "trimestre 2" in norm or "segundo trimestre" in norm:
-            period = "trimester_2"
-        elif "trimestre 3" in norm or "tercer trimestre" in norm:
-            period = "trimester_3"
-        else:
-            period = "trimester"
+    if is_hw and (trigger or hw_start):
+        courses = _extract_courses_prefilter(norm)
         return ExtractionResult(
             intent="query",
             data=QueryExtract(
                 query_type="homework",
                 courses=courses,
-                period=period,
+                period=_extract_period(norm, "trimester"),
                 complete=bool(courses),
                 subject=None,
             ),
         )
 
-    return None  # ambiguo → pasar al LLM
+    return None  # ambiguo → LLM
 
 
 def extract_fallback(text: str) -> ExtractionResult | None:
