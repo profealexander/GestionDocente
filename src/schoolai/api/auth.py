@@ -41,6 +41,18 @@ def create_access_token(telegram_id: int, role: str) -> str:
     return jwt.encode(payload, settings.jwt_secret_key, algorithm=_ALGORITHM)
 
 
+def create_access_token_for_teacher(teacher_id: int, username: str, role: str) -> str:
+    """Sign a JWT for PWA login (username/password flow)."""
+    exp = datetime.now(timezone.utc) + timedelta(hours=settings.jwt_expire_hours)
+    payload: dict[str, Any] = {
+        "sub": f"teacher:{teacher_id}",
+        "username": username,
+        "role": role,
+        "exp": exp,
+    }
+    return jwt.encode(payload, settings.jwt_secret_key, algorithm=_ALGORITHM)
+
+
 # ── Token verification ────────────────────────────────────────────────────────
 
 
@@ -64,9 +76,11 @@ async def get_current_user(
             settings.jwt_secret_key,
             algorithms=[_ALGORITHM],
         )
-        telegram_id = int(payload["sub"])
+        sub: str = payload["sub"]
         role: str = payload.get("role", "teacher")
-        return {"telegram_id": telegram_id, "role": role}
+        if sub.startswith("teacher:"):
+            return {"teacher_id": int(sub.split(":")[1]), "username": payload.get("username"), "role": role}
+        return {"telegram_id": int(sub), "role": role}
     except jwt.ExpiredSignatureError:
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,

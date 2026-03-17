@@ -10,6 +10,8 @@ class Teacher(Base):
     id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
     person_id: Mapped[int] = mapped_column(Integer, ForeignKey("people.id"), nullable=False, unique=True)
     telegram_id: Mapped[int | None] = mapped_column(BigInteger, nullable=True, unique=True)
+    username: Mapped[str | None] = mapped_column(String(64), nullable=True, unique=True)
+    password_hash: Mapped[str | None] = mapped_column(String(128), nullable=True)
     is_active: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False)
 
     person: Mapped["Person"] = relationship("Person", lazy="joined")  # noqa: F821

@@ -3,7 +3,7 @@
 from fastapi import APIRouter, HTTPException, status
 from pydantic import BaseModel
 
-from schoolai.api.auth import create_access_token
+from schoolai.api.auth import create_access_token, create_access_token_for_teacher
 from schoolai.config import settings
 
 router = APIRouter(prefix="/auth", tags=["Auth"])
@@ -51,6 +51,53 @@ async def get_token(body: TokenRequest) -> TokenResponse:
     # Resolve role
     role = await _resolve_role(body.telegram_id)
     token = create_access_token(body.telegram_id, role)
+
+    return TokenResponse(
+        access_token=token,
+        role=role,
+        expires_in=settings.jwt_expire_hours * 3600,
+    )
+
+
+class LoginRequest(BaseModel):
+    username: str
+    password: str
+
+
+@router.post(
+    "/login",
+    response_model=TokenResponse,
+    summary="Login con usuario y contraseña (PWA)",
+    description="Autentica con `username` + `password` y devuelve un JWT.",
+)
+async def login(body: LoginRequest) -> TokenResponse:
+    if not settings.jwt_secret_key:
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="JWT secret no configurado en el servidor.",
+        )
+
+    from passlib.context import CryptContext
+    from schoolai.db.connection import async_session
+    from schoolai.db.models.teacher import Teacher
+    from sqlalchemy import select
+
+    _pwd = CryptContext(schemes=["bcrypt"], deprecated="auto")
+
+    async with async_session() as session:
+        result = await session.execute(
+            select(Teacher).where(Teacher.username == body.username, Teacher.is_active == True)  # noqa: E712
+        )
+        teacher = result.scalar_one_or_none()
+
+    if not teacher or not teacher.password_hash:
+        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Credenciales inválidas.")
+
+    if not _pwd.verify(body.password, teacher.password_hash):
+        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Credenciales inválidas.")
+
+    role = await _resolve_role(teacher.telegram_id) if teacher.telegram_id else "teacher"
+    token = create_access_token_for_teacher(teacher.id, teacher.username, role)
 
     return TokenResponse(
         access_token=token,
