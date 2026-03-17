@@ -1,0 +1,67 @@
+@import "tailwindcss";
+
+@theme {
+	/* ── Tipografía ─────────────────────────────────────────────── */
+	--font-sans: "Inter", ui-sans-serif, system-ui, sans-serif;
+
+	/* ── Colores base — dark by default (Open WebUI style) ──────── */
+	--color-background:    #0f0f0f;
+	--color-surface:       #171717;
+	--color-surface-2:     #1f1f1f;
+	--color-surface-3:     #2a2a2a;
+	--color-border:        #2e2e2e;
+	--color-border-muted:  #252525;
+
+	/* ── Texto ──────────────────────────────────────────────────── */
+	--color-foreground:    #ececec;
+	--color-muted:         #a0a0a0;
+	--color-muted-2:       #6b6b6b;
+
+	/* ── Acento / primario ──────────────────────────────────────── */
+	--color-primary:       #4f8ef7;
+	--color-primary-hover: #3b7de8;
+	--color-primary-muted: rgba(79, 142, 247, 0.15);
+
+	/* ── Estados ────────────────────────────────────────────────── */
+	--color-success:       #22c55e;
+	--color-warning:       #f59e0b;
+	--color-danger:        #ef4444;
+	--color-danger-muted:  rgba(239, 68, 68, 0.15);
+	--color-success-muted: rgba(34, 197, 94, 0.15);
+
+	/* ── Sidebar ────────────────────────────────────────────────── */
+	--sidebar-width:       260px;
+	--sidebar-bg:          #111111;
+}
+
+/* ── Reset global ───────────────────────────────────────────────── */
+*, *::before, *::after {
+	box-sizing: border-box;
+}
+
+html, body {
+	height: 100%;
+	margin: 0;
+	padding: 0;
+	background-color: var(--color-background);
+	color: var(--color-foreground);
+	font-family: var(--font-sans);
+	font-size: 14px;
+	-webkit-font-smoothing: antialiased;
+}
+
+/* ── Scrollbar custom (Open WebUI style) ────────────────────────── */
+::-webkit-scrollbar {
+	width: 6px;
+	height: 6px;
+}
+::-webkit-scrollbar-track {
+	background: transparent;
+}
+::-webkit-scrollbar-thumb {
+	background: var(--color-surface-3);
+	border-radius: 3px;
+}
+::-webkit-scrollbar-thumb:hover {
+	background: var(--color-muted-2);
+}
