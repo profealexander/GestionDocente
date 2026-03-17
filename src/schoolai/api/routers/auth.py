@@ -77,12 +77,10 @@ async def login(body: LoginRequest) -> TokenResponse:
             detail="JWT secret no configurado en el servidor.",
         )
 
-    from passlib.context import CryptContext
+    import bcrypt as _bcrypt
     from schoolai.db.connection import async_session
     from schoolai.db.models.teacher import Teacher
     from sqlalchemy import select
-
-    _pwd = CryptContext(schemes=["bcrypt"], deprecated="auto")
 
     async with async_session() as session:
         result = await session.execute(
@@ -93,7 +91,7 @@ async def login(body: LoginRequest) -> TokenResponse:
     if not teacher or not teacher.password_hash:
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Credenciales inválidas.")
 
-    if not _pwd.verify(body.password, teacher.password_hash):
+    if not _bcrypt.checkpw(body.password.encode(), teacher.password_hash.encode()):
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Credenciales inválidas.")
 
     role = await _resolve_role(teacher.telegram_id) if teacher.telegram_id else "teacher"
