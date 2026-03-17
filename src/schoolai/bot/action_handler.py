@@ -618,27 +618,55 @@ async def _save_homework(reply_fn, user_id: int, data: HomeworkExtract) -> None:
 # ── Query ─────────────────────────────────────────────────────────────────────
 
 def _build_query_intent(period: str, subject_filter: str | None = None):
+    from schoolai.skills.query.detector import TRIMESTERS
     today = date.today()
+    sf = subject_filter
+
     if period == "today":
-        return QueryIntent("homework", "day", today, today, subject_filter=subject_filter)
+        return QueryIntent("homework", "day", today, today, subject_filter=sf)
     if period == "yesterday":
         d = today - timedelta(days=1)
-        return QueryIntent("homework", "day", d, d, subject_filter=subject_filter)
+        return QueryIntent("homework", "day", d, d, subject_filter=sf)
     if period == "week":
         start = today - timedelta(days=today.weekday())
-        return QueryIntent("homework", "week", start, start + timedelta(days=4), subject_filter=subject_filter)
+        return QueryIntent("homework", "week", start, start + timedelta(days=4), subject_filter=sf)
     if period == "last_week":
         start = today - timedelta(days=today.weekday() + 7)
-        return QueryIntent("homework", "week", start, start + timedelta(days=4), subject_filter=subject_filter)
+        return QueryIntent("homework", "week", start, start + timedelta(days=4), subject_filter=sf)
     if period == "month":
         start = today.replace(day=1)
-        return QueryIntent("homework", "month", start, today, subject_filter=subject_filter)
+        return QueryIntent("homework", "month", start, today, subject_filter=sf)
     if period == "last_month":
         first = today.replace(day=1)
         end = first - timedelta(days=1)
-        return QueryIntent("homework", "month", end.replace(day=1), end, subject_filter=subject_filter)
+        return QueryIntent("homework", "month", end.replace(day=1), end, subject_filter=sf)
+    if period in ("trimester_1", "trimester_2", "trimester_3"):
+        num = int(period[-1])
+        _, start, end = TRIMESTERS[num - 1]
+        return QueryIntent("homework", "trimester", start, end, trimester_num=num, subject_filter=sf)
+    if period == "year":
+        start = TRIMESTERS[0][1]
+        end = TRIMESTERS[-1][2]
+        return QueryIntent("homework", "year", start, end, subject_filter=sf)
+    if period.startswith("month:"):
+        try:
+            month_num = int(period.split(":")[1])
+            year = today.year if month_num <= today.month else today.year - 1
+            start = date(year, month_num, 1)
+            if month_num == 12:
+                end = date(year, 12, 31)
+            else:
+                end = date(year, month_num + 1, 1) - timedelta(days=1)
+            return QueryIntent("homework", "month", start, end, subject_filter=sf)
+        except (ValueError, IndexError):
+            pass
+    try:
+        d = date.fromisoformat(period)
+        return QueryIntent("homework", "day", d, d, subject_filter=sf)
+    except ValueError:
+        pass
     num, start, end = get_current_trimester()
-    return QueryIntent("homework", "trimester", start, end, trimester_num=num, subject_filter=subject_filter)
+    return QueryIntent("homework", "trimester", start, end, trimester_num=num, subject_filter=sf)
 
 
 async def _handle_query(update, user_id: int, result: ExtractionResult, data: QueryExtract) -> None:

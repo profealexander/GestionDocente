@@ -132,7 +132,14 @@ def format_attendance(data: AttendanceData) -> str:
 def _period_label(data: HomeworkData) -> str:
     if data.trimester_num:
         return f"Trimestre {data.trimester_num}"
-    return f"{data.period_start.strftime('%d/%m')} – {data.period_end.strftime('%d/%m/%Y')}"
+    start, end = data.period_start, data.period_end
+    if start == end:
+        return start.strftime("%d/%m/%Y")
+    if start.year != end.year or start.month != end.month:
+        if start.month == 1 and end.month == 12:
+            return f"Año lectivo {start.year}"
+        return f"{start.strftime('%d/%m/%y')} – {end.strftime('%d/%m/%y')}"
+    return f"{MONTH_ES[start.month]} {start.year}"
 
 
 def _section_header(grade_name: str, count: int) -> str:

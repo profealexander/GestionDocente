@@ -87,14 +87,28 @@ homework:
 - description: fix spelling, expand abbreviations (pag.→página, ej.→ejercicio), write clearly
 
 query:
-{{"intent":"query","query_type":"attendance|homework","courses":["abbrev1","abbrev2"],"period":"today|yesterday|week|last_week|month|last_month|trimester","subject":"subject name or null","complete":true/false}}
+{{"intent":"query","query_type":"attendance|homework","courses":["abbrev1","abbrev2"],"period":"<period>","subject":"subject name or null","complete":true/false}}
 - complete=false if courses is empty
-- period default: "today" for attendance, "trimester" for homework
 - subject: extract if a specific subject is mentioned (e.g. "tareas de filosofía" → "Filosofía"), null otherwise
 - courses: list of abbreviations from the table below, [] if none mentioned
 - Available courses: {course_list}
 - Groups: bachillerato→[1bt,2bt,3bt] | básica superior→[8egb,9egb,10egb] | básica media→[5egb,6egb,7egb] | básica elemental→[2egb,3egb,4egb] | egb→[prep,2egb,3egb,4egb,5egb,6egb,7egb,8egb,9egb,10egb] | inicial→[i1,i2]
 - Handle typos: "optabo"→8egb, "nobeno"→9egb, "pimero bc"→1bt, "desimo"→10egb
+- period values (use exactly):
+  · "today" — hoy
+  · "yesterday" — ayer
+  · "week" — esta semana
+  · "last_week" — semana pasada
+  · "month" — este mes
+  · "last_month" — mes pasado
+  · "trimester_1" — primer trimestre / trimestre 1 / 1er trimestre
+  · "trimester_2" — segundo trimestre / trimestre 2 / 2do trimestre
+  · "trimester_3" — tercer trimestre / trimestre 3 / 3er trimestre
+  · "trimester" — trimestre actual (si solo dice "trimestre" sin número)
+  · "year" — este año / año lectivo / todo el año
+  · "month:N" — mes específico (enero→month:1, febrero→month:2, ... diciembre→month:12)
+  · "YYYY-MM-DD" — fecha específica ("el 15 de marzo" → "2026-03-15")
+- period default: "today" for attendance, "trimester" for homework
 
 homework_report:
 {{"intent":"homework_report","names":["full name"],"homework_ref":number or null,"course":"course or null","subject":"subject or null","status":"missing|late|partial","complete":true/false}}

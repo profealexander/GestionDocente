@@ -25,7 +25,7 @@ class HomeworkExtract:
 class QueryExtract:
     query_type: Literal["attendance", "homework"]
     courses: list[str]   # abreviaturas de cursos, [] si no se mencionó ninguno
-    period: Literal["today", "yesterday", "week", "last_week", "month", "last_month", "trimester"]
+    period: str          # today|yesterday|week|last_week|month|last_month|trimester|trimester_1|trimester_2|trimester_3|year|YYYY-MM-DD|month:N
     complete: bool       # False si courses está vacío
     subject: str | None = None  # materia específica si se mencionó, ej: "Filosofía"
 
