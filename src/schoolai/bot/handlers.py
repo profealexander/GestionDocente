@@ -10,7 +10,7 @@ from schoolai.bot.transcription import transcribe
 from schoolai.bot.whatsapp_handler import handle_wa_setup_text
 from schoolai.config import settings
 from schoolai.skills.extractor.llm import _ABBREV_TO_NAME, _NAME_TO_ABBREV, course_abbrev_map, extract
-from schoolai.skills.extractor.rules import extract_fallback
+from schoolai.skills.extractor.rules import extract_fallback, extract_prefilter
 from schoolai.skills.ia.agent import chat
 from schoolai.skills.ia.history import get as get_history, append as append_history
 
@@ -138,10 +138,12 @@ async def _dispatch(update: Update, user_id: int, text: str) -> None:
     if await handle_wa_setup_text(update):
         return
 
-    # El extractor recibe solo el mensaje actual — el historial de chat no debe
-    # influir en la detección de intent (causa falsos positivos como interpretar
-    # "asistencia de bachillerato" como query de tareas tras un mensaje anterior de tareas).
-    result = await extract(text, [])
+    # Pre-filtro de reglas: captura patrones obvios sin llamar al LLM
+    result = extract_prefilter(text)
+    if result is not None:
+        logger.info(f"[prefilter] intent={result.intent} type={getattr(result.data,'query_type','')} user={user_id}")
+    else:
+        result = await extract(text, [])
 
     # Guardar en historial
     append_history(user_id, "user", text)

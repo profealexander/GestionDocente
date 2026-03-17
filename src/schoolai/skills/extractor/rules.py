@@ -11,8 +11,35 @@ from schoolai.skills.extractor.schema import (
     AttendanceExtract,
     ExtractionResult,
     HomeworkExtract,
+    QueryExtract,
 )
 from schoolai.skills.utils.text import normalize
+
+# ── Query pre-filter patterns ─────────────────────────────────────────────────
+
+_QUERY_ATT_RE = re.compile(
+    r"\b(asistencia|inasistencias?|faltas?)\s+(de|del|en|hoy|ayer|esta\s+semana)?\b",
+    re.I,
+)
+_QUERY_HW_RE = re.compile(
+    r"\b(tareas?|deberes?|actividades?)\s+(de|del|en|para|pendientes?)?\b",
+    re.I,
+)
+_QUERY_TRIGGER_RE = re.compile(
+    r"^\s*(ver|dame|muestra|lista|mostrar|qu[eé]\s+hay|hay|cuántas?|cuantas?|"
+    r"reporte|listado)\b",
+    re.I,
+)
+
+# Grupos de cursos para pre-filtro
+_COURSE_GROUPS: dict[str, list[str]] = {
+    "bachillerato": ["1bt", "2bt", "3bt"],
+    "basica superior": ["8egb", "9egb", "10egb"],
+    "basica media": ["5egb", "6egb", "7egb"],
+    "basica elemental": ["2egb", "3egb", "4egb"],
+    "egb": ["2egb", "3egb", "4egb", "5egb", "6egb", "7egb", "8egb", "9egb", "10egb"],
+    "inicial": ["i1", "i2"],
+}
 
 # ── Attendance keywords ───────────────────────────────────────────────────────
 
@@ -112,7 +139,98 @@ def _first_status_re(text: str) -> tuple[re.Pattern | None, str]:
     return None, "absent"
 
 
+# ── Helpers para pre-filtro ───────────────────────────────────────────────────
+
+def _extract_courses_prefilter(text: str) -> list[str]:
+    """Extrae lista de abreviaturas de cursos del texto (grupos + individuales)."""
+    norm = normalize(text).lower()
+    # Grupos primero
+    for group_name, abbrevs in _COURSE_GROUPS.items():
+        if group_name in norm:
+            return abbrevs
+    # Cursos verbales
+    found = []
+    for phrase, abbrev in _COURSE_VERBAL.items():
+        if phrase in norm:
+            found.append(abbrev)
+    if found:
+        return found
+    # Abreviaturas directas
+    return [_COURSE_ALIASES[m.group(0).lower()]
+            for m in _COURSE_RE.finditer(text)
+            if m.group(0).lower() in _COURSE_ALIASES]
+
+
 # ── Public API ────────────────────────────────────────────────────────────────
+
+
+def extract_prefilter(text: str) -> ExtractionResult | None:
+    """Pre-filtro de reglas que corre ANTES del LLM para patrones obvios.
+
+    Captura consultas del tipo "asistencia de bachillerato", "tareas de 1bt",
+    "ver asistencia hoy", etc. sin necesidad de llamar al LLM.
+    Retorna None si el mensaje no es un patrón claro → pasar al LLM.
+    """
+    t = text.strip()
+    if not t:
+        return None
+
+    norm = normalize(t).lower()
+    is_query_trigger = bool(_QUERY_TRIGGER_RE.match(t))
+
+    # ── Consulta de asistencia ────────────────────────────────────────────────
+    is_att_query = bool(_QUERY_ATT_RE.search(t))
+    if is_att_query and (is_query_trigger or _QUERY_ATT_RE.match(t)):
+        courses = _extract_courses_prefilter(t)
+        # period
+        if "ayer" in norm:
+            period = "yesterday"
+        elif "semana" in norm:
+            period = "week"
+        elif "mes" in norm:
+            period = "month"
+        else:
+            period = "today"
+        return ExtractionResult(
+            intent="query",
+            data=QueryExtract(
+                query_type="attendance",
+                courses=courses,
+                period=period,
+                complete=bool(courses),
+                subject=None,
+            ),
+        )
+
+    # ── Consulta de tareas ────────────────────────────────────────────────────
+    is_hw_query = bool(_QUERY_HW_RE.search(t))
+    if is_hw_query and (is_query_trigger or _QUERY_HW_RE.match(t)):
+        courses = _extract_courses_prefilter(t)
+        # period
+        if "hoy" in norm:
+            period = "today"
+        elif "semana" in norm:
+            period = "week"
+        elif "trimestre 1" in norm or "primer trimestre" in norm:
+            period = "trimester_1"
+        elif "trimestre 2" in norm or "segundo trimestre" in norm:
+            period = "trimester_2"
+        elif "trimestre 3" in norm or "tercer trimestre" in norm:
+            period = "trimester_3"
+        else:
+            period = "trimester"
+        return ExtractionResult(
+            intent="query",
+            data=QueryExtract(
+                query_type="homework",
+                courses=courses,
+                period=period,
+                complete=bool(courses),
+                subject=None,
+            ),
+        )
+
+    return None  # ambiguo → pasar al LLM
 
 
 def extract_fallback(text: str) -> ExtractionResult | None:
