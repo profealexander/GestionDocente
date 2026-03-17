@@ -114,13 +114,14 @@ async def _show_course_action_menu(update: Update, course_info: tuple) -> None:
 
 
 async def _dispatch(update: Update, user_id: int, text: str) -> None:
+    # Atajo para iniciar Modo Jornada — funciona en ambos modos
+    if text in _JORNADA_TRIGGERS:
+        from schoolai.bot.jornada_handler import handle_jornada_command
+        await handle_jornada_command(update, None)
+        return
+
     if is_jornada():
         session = get_jornada(user_id)
-        # Atajo de teclado para iniciar jornada
-        if text in _JORNADA_TRIGGERS:
-            from schoolai.bot.jornada_handler import handle_jornada_command
-            await handle_jornada_command(update, None)
-            return
         if not session or session.status == "done":
             await update.message.reply_text(
                 "Toca el botón o escribe *j* para iniciar tu jornada.",

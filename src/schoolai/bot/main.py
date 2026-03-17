@@ -33,17 +33,11 @@ from schoolai.config import settings
 
 
 async def _handle_start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
-    from schoolai.bot.mode import is_jornada
-    if is_jornada():
-        await update.message.reply_text(
-            "¡Hola! Toca *📅 Jornada* o escribe *j* para iniciar tu jornada.",
-            parse_mode="Markdown",
-            reply_markup=JORNADA_KEYBOARD,
-        )
-    else:
-        await update.message.reply_text(
-            "¡Hola! Estoy listo para ayudarte.",
-        )
+    await update.message.reply_text(
+        "¡Hola! Toca *📅 Jornada* o escribe *j* para iniciar tu jornada.",
+        parse_mode="Markdown",
+        reply_markup=JORNADA_KEYBOARD,
+    )
 
 
 async def _handle_cancel(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
@@ -124,9 +118,7 @@ async def _post_init(app) -> None:
     init_redis(settings.redis_url)
     await load_course_map()
     app.bot_data["jornada_mode"] = is_jornada()
-
-    if is_jornada():
-        await _send_jornada_keyboard_to_teachers(app.bot)
+    await _send_jornada_keyboard_to_teachers(app.bot)
 
 
 async def _send_jornada_keyboard_to_teachers(bot) -> None:
@@ -216,11 +208,10 @@ def run(dev: bool = False) -> None:
     app.add_handler(CallbackQueryHandler(handle_selection_callback, pattern=r"^sel:"))
     app.add_handler(CallbackQueryHandler(handle_position_callback, pattern=r"^pos_"))
 
-    # ── Handlers exclusivos de Modo Jornada ───────────────────────────────────
-    if dev:
-        app.job_queue.run_daily(job_morning_notify, time=_dt.time(6, 0, 0))
-        app.add_handler(CommandHandler("jornada", handle_jornada_command))
-        app.add_handler(CallbackQueryHandler(handle_jornada_callback, pattern=r"^jor_"))
+    # ── Modo Jornada — siempre activo ─────────────────────────────────────────
+    app.job_queue.run_daily(job_morning_notify, time=_dt.time(7, 0, 0))
+    app.add_handler(CommandHandler("jornada", handle_jornada_command))
+    app.add_handler(CallbackQueryHandler(handle_jornada_callback, pattern=r"^jor_"))
 
     # ── Catch-all callbacks (debug) ───────────────────────────────────────────
     app.add_handler(CallbackQueryHandler(_debug_callback))
