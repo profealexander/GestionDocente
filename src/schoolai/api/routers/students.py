@@ -98,20 +98,35 @@ async def get_student(
 
 
 def _parse_name(full_name: str) -> dict:
-    """Parse 'APELLIDO1 APELLIDO2, NOMBRE1 NOMBRE2' or 'NOMBRE APELLIDO'."""
+    """Parse Ecuadorian student name format (no comma):
+      4+ words: APELLIDO1 APELLIDO2 NOMBRE1 [NOMBRE2...]
+      3 words:  APELLIDO1 APELLIDO2 NOMBRE1
+      2 words:  APELLIDO1 NOMBRE1
+      1 word:   stored as first_name only
+    Also accepts comma format: 'APELLIDO1 APELLIDO2, NOMBRE1 NOMBRE2'
+    """
     full_name = full_name.strip()
     if "," in full_name:
         last_part, first_part = full_name.split(",", 1)
         last_names = last_part.strip().split()
-        first_names = first_part.strip().split()
         return {
             "last_name": last_names[0] if last_names else "",
             "second_last_name": last_names[1] if len(last_names) > 1 else None,
-            "first_name": " ".join(first_names),
+            "first_name": first_part.strip(),
         }
     parts = full_name.split()
-    if len(parts) >= 2:
-        return {"first_name": parts[0], "last_name": parts[-1], "second_last_name": None}
+    if len(parts) >= 4:
+        # APELLIDO1 APELLIDO2 NOMBRE1 NOMBRE2...
+        return {
+            "last_name": parts[0],
+            "second_last_name": parts[1],
+            "first_name": " ".join(parts[2:]),
+        }
+    if len(parts) == 3:
+        # APELLIDO1 APELLIDO2 NOMBRE
+        return {"last_name": parts[0], "second_last_name": parts[1], "first_name": parts[2]}
+    if len(parts) == 2:
+        return {"last_name": parts[0], "second_last_name": None, "first_name": parts[1]}
     return {"first_name": full_name, "last_name": "", "second_last_name": None}
 
 
