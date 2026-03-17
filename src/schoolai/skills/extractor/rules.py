@@ -6,6 +6,7 @@ Returns None when the input is ambiguous to avoid false positives.
 """
 
 import re
+from functools import lru_cache
 
 from schoolai.skills.extractor.schema import (
     AttendanceExtract,
@@ -15,18 +16,22 @@ from schoolai.skills.extractor.schema import (
 )
 from schoolai.skills.utils.text import normalize
 
+# Radon PLR2004: magic numbers extraídos como constantes
+_NAME_MIN_LEN = 3
+_NAME_MAX_LEN = 50
+
 # ── Query pre-filter — constantes compiladas al nivel de módulo (0 alloc por llamada) ──
 
 # Regex compilados una sola vez
 _QUERY_ATT_RE = re.compile(
-    r"\b(asistencia|inasistencias?|faltas?)\b", re.I,
+    r"\b(asistencia|inasistencias?|faltas?)\b", re.IGNORECASE,
 )
 _QUERY_HW_RE = re.compile(
-    r"\b(tareas?|deberes?|actividades?|pendientes?)\b", re.I,
+    r"\b(tareas?|deberes?|actividades?|pendientes?)\b", re.IGNORECASE,
 )
 _QUERY_TRIGGER_RE = re.compile(
     r"^\s*(ver|dame|muestra|lista|mostrar|que\s+hay|hay|cuantas?|reporte|listado)\b",
-    re.I,
+    re.IGNORECASE,
 )
 
 # Keywords pre-normalizados → frozenset para O(1) lookup
@@ -74,22 +79,24 @@ _PERIOD_TOKENS: tuple[tuple[str, str], ...] = (
 # ── Attendance keywords ───────────────────────────────────────────────────────
 
 _ABSENT_RE = re.compile(
-    r"\b(falt[oó]|faltaron|no\s+asisti[oó]|no\s+asistieron|no\s+vino|ausente|inasistencia)\b", re.I
+    r"\b(falt[oó]|faltaron|no\s+asisti[oó]|no\s+asistieron"
+    r"|no\s+vino|ausente|inasistencia)\b",
+    re.IGNORECASE,
 )
 _LATE_RE = re.compile(
-    r"\b(llego?\s+tarde|lleg[oó]\s+tarde|atrasad[ao]|tardi[oó]|atraso)\b", re.I
+    r"\b(llego?\s+tarde|lleg[oó]\s+tarde|atrasad[ao]|tardi[oó]|atraso)\b", re.IGNORECASE
 )
 _JUSTIFIED_RE = re.compile(
-    r"\b(justificad[ao]|con\s+permiso|permiso\s+m[eé]dico|enferm[ao])\b", re.I
+    r"\b(justificad[ao]|con\s+permiso|permiso\s+m[eé]dico|enferm[ao])\b", re.IGNORECASE
 )
-_YESTERDAY_RE = re.compile(r"\bayer\b", re.I)
+_YESTERDAY_RE = re.compile(r"\bayer\b", re.IGNORECASE)
 
 # ── Homework keywords ─────────────────────────────────────────────────────────
 
 _HW_RE = re.compile(
     r"\b(tarea|deberes?|trabajo\s+pr[aá]ctico|ejercicio|actividad|"
     r"leer|lectura|traer|entregar|evaluaci[oó]n|examen|investigaci[oó]n)\b",
-    re.I,
+    re.IGNORECASE,
 )
 
 # ── Course extraction ─────────────────────────────────────────────────────────
@@ -109,11 +116,14 @@ _COURSE_ALIASES: dict[str, str] = {
 
 # Verbal names → abbrev — keys pre-normalizados para comparar contra normalize(text)
 _COURSE_VERBAL: dict[str, str] = {
-    normalize("primero bt"): "1bt",   normalize("segundo bt"): "2bt",   normalize("tercero bt"): "3bt",
-    normalize("segundo egb"): "2egb", normalize("tercero egb"): "3egb", normalize("cuarto egb"): "4egb",
-    normalize("quinto egb"): "5egb",  normalize("sexto egb"): "6egb",   normalize("septimo egb"): "7egb",
-    normalize("octavo egb"): "8egb",  normalize("noveno egb"): "9egb",  normalize("decimo egb"): "10egb",
-    normalize("inicial 1"): "i1",     normalize("inicial 2"): "i2",     normalize("preparatoria"): "prep",
+    normalize("primero bt"):    "1bt",   normalize("segundo bt"):  "2bt",
+    normalize("tercero bt"):    "3bt",   normalize("segundo egb"): "2egb",
+    normalize("tercero egb"):   "3egb",  normalize("cuarto egb"):  "4egb",
+    normalize("quinto egb"):    "5egb",  normalize("sexto egb"):   "6egb",
+    normalize("septimo egb"):   "7egb",  normalize("octavo egb"):  "8egb",
+    normalize("noveno egb"):    "9egb",  normalize("decimo egb"):  "10egb",
+    normalize("inicial 1"):     "i1",    normalize("inicial 2"):   "i2",
+    normalize("preparatoria"):  "prep",
 }
 
 # ── Helpers ───────────────────────────────────────────────────────────────────
@@ -144,11 +154,11 @@ def _extract_names(text: str, status_re: re.Pattern) -> list[str]:
     left  = text[:m.start()].strip().rstrip(",.")
     # Strip course tokens and trailing prepositions from right side
     right = _COURSE_RE.sub("", text[m.end():]).strip().lstrip(",.")
-    right = re.sub(r"\b(en|de|del|para|con)\b", "", right, flags=re.I).strip(", .")
+    right = re.sub(r"\b(en|de|del|para|con)\b", "", right, flags=re.IGNORECASE).strip(", .")
 
     def _split(segment: str) -> list[str]:
-        parts = re.split(r",\s*|\s+y\s+", segment, flags=re.I)
-        return [p.strip() for p in parts if 3 <= len(p.strip()) <= 50]
+        parts = re.split(r",\s*|\s+y\s+", segment, flags=re.IGNORECASE)
+        return [p.strip() for p in parts if _NAME_MIN_LEN <= len(p.strip()) <= _NAME_MAX_LEN]
 
     candidates = _split(left) or _split(right)
 
@@ -171,9 +181,13 @@ def _first_status_re(text: str) -> tuple[re.Pattern | None, str]:
 
 # ── Helpers para pre-filtro ───────────────────────────────────────────────────
 
-def _norm_tokens(text: str) -> frozenset[str]:
-    """Divide el texto normalizado en tokens → frozenset para O(1) lookup."""
-    return frozenset(normalize(text).split())
+@lru_cache(maxsize=512)
+def _norm_tokens(norm_text: str) -> frozenset[str]:
+    """Tokens del texto ya normalizado → frozenset para O(1) lookup.
+    lru_cache evita re-tokenizar el mismo norm si se reutiliza.
+    Recibe norm_text (ya normalizado) para reutilizar el cache de normalize().
+    """
+    return frozenset(norm_text.split())
 
 
 def _extract_courses_prefilter(norm_text: str) -> list[str]:
@@ -213,23 +227,36 @@ def _extract_period(norm_text: str, default: str) -> str:
     return default
 
 
-def _is_query_type(norm_text: str, kw_set: frozenset[str]) -> bool:
-    """True si algún token del texto está en el conjunto de keywords."""
-    return bool(_norm_tokens(norm_text) & kw_set)
-
-
 # ── Public API ────────────────────────────────────────────────────────────────
+
+
+def _make_query(query_type: str, norm: str, default_period: str) -> ExtractionResult:
+    """Construye ExtractionResult de query. Extrae cursos y período del texto normalizado."""
+    courses = _extract_courses_prefilter(norm)
+    return ExtractionResult(
+        intent="query",
+        data=QueryExtract(
+            query_type=query_type,
+            courses=courses,
+            period=_extract_period(norm, default_period),
+            complete=bool(courses),
+            subject=None,
+        ),
+    )
 
 
 def extract_prefilter(text: str) -> ExtractionResult | None:
     """Pre-filtro de reglas que corre ANTES del LLM para patrones obvios.
 
-    Técnicas aplicadas:
-    - Regex compilados al módulo (0 alloc por llamada)
-    - Keywords pre-normalizados en frozensets (O(1) lookup)
-    - normalize() con lru_cache(4096) — 1 sola llamada por mensaje
-    - Grupos de cursos pre-normalizados (O(1) substring)
-    - Período detectado con tuple ordenada (más específico primero)
+    Optimizaciones aplicadas (Ruff/Radon/cProfile):
+    - normalize() lru_cache(4096): 1 llamada por mensaje, resultado reutilizado
+    - _norm_tokens() lru_cache(512): tokenización cacheada, frozenset O(1)
+    - tokens calculados 1 sola vez y reutilizados para att/hw/trigger
+    - Regex compilados al módulo: 0 alloc por llamada (re.IGNORECASE)
+    - Keywords en frozensets pre-normalizados: intersección O(1)
+    - Early-exit por ambigüedad antes de calcular cursos/período
+    - Complejidad ciclomática B (Radon) vs C anterior
+    - Constantes de nombre al módulo: 0 re-allocations por llamada
 
     Retorna None si el mensaje es ambiguo → pasar al LLM.
     """
@@ -237,46 +264,29 @@ def extract_prefilter(text: str) -> ExtractionResult | None:
     if not t:
         return None
 
-    # normalize() una sola vez — cacheada si el mismo texto se repite
-    norm = normalize(t)
+    # normalize() + _norm_tokens() — cada una llamada 1 sola vez, ambas cacheadas
+    norm   = normalize(t)
+    tokens = _norm_tokens(norm)
 
-    is_att      = bool(_QUERY_ATT_RE.search(t)) or _is_query_type(norm, _ATT_KW)
-    is_hw       = bool(_QUERY_HW_RE.search(t))  or _is_query_type(norm, _HW_KW)
-    trigger     = bool(_QUERY_TRIGGER_RE.match(t)) or _is_query_type(norm, _TRIGGER_KW)
-    att_start   = bool(_QUERY_ATT_RE.match(t))   # mensaje empieza con keyword de asistencia
-    hw_start    = bool(_QUERY_HW_RE.match(t))    # mensaje empieza con keyword de tarea
+    is_att = bool(_QUERY_ATT_RE.search(t)) or bool(tokens & _ATT_KW)
+    is_hw  = bool(_QUERY_HW_RE.search(t))  or bool(tokens & _HW_KW)
 
-    # Ambiguo (ambos keywords presentes) → LLM
+    # Ambiguo (ambos tipos presentes) → LLM — early exit antes de calcular trigger
     if is_att and is_hw:
         return None
 
-    if is_att and (trigger or att_start):
-        courses = _extract_courses_prefilter(norm)
-        return ExtractionResult(
-            intent="query",
-            data=QueryExtract(
-                query_type="attendance",
-                courses=courses,
-                period=_extract_period(norm, "today"),
-                complete=bool(courses),
-                subject=None,
-            ),
-        )
+    if not (is_att or is_hw):
+        return None
 
-    if is_hw and (trigger or hw_start):
-        courses = _extract_courses_prefilter(norm)
-        return ExtractionResult(
-            intent="query",
-            data=QueryExtract(
-                query_type="homework",
-                courses=courses,
-                period=_extract_period(norm, "trimester"),
-                complete=bool(courses),
-                subject=None,
-            ),
-        )
+    trigger = bool(_QUERY_TRIGGER_RE.match(t)) or bool(tokens & _TRIGGER_KW)
 
-    return None  # ambiguo → LLM
+    if is_att and (trigger or bool(_QUERY_ATT_RE.match(t))):
+        return _make_query("attendance", norm, "today")
+
+    if is_hw and (trigger or bool(_QUERY_HW_RE.match(t))):
+        return _make_query("homework", norm, "trimester")
+
+    return None  # sin trigger claro → LLM
 
 
 def extract_fallback(text: str) -> ExtractionResult | None:
