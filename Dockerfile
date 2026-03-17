@@ -14,5 +14,5 @@ COPY src/ src/
 COPY alembic/ alembic/
 COPY alembic.ini .
 
-# Run migrations then start bot
-CMD uv run alembic upgrade head && uv run schoolai-bot
+# Run migrations, then start API + bot in parallel
+CMD uv run alembic upgrade head && uv run schoolai-api & uv run schoolai-bot

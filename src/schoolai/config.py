@@ -48,6 +48,11 @@ class Settings(BaseSettings):
     # FastAPI
     api_host: str = "0.0.0.0"  # nosec B104 — intencional, uvicorn escucha en todas las interfaces
     api_port: int = 8000
+    port: int = 0  # Railway inyecta PORT — si está presente, tiene prioridad sobre api_port
+
+    @property
+    def effective_api_port(self) -> int:
+        return self.port if self.port else self.api_port
     debug: bool = False
 
     # Redis (opcional — si no se configura, el estado vive sólo en RAM)
