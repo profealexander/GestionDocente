@@ -1,8 +1,10 @@
 """Homework endpoints — list and manage homework assignments."""
 
+import datetime
 from typing import Optional
 
 from fastapi import APIRouter, Depends, HTTPException, Query
+from pydantic import BaseModel
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -10,6 +12,13 @@ from schoolai.api.auth import get_current_user
 from schoolai.api.schemas import HomeworkClose, HomeworkOut, MessageOut
 from schoolai.db.connection import get_session
 from schoolai.db.models.homework import Homework
+
+
+class HomeworkCreate(BaseModel):
+    description: str
+    grade_id: int
+    subject_id: Optional[int] = None
+    delivery_date: Optional[datetime.date] = None
 
 router = APIRouter(
     prefix="/homework",
@@ -32,6 +41,26 @@ def _to_out(hw: Homework) -> HomeworkOut:
         delivery_date=hw.delivery_date,
         is_open=hw.is_open,
     )
+
+
+@router.post(
+    "/",
+    response_model=HomeworkOut,
+    summary="Create homework assignment",
+)
+async def create_homework(
+    body: HomeworkCreate,
+    session: AsyncSession = Depends(get_session),
+):
+    from schoolai.skills.homework.repository import save_homework
+    hw = await save_homework(
+        session,
+        homework=body.description,
+        grade_id=body.grade_id,
+        subject_id=body.subject_id,
+        delivery_date=body.delivery_date,
+    )
+    return _to_out(hw)
 
 
 @router.get(
@@ -77,6 +106,11 @@ async def get_homework(
     return _to_out(hw)
 
 
+@router.put(
+    "/{homework_id}",
+    response_model=MessageOut,
+    summary="Update homework (close/open)",
+)
 @router.patch(
     "/{homework_id}",
     response_model=MessageOut,
