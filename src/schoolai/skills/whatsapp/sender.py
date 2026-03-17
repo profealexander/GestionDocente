@@ -40,6 +40,35 @@ async def send_whatsapp(instance_id: str, token: str, phone: str, message: str) 
         return False
 
 
+async def send_whatsapp_pdf(
+    instance_id: str,
+    token: str,
+    phone: str,
+    pdf_bytes: bytes,
+    file_name: str,
+    caption: str = "",
+) -> bool:
+    """Send a PDF file via Green API SendFileByUpload. Returns True on success."""
+    url = f"https://media.green-api.com/waInstance{instance_id}/sendFileByUpload/{token}"
+    chat_id_val = _chat_id(phone)
+    try:
+        async with httpx.AsyncClient(timeout=30.0) as client:
+            resp = await client.post(
+                url,
+                data={"chatId": chat_id_val, "caption": caption},
+                files={"file": (file_name, pdf_bytes, "application/pdf")},
+            )
+        ok = resp.status_code == 200 and resp.json().get("idMessage")
+        if ok:
+            logger.info(f"[whatsapp] PDF enviado a {phone}")
+        else:
+            logger.warning(f"[whatsapp] fallo PDF phone={phone} status={resp.status_code} body={resp.text[:200]}")
+        return bool(ok)
+    except Exception as exc:
+        logger.error(f"[whatsapp] error PDF phone={phone}: {exc}")
+        return False
+
+
 def format_homework_message(
     guardian_name: str,
     student_name: str,

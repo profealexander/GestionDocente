@@ -46,6 +46,7 @@ from schoolai.bot.state import (
     set_wa_notification,
 )
 from schoolai.bot.whatsapp_handler import notify_keyboard
+from schoolai.bot.notif_handler import doc_notify_keyboard
 
 # Caché ligero: datos parciales esperando que el usuario elija curso
 # {user_id: ExtractionResult} — NO bloquea mensajes nuevos
@@ -400,6 +401,10 @@ async def _send_notify_prompt(send_fn, user_id: int, hw, student_ids: list, stud
     await send_fn(
         "¿Deseas notificar a los representantes por WhatsApp?",
         reply_markup=notify_keyboard(student_ids),
+    )
+    await send_fn(
+        "📄 Generar notificación formal:",
+        reply_markup=doc_notify_keyboard(hw.id, student_ids, student_names),
     )
 
 

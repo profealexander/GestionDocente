@@ -14,6 +14,7 @@ from telegram.request import HTTPXRequest
 
 from schoolai.bot.action_handler import handle_act_callback, handle_course_action_callback, handle_selection_callback
 from schoolai.bot.whatsapp_handler import handle_wa_notify_callback
+from schoolai.bot.notif_handler import handle_doc_notify_callback
 from schoolai.bot.attendance_handler import handle_attendance_callback
 from schoolai.bot.db_handler import handle_db_callback, handle_db_command, handle_db_text
 from schoolai.bot.help_handler import handle_help_back, handle_help_callback, handle_help_command
@@ -211,6 +212,7 @@ def run(dev: bool = False) -> None:
     app.add_handler(CallbackQueryHandler(handle_act_callback, pattern=r"^act_grade:"))
     app.add_handler(CallbackQueryHandler(handle_course_action_callback, pattern=r"^course_action:"))
     app.add_handler(CallbackQueryHandler(handle_wa_notify_callback, pattern=r"^wa_notify:"))
+    app.add_handler(CallbackQueryHandler(handle_doc_notify_callback, pattern=r"^doc_notify:"))
     app.add_handler(CallbackQueryHandler(handle_selection_callback, pattern=r"^sel:"))
     app.add_handler(CallbackQueryHandler(handle_position_callback, pattern=r"^pos_"))
 
