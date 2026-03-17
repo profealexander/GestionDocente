@@ -68,12 +68,16 @@ Intents:
 - chat: anything else
 
 CRITICAL DISTINCTION — query vs homework_report:
-- "tareas de 1bt" → query (listing what tasks exist)
-- "dame las tareas de 2bt" → query (listing)
+- "tareas de 1bt" → query query_type=homework (listing what tasks exist)
+- "dame las tareas de 2bt" → query query_type=homework (listing)
+- "asistencia de bachillerato" → query query_type=attendance courses=[1bt,2bt,3bt]
+- "asistencia de 1bt" → query query_type=attendance courses=[1bt]
+- "ver asistencia de hoy" → query query_type=attendance
 - "quién no entregó en 3bt" → homework_report (compliance, but complete=false — no names)
 - "Carlos no entregó" → homework_report (specific student)
 - "cumplimiento de 1bt" → homework_report with names=[] complete=false
-- ANY message asking to SEE/LIST tasks without mentioning a specific student → query
+- ANY message asking to SEE/LIST tasks without mentioning a specific student → query query_type=homework
+- ANY message with "asistencia" asking to see records → query query_type=attendance
 
 attendance:
 {{"intent":"attendance","names":["full name"],"course":"course or null","date":"today|yesterday|YYYY-MM-DD","status":"absent|late|justified","complete":true/false}}
@@ -126,11 +130,7 @@ Edge cases → always return valid JSON:
 - "X no entregó esta tarea" (no ref, no subject, no course) → homework_report with complete=false
 - "dame reporte de tareas de [student]" → chat (student-level queries not supported)
 - "quién no entregó" without course → homework_report with complete=false
-- Any unclear message → chat, never return empty
-
-Context from conversation history:
-- If `course` is missing from the current message but was clearly stated in a recent turn, infer that course.
-- If `names` are missing for attendance/homework_report but names appeared in the immediately prior user message, include them."""
+- Any unclear message → chat, never return empty"""
 
 
 def _get_system_prompt() -> str:
