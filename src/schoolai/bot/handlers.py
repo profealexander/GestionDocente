@@ -138,15 +138,10 @@ async def _dispatch(update: Update, user_id: int, text: str) -> None:
     if await handle_wa_setup_text(update):
         return
 
-    # Filtrar marcadores internos antes de pasarlo al extractor —
-    # "[X procesado]" es útil para el chat IA pero confunde al extractor LLM.
-    history = [
-        m for m in get_history(user_id)
-        if not (m["role"] == "assistant" and m["content"].startswith("[") and m["content"].endswith("procesado]"))
-    ]
-
-    # Extraer intent y entidades con LLM
-    result = await extract(text, history)
+    # El extractor recibe solo el mensaje actual — el historial de chat no debe
+    # influir en la detección de intent (causa falsos positivos como interpretar
+    # "asistencia de bachillerato" como query de tareas tras un mensaje anterior de tareas).
+    result = await extract(text, [])
 
     # Guardar en historial
     append_history(user_id, "user", text)
