@@ -1,5 +1,6 @@
 <script lang="ts">
 	import { page } from '$app/state';
+	import { logout, getUser } from '$lib/auth.svelte';
 
 	const navItems = [
 		{ href: '/jornada',      icon: '📅', label: 'Jornada'      },
@@ -11,9 +12,9 @@
 	];
 
 	const adminItems = [
-		{ href: '/admin/cursos',    icon: '🏫', label: 'Cursos'       },
-		{ href: '/admin/docentes',  icon: '👨‍🏫', label: 'Docentes'     },
-		{ href: '/admin/horarios',  icon: '🗓', label: 'Horarios'     },
+		{ href: '/admin/estudiantes', icon: '👥', label: 'Estudiantes'  },
+		{ href: '/admin/cursos',      icon: '🏫', label: 'Cursos'       },
+		{ href: '/admin/docentes',    icon: '👨‍🏫', label: 'Docentes'     },
 	];
 </script>
 
@@ -63,10 +64,16 @@
 
 	<!-- Footer -->
 	<div class="sidebar-footer">
-		<a href="/perfil" class="nav-item">
-			<span class="nav-icon">⚙️</span>
-			<span class="nav-label">Configuración</span>
-		</a>
+		{#if getUser()}
+			<div class="user-info">
+				<span class="nav-icon">👤</span>
+				<span class="user-name">{getUser()?.username}</span>
+			</div>
+		{/if}
+		<button class="nav-item logout-btn" onclick={logout}>
+			<span class="nav-icon">🚪</span>
+			<span class="nav-label">Cerrar sesión</span>
+		</button>
 	</div>
 </aside>
 
@@ -160,5 +167,36 @@
 	.sidebar-footer {
 		padding: 8px;
 		border-top: 1px solid var(--color-border-muted);
+		display: flex;
+		flex-direction: column;
+		gap: 4px;
+	}
+
+	.user-info {
+		display: flex;
+		align-items: center;
+		gap: 10px;
+		padding: 6px 12px;
+		font-size: 12px;
+		color: var(--color-muted-2);
+	}
+
+	.user-name {
+		overflow: hidden;
+		text-overflow: ellipsis;
+		white-space: nowrap;
+	}
+
+	.logout-btn {
+		background: none;
+		border: none;
+		width: 100%;
+		text-align: left;
+		color: var(--color-muted);
+	}
+
+	.logout-btn:hover {
+		background-color: rgba(239, 68, 68, 0.1);
+		color: #f87171;
 	}
 </style>

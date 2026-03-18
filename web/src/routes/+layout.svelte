@@ -1,8 +1,21 @@
 <script lang="ts">
 	import '../app.css';
 	import Sidebar from '$lib/components/Sidebar.svelte';
+	import { initAuth, isAuthenticated } from '$lib/auth.svelte';
+	import { page } from '$app/state';
+	import { browser } from '$app/environment';
 
 	let { children } = $props();
+
+	initAuth();
+
+	const isLoginPage = $derived(page.url.pathname === '/login');
+
+	$effect(() => {
+		if (browser && !isLoginPage && !isAuthenticated()) {
+			window.location.href = '/login';
+		}
+	});
 </script>
 
 <svelte:head>
@@ -12,12 +25,16 @@
 	<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&display=swap" rel="stylesheet" />
 </svelte:head>
 
-<div class="app-shell">
-	<Sidebar />
-	<main class="main-content">
-		{@render children()}
-	</main>
-</div>
+{#if isLoginPage}
+	{@render children()}
+{:else}
+	<div class="app-shell">
+		<Sidebar />
+		<main class="main-content">
+			{@render children()}
+		</main>
+	</div>
+{/if}
 
 <style>
 	.app-shell {

@@ -36,7 +36,7 @@
 		try {
 			[grades, subjects] = await Promise.all([
 				gradesApi.list(),
-				api.get<Subject[]>('/subjects'),
+				api.get<Subject[]>('/subjects/'),
 			]);
 		} catch (e: any) { error = e.message; }
 	});
@@ -46,7 +46,7 @@
 		loadingHw = true;
 		try {
 			homeworks = await api.get<Homework[]>(
-				`/homework?grade_id=${form.grade_id}&is_open=true`
+				`/homework/?grade_id=${form.grade_id}&is_open=true`
 			);
 		} catch { homeworks = []; }
 		finally { loadingHw = false; }
@@ -65,7 +65,7 @@
 		error = '';
 		savedOk = false;
 		try {
-			await api.post('/homework', {
+			await api.post('/homework/', {
 				description:   form.description.trim(),
 				grade_id:      form.grade_id,
 				subject_id:    form.subject_id || null,

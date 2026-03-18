@@ -13,6 +13,6 @@ export interface Student {
 }
 
 export const gradesApi = {
-	list: ()                        => api.get<Grade[]>('/grades'),
-	students: (gradeId: number)     => api.get<Student[]>(`/grades/${gradeId}/students`),
+	list: ()                    => api.get<Grade[]>('/grades/'),
+	students: (gradeId: number) => api.get<Student[]>(`/grades/${gradeId}/students/`),
 };

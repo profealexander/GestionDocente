@@ -14,7 +14,7 @@ export interface AttendanceSavePayload {
 }
 
 export const attendanceApi = {
-	save: (payload: AttendanceSavePayload) => api.post('/attendance', payload),
+	save: (payload: AttendanceSavePayload) => api.post('/attendance/', payload),
 	byGrade: (gradeId: number, date: string) =>
-		api.get<AttendanceRecord[]>(`/attendance?grade_id=${gradeId}&date=${date}`),
+		api.get<AttendanceRecord[]>(`/attendance/?grade_id=${gradeId}&date=${date}`),
 };
