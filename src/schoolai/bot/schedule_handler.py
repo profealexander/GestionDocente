@@ -23,7 +23,7 @@ from schoolai.skills.db.schedule_service import (
     get_teacher_by_telegram,
     save_schedule_periods,
 )
-from schoolai.skills.extractor.llm import course_abbrev_map
+from schoolai.skills.utils.courses import course_abbrev_map
 from schoolai.skills.homework.repository import find_subject
 from schoolai.bot.state import (
     DAY_NAMES,

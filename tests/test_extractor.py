@@ -4,13 +4,9 @@ from datetime import date, timedelta
 
 import pytest
 
-from schoolai.skills.extractor.llm import (
-    _build_result,
-    _nullify,
-    _parse_date,
-    _resolve_delivery,
-)
-from schoolai.skills.extractor.schema import (
+from schoolai.skills.utils.extract_llm import _build_result, _nullify
+from schoolai.skills.utils.dates import parse_date as _parse_date, resolve_delivery as _resolve_delivery
+from schoolai.skills.utils.schema import (
     AttendanceExtract,
     ChatExtract,
     HomeworkExtract,

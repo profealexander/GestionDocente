@@ -3,16 +3,15 @@ from telegram import InlineKeyboardButton, InlineKeyboardMarkup, KeyboardButton,
 from telegram.ext import ContextTypes
 from telegram.constants import ParseMode
 
-from schoolai.bot.action_handler import handle_extraction, resolve_selection_text
+from schoolai.bot.action_handler import resolve_selection_text
 from schoolai.bot.mode import is_jornada
 from schoolai.bot.state import get_jornada
 from schoolai.bot.transcription import transcribe
 from schoolai.bot.whatsapp_handler import handle_wa_setup_text
 from schoolai.config import settings
-from schoolai.skills.extractor.llm import _ABBREV_TO_NAME, _NAME_TO_ABBREV, course_abbrev_map, extract
-from schoolai.skills.extractor.rules import extract_fallback, extract_prefilter
-from schoolai.skills.ia.agent import chat
-from schoolai.skills.ia.history import get as get_history, append as append_history
+from schoolai.skills.ia.history import append as append_history
+from schoolai.skills.registry import registry
+from schoolai.skills.utils.courses import _ABBREV_TO_NAME, _NAME_TO_ABBREV, course_abbrev_map
 
 # Teclas de acceso rápido para iniciar Modo Jornada
 _JORNADA_TRIGGERS = {"j", "J", "1", "jornada", "Jornada", "iniciar", "Iniciar", "📅 Jornada"}
@@ -114,7 +113,7 @@ async def _show_course_action_menu(update: Update, course_info: tuple) -> None:
 
 
 async def _dispatch(update: Update, user_id: int, text: str) -> None:
-    # Atajo para iniciar Modo Jornada — funciona en ambos modos
+    # Capa 0: atajos hardcoded
     if text in _JORNADA_TRIGGERS:
         from schoolai.bot.jornada_handler import handle_jornada_command
         await handle_jornada_command(update, None)
@@ -130,74 +129,14 @@ async def _dispatch(update: Update, user_id: int, text: str) -> None:
             )
             return
 
-    # Estados pendientes: si el usuario escribió un número (1, 2, 3...)
     if await resolve_selection_text(update, user_id):
         return
 
-    # Flujo de setup WhatsApp (colección de phone)
     if await handle_wa_setup_text(update):
         return
 
-    # Pre-filtro de reglas: captura patrones obvios sin llamar al LLM
-    result = extract_prefilter(text)
-    if result is not None:
-        logger.info(f"[prefilter] intent={result.intent} type={getattr(result.data,'query_type','')} user={user_id}")
-    else:
-        result = await extract(text, [])
-
-    # Guardar en historial
+    # Detección + ejecución
     append_history(user_id, "user", text)
-
-    if result is None:
-        # LLM falló — intentar con reglas básicas antes de dar error
-        result = extract_fallback(text)
-        if result is not None:
-            logger.info(f"[fallback] intent={result.intent} user={user_id}")
-        else:
-            await update.message.reply_text(
-                "No pude interpretar el mensaje. ¿Puedes reformularlo?\n"
-                "Ejemplo: _\"Recalde no asistió el viernes, décimo EGB\"_",
-                parse_mode="Markdown",
-            )
-            return
-
-    if result.intent == "chat":
-        # Modo Libre: if message is only a course name, show action menu
-        if not is_jornada():
-            course_info = _detect_course_only(text)
-            if course_info:
-                await _show_course_action_menu(update, course_info)
-                return
-        await _run_ia_skill(update, user_id, text)
-        return
-
-    await handle_extraction(update, user_id, result)
-    append_history(user_id, "assistant", f"[{result.intent} procesado]")
-
-
-async def _run_ia_skill(update: Update, user_id: int, text: str) -> None:
-    sent = await update.message.reply_text("...")
-    buffer = []
-    last_len = 0
-
-    async def send_chunk(delta: str) -> None:
-        nonlocal last_len
-        buffer.append(delta)
-        current = "".join(buffer)
-        # Update message every 20 new characters to avoid Telegram rate limits
-        if len(current) - last_len >= 20:
-            last_len = len(current)
-            try:
-                await sent.edit_text(current)
-            except Exception:
-                pass
-
-    await chat(user_id, text, send_chunk)
-
-    # Final edit with complete response
-    final = "".join(buffer).strip()
-    if final:
-        try:
-            await sent.edit_text(final)
-        except Exception:
-            pass
+    skill = registry.detect(text)
+    logger.info(f"[dispatch] intent={skill.intent} user={user_id}")
+    await skill.handle(update, user_id, text)

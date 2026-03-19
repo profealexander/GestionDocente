@@ -13,8 +13,9 @@ from schoolai.db.models.homework import Homework
 from schoolai.skills.attendance.constants import ABSENT, LATE, JUSTIFIED
 from schoolai.skills.attendance.matcher import match_names
 from schoolai.skills.attendance.service import save_absences
-from schoolai.skills.extractor.llm import _parse_date, _resolve_delivery, course_abbrev_map
-from schoolai.skills.extractor.schema import (
+from schoolai.skills.utils.courses import course_abbrev_map
+from schoolai.skills.utils.dates import parse_date as _parse_date, resolve_delivery as _resolve_delivery
+from schoolai.skills.utils.schema import (
     AttendanceExtract,
     ExtractionResult,
     HomeworkExtract,
@@ -687,7 +688,6 @@ def _build_query_intent(period: str, subject_filter: str | None = None):
 
 async def _handle_query(update, user_id: int, result: ExtractionResult, data: QueryExtract) -> None:
     from schoolai.bot.query_handler import _run_query
-    from schoolai.skills.extractor.llm import course_abbrev_map
     from schoolai.skills.query.formatter import format_homework_multi
     from schoolai.skills.query.resolver import resolve_homework_multi
 
@@ -727,7 +727,7 @@ async def _handle_query(update, user_id: int, result: ExtractionResult, data: Qu
 
 async def handle_course_action_callback(update, context) -> None:
     """Handles course_action:{action}:{abbrev} — triggered from the course-only menu."""
-    from schoolai.skills.extractor.llm import _ABBREV_TO_NAME, course_abbrev_map
+    from schoolai.skills.utils.courses import _ABBREV_TO_NAME, course_abbrev_map
 
     query = update.callback_query
     await query.answer()

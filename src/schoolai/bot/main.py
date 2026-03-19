@@ -13,6 +13,7 @@ from telegram.ext import ApplicationBuilder, CallbackQueryHandler, CommandHandle
 from telegram.request import HTTPXRequest
 
 from schoolai.bot.action_handler import handle_act_callback, handle_course_action_callback, handle_selection_callback
+from schoolai.skills.cuotas.handler import handle_add_grade_callback, handle_cuota_pago_callback, handle_cuota_sel_callback
 from schoolai.bot.whatsapp_handler import handle_wa_notify_callback
 from schoolai.bot.notif_handler import handle_doc_notify_callback
 from schoolai.bot.attendance_handler import handle_attendance_callback
@@ -112,11 +113,27 @@ async def _handle_db_or_schedule_text(update: Update, context: ContextTypes.DEFA
 
 
 async def _post_init(app) -> None:
-    from schoolai.skills.extractor.llm import load_course_map
+    from schoolai.skills.utils.courses import load_course_map
     from schoolai.bot.mode import is_jornada
     from schoolai.bot.state import init_redis
+    from schoolai.skills.registry import registry
+    from schoolai.skills.attendance.skill import AttendanceSkill
+    from schoolai.skills.homework.skill import HomeworkSkill, HWReportSkill
+    from schoolai.skills.query.skill import QuerySkill
+    from schoolai.skills.cuotas.skill import CuotaSkill
+    from schoolai.skills.ia.skill import ChatSkill
+
     init_redis(settings.redis_url)
     await load_course_map()
+
+    # Registrar skills en orden de prioridad (más específico primero)
+    registry.register(AttendanceSkill())
+    registry.register(HWReportSkill())
+    registry.register(HomeworkSkill())
+    registry.register(QuerySkill())
+    registry.register(CuotaSkill())
+    registry.register(ChatSkill())   # siempre al final — fallback
+
     app.bot_data["jornada_mode"] = is_jornada()
     await _send_jornada_keyboard_to_teachers(app.bot)
 
@@ -206,6 +223,9 @@ def run(dev: bool = False) -> None:
     app.add_handler(CallbackQueryHandler(handle_wa_notify_callback, pattern=r"^wa_notify:"))
     app.add_handler(CallbackQueryHandler(handle_doc_notify_callback, pattern=r"^doc_notify:"))
     app.add_handler(CallbackQueryHandler(handle_selection_callback, pattern=r"^sel:"))
+    app.add_handler(CallbackQueryHandler(handle_cuota_sel_callback, pattern=r"^cuota_sel:"))
+    app.add_handler(CallbackQueryHandler(handle_add_grade_callback, pattern=r"^cuota_grade:"))
+    app.add_handler(CallbackQueryHandler(handle_cuota_pago_callback, pattern=r"^cuota_pago:"))
     app.add_handler(CallbackQueryHandler(handle_position_callback, pattern=r"^pos_"))
 
     # ── Modo Jornada — siempre activo ─────────────────────────────────────────

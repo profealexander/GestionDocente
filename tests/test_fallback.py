@@ -1,8 +1,8 @@
 """Tests for rule-based fallback extractor — pure function, no LLM."""
 
 
-from schoolai.skills.extractor.rules import extract_fallback
-from schoolai.skills.extractor.schema import AttendanceExtract, HomeworkExtract
+from schoolai.skills.utils.extract_rules import extract_fallback
+from schoolai.skills.utils.schema import AttendanceExtract, HomeworkExtract
 
 
 # ── Attendance — absent ───────────────────────────────────────────────────────
