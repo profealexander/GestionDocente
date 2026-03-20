@@ -120,7 +120,7 @@ def _extract_course(text: str) -> str | None:
     m = _COURSE_RE.search(text)
     if m:
         return _COURSE_ALIASES.get(m.group(0).lower())
-    norm = normalize(text).lower()
+    norm = normalize(text)
     for phrase, abbrev in _COURSE_VERBAL.items():
         if phrase in norm:
             return abbrev
