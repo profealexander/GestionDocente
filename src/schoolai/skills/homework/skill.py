@@ -12,6 +12,7 @@ class HomeworkSkill(BaseSkill):
     """Detecta: registro de nuevas tareas / deberes / evaluaciones."""
 
     intent = "homework"
+    priority = 30
 
     keywords: frozenset[str] = frozenset(normalize(w) for w in (
         "tarea", "tareas", "deber", "deberes",
@@ -70,6 +71,7 @@ class HWReportSkill(BaseSkill):
     """Detecta: reporte de estudiantes que no entregaron / cumplimiento."""
 
     intent = "homework_report"
+    priority = 20
 
     keywords: frozenset[str] = frozenset(normalize(w) for w in (
         "no entrego", "no cumplió", "no cumplio",

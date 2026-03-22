@@ -44,18 +44,10 @@ async def _ensure_registry() -> None:
     await load_course_map()
 
     if not registry._skills:
-        from schoolai.skills.attendance.skill import AttendanceSkill
-        from schoolai.skills.homework.skill import HomeworkSkill, HWReportSkill
-        from schoolai.skills.ia.skill import ChatSkill
-        from schoolai.skills.query.skill import QuerySkill
-        from schoolai.skills.cuotas.skill import CuotaSkill
-
-        registry.register(AttendanceSkill())
-        registry.register(HWReportSkill())
-        registry.register(HomeworkSkill())
-        registry.register(QuerySkill())
-        registry.register(CuotaSkill())
-        registry.register(ChatSkill())
+        from importlib.metadata import entry_points as _eps
+        skill_classes = [ep.load() for ep in _eps(group="schoolai.skills")]
+        for skill_cls in sorted(skill_classes, key=lambda c: getattr(c, "priority", 50)):
+            registry.register(skill_cls())
 
     _registry_ready = True
 

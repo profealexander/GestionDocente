@@ -24,6 +24,8 @@ from schoolai.bot.attendance_handler import handle_attendance_callback
 from schoolai.bot.db_handler import handle_db_callback, handle_db_command, handle_db_text
 from schoolai.bot.help_handler import handle_help_back, handle_help_callback, handle_help_command
 from schoolai.bot.handlers import handle_text, handle_voice, JORNADA_KEYBOARD
+from schoolai.bot.cron_handler import handle_cron_command
+from schoolai.bot.cron_service import cron_service
 from schoolai.bot.jornada_handler import handle_jornada_callback, handle_jornada_command, job_morning_notify
 from schoolai.bot.position_handler import handle_position_callback, handle_position_text
 from schoolai.bot.schedule_handler import handle_schedule_callback, handle_schedule_text
@@ -138,23 +140,19 @@ async def _post_init(app) -> None:
     from schoolai.skills.utils.courses import load_course_map
     from schoolai.bot.mode import is_jornada
     from schoolai.bot.state import init_redis
+    from importlib.metadata import entry_points as _eps
     from schoolai.skills.registry import registry
-    from schoolai.skills.attendance.skill import AttendanceSkill
-    from schoolai.skills.homework.skill import HomeworkSkill, HWReportSkill
-    from schoolai.skills.query.skill import QuerySkill
-    from schoolai.skills.cuotas.skill import CuotaSkill
-    from schoolai.skills.ia.skill import ChatSkill
 
     init_redis(settings.redis_url)
     await load_course_map()
 
-    # Registrar skills en orden de prioridad (más específico primero)
-    registry.register(AttendanceSkill())
-    registry.register(HWReportSkill())
-    registry.register(HomeworkSkill())
-    registry.register(QuerySkill())
-    registry.register(CuotaSkill())
-    registry.register(ChatSkill())   # siempre al final — fallback
+    cron_service.load(settings.log_dir)
+    cron_service.register_callback("morning_notify", job_morning_notify)
+
+    # Registrar skills vía entry_points — extensible sin modificar main.py
+    skill_classes = [ep.load() for ep in _eps(group="schoolai.skills")]
+    for skill_cls in sorted(skill_classes, key=lambda c: getattr(c, "priority", 50)):
+        registry.register(skill_cls())
 
     app.bot_data["jornada_mode"] = is_jornada()
     if is_jornada():
@@ -234,8 +232,6 @@ def _setup_logging() -> None:
 
 
 def run(dev: bool = False) -> None:
-    import datetime as _dt
-
     _setup_logging()
 
     if dev and settings.telegram_bot_token_dev:
@@ -286,8 +282,11 @@ def run(dev: bool = False) -> None:
     app.add_handler(CallbackQueryHandler(handle_cuota_done_callback,   pattern=r"^cuota_done:"))
     app.add_handler(CallbackQueryHandler(handle_position_callback, pattern=r"^pos_"))
 
-    # ── Modo Jornada — siempre activo ─────────────────────────────────────────
-    app.job_queue.run_daily(job_morning_notify, time=_dt.time(7, 0, 0))
+    # ── Cron ──────────────────────────────────────────────────────────────────
+    cron_service.register_with_app(app)
+    app.add_handler(CommandHandler("cron", handle_cron_command))
+
+    # ── Modo Jornada ──────────────────────────────────────────────────────────
     app.add_handler(CommandHandler("jornada", handle_jornada_command))
     app.add_handler(CallbackQueryHandler(handle_jornada_callback, pattern=r"^jor_"))
 

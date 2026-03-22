@@ -17,8 +17,7 @@ dependencies = [
     "python-dotenv>=1.0.0",
     # Telegram bot
     "python-telegram-bot[job-queue]>=21.0",
-    # AI
-    "zhipuai>=2.1.0",
+    # AI (Groq — LLM extractor, chat, Whisper transcription)
     # HTTP
     "httpx>=0.28.0",
     # Event loop (Linux/macOS)
@@ -44,6 +43,18 @@ dev = [
     "ruff>=0.8.0",
 ]
 
+[project.entry-points."schoolai.skills"]
+attendance  = "schoolai.skills.attendance.skill:AttendanceSkill"
+hw_report   = "schoolai.skills.homework.skill:HWReportSkill"
+homework    = "schoolai.skills.homework.skill:HomeworkSkill"
+query       = "schoolai.skills.query.skill:QuerySkill"
+cuotas      = "schoolai.skills.cuotas.skill:CuotaSkill"
+chat        = "schoolai.skills.ia.skill:ChatSkill"
+
+[project.entry-points."schoolai.channels"]
+telegram  = "schoolai.bot.channels.telegram:TelegramChannel"
+whatsapp  = "schoolai.bot.channels.whatsapp:WhatsAppChannel"
+
 [project.scripts]
 schoolai-bot     = "schoolai.bot.main:run"
 schoolai-bot-dev = "schoolai.bot.main_dev:run_dev"
@@ -67,4 +78,5 @@ asyncio_mode = "auto"
 [dependency-groups]
 dev = [
     "pytest>=9.0.2",
+    "ruff>=0.15.5",
 ]

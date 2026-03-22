@@ -12,6 +12,7 @@ class CuotaSkill(BaseSkill):
     """Maneja: crear actividad, registrar pago, ver estado, exportar reporte."""
 
     intent = "cuota"
+    priority = 50
 
     keywords: frozenset[str] = frozenset(normalize(w) for w in (
         "cuota", "cuotas", "actividad", "actividades",

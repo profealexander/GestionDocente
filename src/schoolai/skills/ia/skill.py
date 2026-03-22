@@ -11,6 +11,7 @@ class ChatSkill(BaseSkill):
     """Catch-all: cualquier mensaje que no reconozca otra skill."""
 
     intent = "chat"
+    priority = 100
 
     # Sin keywords ni patterns — nunca se llama matches() en esta skill.
     # El registry la usa como fallback cuando ninguna otra hace match.

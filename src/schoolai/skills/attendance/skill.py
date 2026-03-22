@@ -12,6 +12,7 @@ class AttendanceSkill(BaseSkill):
     """Detecta: faltas, atrasos, justificados, todos presentes."""
 
     intent = "attendance"
+    priority = 10
 
     # Keywords normalizados (sin acentos, minúsculas) — detección O(1)
     keywords: frozenset[str] = frozenset(normalize(w) for w in (

@@ -12,6 +12,7 @@ class QuerySkill(BaseSkill):
     """Detecta: ver tareas, ver asistencia, listar, dame, muéstrame…"""
 
     intent = "query"
+    priority = 40
 
     keywords: frozenset[str] = frozenset(normalize(w) for w in (
         "ver", "dame", "muestra", "lista", "mostrar",
