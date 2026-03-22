@@ -5,7 +5,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.openapi.docs import get_redoc_html, get_swagger_ui_html
 from fastapi.openapi.utils import get_openapi
 
-from schoolai.api.routers import attendance, auth, cuotas, grades, health, homework, students, subjects
+from schoolai.api.routers import attendance, auth, cuotas, grades, health, homework, students, subjects, whatsapp_webhook
 
 # ── App ───────────────────────────────────────────────────────────────────────
 
@@ -58,6 +58,7 @@ app.include_router(students.router)
 app.include_router(homework.router)
 app.include_router(attendance.router)
 app.include_router(cuotas.router)
+app.include_router(whatsapp_webhook.router)
 
 
 # ── Custom docs ───────────────────────────────────────────────────────────────
