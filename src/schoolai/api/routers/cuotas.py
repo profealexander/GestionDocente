@@ -1,6 +1,5 @@
 """Endpoints REST para cuotas y actividades escolares."""
 
-import io
 from datetime import datetime
 from typing import Optional
 
@@ -13,7 +12,6 @@ from schoolai.db.connection import get_session
 from schoolai.skills.cuotas.service import (
     add_participantes,
     create_actividad,
-    get_actividad_by_nombre,
     get_actividades,
     get_estado_actividad,
     get_students_in_grade,

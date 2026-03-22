@@ -39,15 +39,15 @@ class AttendanceSkill(BaseSkill):
 
     async def handle(self, update, user_id: int, text: str) -> None:
         """Extrae datos del mensaje y delega a action_handler._handle_attendance."""
-        from schoolai.skills.utils.extract_llm import extract
         from schoolai.skills.utils.extract_rules import extract_prefilter, extract_fallback
+        from schoolai.skills.attendance.tools import llm_fallback
         from schoolai.bot.action_handler import handle_extraction
 
         result = extract_prefilter(text)
         if result is None or result.intent != "attendance":
-            result = await extract(text, [])
-        if result is None or result.intent != "attendance":
             result = extract_fallback(text)
+        if result is None or result.intent != "attendance":
+            result = await llm_fallback(text)
         if result is None or result.intent != "attendance":
             await update.message.reply_text(
                 "No pude interpretar el mensaje de asistencia.\n"

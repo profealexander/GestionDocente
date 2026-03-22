@@ -67,11 +67,11 @@ async def job_morning_notify(context: ContextTypes.DEFAULT_TYPE) -> None:
             )
         ).scalars().all()
 
-        # Pre-load schedules para todos los docentes
-        teacher_periods = [
-            (teacher, await get_schedule_for_day(session, teacher.id, today))
-            for teacher in teachers
-        ]
+        # Pre-load schedules para todos los docentes en paralelo
+        schedules = await asyncio.gather(
+            *[get_schedule_for_day(session, teacher.id, today) for teacher in teachers]
+        )
+        teacher_periods = list(zip(teachers, schedules))
 
     _start_btn = InlineKeyboardMarkup([[
         InlineKeyboardButton("🟢 Iniciar Modo Jornada", callback_data="jor_start"),

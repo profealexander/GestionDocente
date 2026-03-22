@@ -6,7 +6,6 @@ import re
 from dataclasses import dataclass, field
 from typing import Literal
 
-from schoolai.skills.utils.text import normalize
 
 # ── Patrones ──────────────────────────────────────────────────────────────────
 
@@ -197,5 +196,19 @@ def extract_cuota(text: str) -> CuotaExtract | None:
             course=course,
             complete=bool(nombres and monto),
         )
+
+    # "cuota Paseo $50" — bare form without "nueva/crear"
+    if re.match(r"^\s*cuotas?\s+", t, re.IGNORECASE):
+        monto = _extract_monto(t)
+        if monto:
+            nombre = _extract_nombre(t)
+            course = _extract_course(t)
+            return CuotaExtract(
+                action="create",
+                nombre=nombre,
+                monto=monto,
+                course=course,
+                complete=bool(nombre and monto),
+            )
 
     return None

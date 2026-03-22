@@ -1,16 +1,26 @@
 """SkillRegistry — registro único de skills y detector de intención.
 
+Patrón first-match: las skills se evalúan en orden de registro.
+El orden define la prioridad (más específico primero, ChatSkill al final).
+
 Uso típico:
     from schoolai.skills.registry import registry
 
-    # En main.py al arrancar:
-    registry.register(AttendanceSkill())
-    registry.register(HomeworkSkill())
-    ...
+    # En main.py/_post_init():
+    registry.register(AttendanceSkill())   # 1°
+    registry.register(HWReportSkill())     # 2°
+    registry.register(HomeworkSkill())     # 3°
+    registry.register(QuerySkill())        # 4°
+    registry.register(CuotaSkill())        # 5°
+    registry.register(ChatSkill())         # 6° — siempre al final
 
-    # En _dispatch():
+    # Mensaje único → una skill:
     skill = registry.detect(text)
     await skill.handle(update, user_id, text)
+
+    # Mensaje multi-intent → múltiples skills:
+    skills = registry.detect_all(text)
+    # El Planner divide el texto y asigna fragmentos a cada skill.
 """
 
 from __future__ import annotations
@@ -47,6 +57,14 @@ class SkillRegistry:
             raise RuntimeError("ChatSkill no registrada — llama registry.register(ChatSkill()) al arrancar.")
         logger.debug("[registry] no match → chat fallback")
         return chat
+
+    def detect_all(self, text: str) -> list[BaseSkill]:
+        """Detecta todas las skills que hacen match con el texto.
+
+        Excluye ChatSkill (intent="chat") — es fallback exclusivo de detect().
+        Si ninguna hace match, retorna lista vacía (el caller decide el fallback).
+        """
+        return [s for s in self._skills if s.intent != "chat" and s.matches(text)]
 
     def get(self, intent: str) -> BaseSkill | None:
         """Obtiene una skill por su intent. Devuelve None si no existe."""

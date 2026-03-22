@@ -3,7 +3,7 @@
 Usage:
     from schoolai.skills.llm.client import get_client, parse_model
 
-    provider, model = parse_model(settings.llm_chat)  # "zhipu/glm-4.5-air"
+    provider, model = parse_model(settings.llm_chat)  # "groq/llama-3.3-70b-versatile"
     client = get_client(provider)
     response = client.chat.completions.create(model=model, ...)
 """
@@ -21,13 +21,13 @@ def parse_model(model_str: str) -> tuple[str, str]:
 
     'zhipu/glm-4-flash'              → ('zhipu', 'glm-4-flash')
     'openrouter/mistralai/mistral-7b' → ('openrouter', 'mistralai/mistral-7b')
-    'glm-4-flash'                    → ('zhipu', 'glm-4-flash')  # default provider
+    'llama-3.1-8b-instant'           → ('groq', 'llama-3.1-8b-instant')  # default provider
     """
     if "/" in model_str:
         provider, model = model_str.split("/", 1)
         if provider in PROVIDERS:
             return provider, model
-    return "zhipu", model_str
+    return "groq", model_str
 
 
 def get_client(provider: str, timeout: float = 60.0) -> OpenAI:

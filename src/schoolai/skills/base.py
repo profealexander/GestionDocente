@@ -4,6 +4,15 @@ from __future__ import annotations
 
 import re
 from abc import ABC, abstractmethod
+from functools import lru_cache
+
+from schoolai.skills.utils.text import normalize
+
+
+@lru_cache(maxsize=2048)
+def _tokenize(norm: str) -> frozenset[str]:
+    """Tokeniza texto ya normalizado. Cache LRU: mismos mensajes se repiten."""
+    return frozenset(norm.split())
 
 
 class BaseSkill(ABC):
@@ -26,11 +35,8 @@ class BaseSkill(ABC):
         Primero comprueba keywords (O(1)), luego patterns (O(k·n)).
         Subclases pueden sobreescribir para lógica más compleja.
         """
-        from schoolai.skills.utils.text import normalize
-
         norm = normalize(text)
-        tokens = frozenset(norm.split())
-        if tokens & self.keywords:
+        if _tokenize(norm) & self.keywords:
             return True
         return any(p.search(norm) for p in self.patterns)
 

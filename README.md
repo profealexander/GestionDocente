@@ -1,7 +1,7 @@
 # SchoolAI
 
 Asistente escolar para docentes vía Telegram + API REST.
-Permite registrar tareas, asistencia y consultar reportes mediante lenguaje natural.
+Permite registrar tareas, asistencia, cuotas de actividades y consultar reportes mediante lenguaje natural.
 
 ---
 
@@ -10,8 +10,7 @@ Permite registrar tareas, asistencia y consultar reportes mediante lenguaje natu
 - Python 3.13+
 - PostgreSQL 14+
 - [uv](https://docs.astral.sh/uv/) (gestor de paquetes)
-- Cuenta Zhipu AI (GLM) — extracción de intenciones y chat IA
-- Cuenta Groq — transcripción de voz (opcional)
+- Cuenta [Groq](https://console.groq.com/) — LLM fallback + transcripción de voz
 - Bot de Telegram creado con [@BotFather](https://t.me/BotFather)
 
 ---
@@ -37,16 +36,20 @@ cp .env.example .env
 | Variable | Descripción | Requerida |
 |---|---|---|
 | `DATABASE_URL` | URL de conexión PostgreSQL (`postgresql+asyncpg://user:pass@host/db`) | ✅ |
-| `TELEGRAM_BOT_TOKEN` | Token del bot de Telegram | ✅ |
+| `TELEGRAM_BOT_TOKEN` | Token del bot de Telegram (modo libre) | ✅ |
 | `TELEGRAM_ALLOWED_USERS` | IDs de Telegram separados por coma (ej. `123456,789012`) | ✅ |
-| `GLM_API_KEY` | API key de [Zhipu AI](https://open.bigmodel.cn/) | ✅ |
-| `GLM_MODEL` | Modelo GLM para chat IA (default: `glm-4.7`) | — |
-| `GROQ_API_KEY` | API key de Groq para transcripción de voz | — |
+| `GROQ_API_KEY` | API key de Groq — LLM fallback + transcripción de voz | ✅ |
+| `TELEGRAM_BOT_TOKEN_DEV` | Token del bot de Telegram (modo jornada) | — |
+| `JWT_SECRET_KEY` | Clave secreta JWT (32+ caracteres) | ✅ para API |
+| `API_SECRET` | Clave compartida con la PWA para obtener tokens | ✅ para API |
+| `JWT_EXPIRE_HOURS` | Duración del token JWT en horas (default: `24`) | — |
+| `REDIS_URL` | URL de Redis (ej. `redis://localhost:6379/0`) — recomendado en producción | — |
 | `ADMIN_TELEGRAM_ID` | Tu ID de Telegram para recibir alertas de error | — |
+| `LLM_EXTRACTOR` | Modelo Groq para fallback de extracción (default: `groq/llama-3.1-8b-instant`) | — |
+| `LLM_CHAT` | Modelo Groq para chat IA (default: `groq/llama-3.3-70b-versatile`) | — |
 | `API_HOST` | Host del servidor API (default: `0.0.0.0`) | — |
 | `API_PORT` | Puerto del servidor API (default: `8000`) | — |
 | `LOG_DIR` | Directorio de logs (default: `logs`) | — |
-| `DEBUG` | Modo debug con SQL logging (default: `false`) | — |
 
 ### Obtener tu ID de Telegram
 
@@ -56,41 +59,29 @@ Escríbele a [@userinfobot](https://t.me/userinfobot) y te responderá con tu ID
 
 ## Base de datos
 
-### Crear la base de datos
-
 ```bash
+# Crear base de datos
 psql -U postgres -c "CREATE USER schoolai WITH PASSWORD '1234';"
 psql -U postgres -c "CREATE DATABASE schoolai OWNER schoolai;"
-```
 
-### Ejecutar migraciones
-
-```bash
+# Ejecutar migraciones
 uv run alembic upgrade head
 ```
 
-### Poblar catálogos iniciales
-
-Los grados (15 niveles) y materias se cargan con las migraciones. Para agregar
-estudiantes, carga los datos directamente en las tablas `people` y `students`.
+Los grados (15 niveles) y materias se cargan con las migraciones.
 
 ---
 
 ## Ejecución
 
-### Bot de Telegram
-
 ```bash
-# Producción
+# Bot modo libre (producción)
 uv run schoolai-bot
 
-# Desarrollo (recarga automática)
+# Bot modo jornada (desarrollo/segundo token)
 uv run schoolai-dev
-```
 
-### API REST
-
-```bash
+# API REST
 uv run schoolai-api
 ```
 
@@ -106,47 +97,49 @@ schoolai/
 ├── .env                        # Variables de entorno (no subir a git)
 ├── pyproject.toml              # Dependencias y scripts
 ├── alembic/                    # Migraciones de base de datos
-│   └── versions/               # 8 archivos de migración
-├── docs/                       # Documentación
-│   ├── architecture.md         # Arquitectura técnica
-│   └── user-guide.md           # Guía de usuario (docente)
+│   └── versions/               # Archivos de migración secuenciales
+├── docs/
+│   ├── architecture.md         # Arquitectura técnica detallada
+│   └── user-guide.md           # Guía de uso para docentes
 └── src/schoolai/
     ├── config.py               # Configuración (pydantic-settings)
     ├── bot/                    # Bot de Telegram
-    │   ├── main.py             # Arranque y registro de handlers
-    │   ├── handlers.py         # Manejo de mensajes de texto y voz
-    │   ├── action_handler.py   # Procesamiento de intenciones
-    │   ├── query_handler.py    # Consultas y reportes
+    │   ├── main.py             # Arranque y registro de handlers/callbacks
+    │   ├── handlers.py         # Entrada de mensajes → _dispatch()
+    │   ├── action_handler.py   # Procesamiento de intenciones → DB
+    │   ├── state.py            # Estado de sesión RAM+Redis con TTL
+    │   ├── jornada_handler.py  # Modo Jornada: flujo hora a hora
     │   ├── attendance_handler.py
-    │   ├── help_handler.py
+    │   ├── schedule_handler.py
+    │   ├── position_handler.py
     │   ├── db_handler.py
-    │   ├── state.py            # Estado de sesión en memoria (TTL 60 min)
-    │   └── transcription.py   # Transcripción de voz con Groq
+    │   ├── whatsapp_handler.py
+    │   ├── notif_handler.py
+    │   ├── help_handler.py
+    │   └── transcription.py    # Groq Whisper para mensajes de voz
     ├── api/                    # API REST (FastAPI)
-    │   ├── main.py             # App FastAPI
-    │   ├── schemas.py          # Modelos Pydantic de respuesta
-    │   └── routers/            # Endpoints por recurso
-    │       ├── grades.py       # GET /grades
-    │       ├── subjects.py     # GET /subjects
-    │       ├── homework.py     # GET/PATCH /homework
-    │       ├── students.py     # GET /students
-    │       └── attendance.py   # GET /attendance
+    │   ├── main.py
+    │   ├── auth.py             # JWT HS256
+    │   ├── schemas.py
+    │   └── routers/            # auth, grades, subjects, students,
+    │                           # homework, attendance, cuotas
     ├── db/                     # Capa de base de datos
     │   ├── connection.py       # Sesión async SQLAlchemy
-    │   └── models/             # Modelos ORM
-    │       ├── grade.py
-    │       ├── student.py
-    │       ├── homework.py
-    │       ├── homework_submission.py
-    │       ├── attendance.py
-    │       ├── subject.py
-    │       └── person.py
-    └── skills/                 # Módulos de habilidades IA
-        ├── extractor/          # Extracción de intenciones (GLM 4.5-air)
-        ├── homework/           # Registro y consulta de tareas
-        ├── attendance/         # Registro de asistencia con fuzzy matching
-        ├── query/              # Formateo de reportes HTML/tablas
-        └── ia/                 # Chat IA general (GLM 4.7)
+    │   └── models/             # ORM: grade, student, teacher, homework,
+    │                           # attendance, subject, cuota, notification…
+    └── skills/                 # Sistema de skills
+        ├── registry.py         # SkillRegistry: detect() + detect_all()
+        ├── planner.py          # Divide mensajes multi-intent por skill
+        ├── base.py             # BaseSkill: matches() keywords + regex
+        ├── attendance/         # Skill + tools + matcher fuzzy
+        ├── homework/           # Skill + tools + detector + repository
+        ├── query/              # Skill + tools
+        ├── cuotas/             # Skill + tools + handlers + service + exporter
+        ├── ia/                 # ChatSkill con streaming (Groq 70B)
+        ├── llm/                # Cliente unificado + tool_caller compartido
+        ├── documents/          # Generación de documentos PDF
+        ├── whatsapp/           # Integración Green API
+        └── utils/              # normalize, extract_rules, schema, keyboards
 ```
 
 ---
@@ -157,9 +150,11 @@ Ver [`docs/user-guide.md`](docs/user-guide.md) para la guía completa.
 
 | Comando | Descripción |
 |---|---|
+| `/start` | Saludo inicial |
 | `/ayuda` | Muestra la ayuda del bot |
 | `/cancelar` | Cancela el flujo actual |
 | `/db` | Accede al panel de base de datos |
+| `/jornada` | Inicia el modo jornada manual |
 
 ---
 
@@ -169,47 +164,47 @@ Ver documentación interactiva en `/docs` (Swagger UI) o `/redoc`.
 
 | Método | Ruta | Descripción |
 |---|---|---|
+| POST | `/auth/token` | Obtener JWT |
 | GET | `/grades/` | Lista todos los grados |
-| GET | `/subjects/` | Lista materias (filtrable por nivel) |
-| GET | `/students/` | Lista estudiantes (filtrable por grado y estado) |
-| GET | `/students/{id}` | Obtiene un estudiante |
-| GET | `/homework/` | Lista tareas (filtrable por grado, materia, estado) |
-| GET | `/homework/{id}` | Obtiene una tarea |
+| GET | `/subjects/` | Lista materias |
+| GET | `/students/` | Lista estudiantes |
+| GET | `/homework/` | Lista tareas |
 | PATCH | `/homework/{id}` | Cierra una tarea |
 | GET | `/attendance/` | Lista registros de asistencia |
-
----
-
-## Logs
-
-Los logs se guardan en el directorio configurado en `LOG_DIR` (default: `logs/`).
-
-- Rotación diaria, retención 30 días, compresión `.gz`
-- Nivel `INFO` en archivo, `DEBUG` en consola en modo desarrollo
-- Si `ADMIN_TELEGRAM_ID` está configurado, los errores se envían por Telegram
-
----
-
-## Acceso directo Windows (WSL)
-
-Para crear un acceso directo en el escritorio de Windows que levante el bot:
-
-1. Crea un archivo `SchoolAI Bot.lnk` apuntando a:
-   - **Target**: `C:\Windows\System32\wsl.exe`
-   - **Arguments**: `-e /home/edwin8600/.local/bin/uv run --project /home/edwin8600/schoolai schoolai-dev`
+| GET | `/cuotas/actividades/` | Lista actividades/cuotas |
+| POST | `/cuotas/actividades/` | Crea una actividad |
+| POST | `/cuotas/actividades/{id}/participantes` | Agrega participantes |
+| POST | `/cuotas/actividades/{id}/pagos` | Registra un pago |
 
 ---
 
 ## Desarrollo
 
 ```bash
-# Linter
-uv run ruff check src/
-
 # Tests
 uv run pytest
+
+# Linter
+uv run ruff check src/
 
 # Nueva migración
 uv run alembic revision --autogenerate -m "descripcion"
 uv run alembic upgrade head
 ```
+
+---
+
+## Logs
+
+Directorio configurado en `LOG_DIR` (default: `logs/`):
+- Rotación diaria, retención 30 días, compresión `.gz`
+- Nivel `INFO` en consola, `DEBUG` en archivo
+- Si `ADMIN_TELEGRAM_ID` configurado, los errores se envían por Telegram
+
+---
+
+## Acceso directo Windows (WSL)
+
+Crea un archivo `.lnk` con:
+- **Target**: `C:\Windows\System32\wsl.exe`
+- **Arguments**: `-e /home/edwin8600/.local/bin/uv run --project /home/edwin8600/schoolai schoolai-dev`

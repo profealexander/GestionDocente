@@ -4,6 +4,12 @@ from sqlalchemy import Integer, SmallInteger, String, DateTime, ForeignKey, text
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 from schoolai.db.connection import Base
 
+from typing import TYPE_CHECKING
+if TYPE_CHECKING:
+    from schoolai.db.models.teacher import Teacher
+    from schoolai.db.models.student import Student
+    from schoolai.db.models.subject import Subject
+
 
 class Notification(Base):
     __tablename__ = "notifications"

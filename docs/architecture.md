@@ -8,7 +8,7 @@ SchoolAI tiene dos procesos independientes (bot + API) que comparten PostgreSQL 
 
 ```
 ┌─────────────────────────────────────────────────────────────────┐
-│                         USUARIO (docente)                        │
+│                        USUARIO (docente)                         │
 │                    Telegram (texto o voz)                        │
 └────────────────────────────┬────────────────────────────────────┘
                              │ HTTPS polling
@@ -17,14 +17,13 @@ SchoolAI tiene dos procesos independientes (bot + API) que comparten PostgreSQL 
 │                       BOT (proceso 1)                            │
 │  python-telegram-bot 21.x · async · uvloop                      │
 │                                                                  │
-│  handlers.py → extractor/llm.py → rules.py → action_handler.py  │
-│       │              │               │               │           │
-│       │         LLM extractor    fallback        skills/         │
-│       │         (glm-4-flash)   rule-based       attendance/     │
-│       │                                          homework/       │
-│       │                                          query/          │
-│       │                                          ia/             │
-│       └──────────────────────────────────────────┴─── asyncpg ──┤
+│  main.py → handlers.py → SkillRegistry → Skill → Tools          │
+│                │               │            │        │           │
+│           _DbFlowFilter    detect_all()  extractor  service.py   │
+│           (estado activo)  + Planner    (regex)    (DB ops)      │
+│                                │                                  │
+│                         LLM fallback (Groq)                      │
+│                         solo si regex falla                      │
 │                                                                  │
 │  Modo Jornada (bot-dev):                                         │
 │    jornada_handler.py · schedule_handler.py · position_handler  │
@@ -33,11 +32,10 @@ SchoolAI tiene dos procesos independientes (bot + API) que comparten PostgreSQL 
               ┌────────────────────┼────────────────────┐
               │                    │                     │
    ┌──────────▼──────────┐  ┌──────▼──────┐   ┌────────▼────────┐
-   │   PostgreSQL         │  │   Redis     │   │   LLM APIs      │
-   │   schoolai DB        │  │  (estado    │   │  ZhipuAI GLM    │
-   │                      │  │  persistente│   │  Groq Whisper   │
-   └──────────┬──────────┘  │  opcional)  │   │  (configurable) │
-              │              └─────────────┘   └─────────────────┘
+   │   PostgreSQL         │  │   Redis     │   │   Groq API      │
+   │   schoolai DB        │  │  (estado    │   │  Whisper (voz)  │
+   │                      │  │  RAM+TTL)   │   │  LLM fallback   │
+   └──────────┬──────────┘  └─────────────┘   └─────────────────┘
               │
 ┌─────────────▼───────────────────────────────────────────────────┐
 │                       API (proceso 2)                            │
@@ -48,6 +46,7 @@ SchoolAI tiene dos procesos independientes (bot + API) que comparten PostgreSQL 
 │  GET  /students              ← protegida (Bearer JWT)           │
 │  GET  /homework  PATCH /...  ← protegida                        │
 │  GET  /attendance            ← protegida                        │
+│  GET/POST /cuotas/...        ← protegida                        │
 │                                                                  │
 │  Swagger UI: /docs    ReDoc: /redoc                             │
 └─────────────────────────────────────────────────────────────────┘
@@ -61,45 +60,91 @@ SchoolAI tiene dos procesos independientes (bot + API) que comparten PostgreSQL 
 |---|---|---|
 | Token | `TELEGRAM_BOT_TOKEN` | `TELEGRAM_BOT_TOKEN_DEV` |
 | Comando | `schoolai-bot` | `schoolai-bot-dev` |
-| Función | Registro libre de asistencia/tareas | Guía hora a hora del día escolar |
-| Extra | — | `/jornada`, notificación 06:00, contexto automático |
+| Función | Registro libre de asistencia/tareas/cuotas | Guía hora a hora del día escolar |
+| Extra | — | `/jornada`, notificación 07:00, contexto automático por período |
 
 ---
 
-## Flujo de un mensaje
+## Pipeline de un mensaje (Skill Registry)
 
 ```
-Usuario escribe:
-"Faltaron Carlos y Pedro de 2bt"
-        │
-        ▼
-handlers.py · handle_text()
-  - valida usuario en allowed_user_ids
-  - carga historial (últimos 6 turnos)
-        │
-        ▼
-extractor/llm.py · extract()
-  - envía al modelo GLM-4-flash
-  - parsea JSON → ExtractionResult
-  - si falla (sin JSON tras retry) → devuelve None
-        │
-        ▼ (si result is None)
-extractor/rules.py · extract_fallback()
-  - regex sobre "faltaron", "llegó tarde", etc.
-  - extrae nombres + curso + status
-  - devuelve None si no está seguro (mensaje de error al usuario)
-        │
-        ▼
-action_handler.py · handle_extraction()
-  - rutea por intent → _handle_attendance()
-  - resuelve "2bt" → grade_id via course_abbrev_map
-  - fuzzy match nombres → IDs de estudiantes
-  - guarda en DB
-        │
-        ▼
-Telegram reply:
-"✅ Carlos Mendoza — ausente
- ⚠️ Pedro: Pedro López / Pedro García  (selecciona)"
+Usuario escribe: "Faltaron Carlos y Pedro de 2bt"
+       │
+       ▼
+bot/main.py — MessageHandler
+  _DbFlowFilter: ¿hay estado activo para este user?
+  ├── SÍ → _handle_db_or_schedule_text()
+  │         (schedule / position / cuota number input)
+  └── NO → handle_text() → _dispatch()
+       │
+       ▼
+handlers.py — _dispatch()
+  Capas de intercepción:
+  1. Jornada triggers (solo modo jornada)
+  2. resolve_selection_text() — selección pendiente
+  3. handle_wa_setup_text() — setup WhatsApp
+  4. handle_cuota_names_text() — input numérico de cuotas
+       │
+       ▼
+skills/registry.py — detect_all(text)
+  Itera skills en orden de prioridad:
+  1. AttendanceSkill.matches(text)?  ← keywords O(1) + patterns regex
+  2. HWReportSkill.matches(text)?
+  3. HomeworkSkill.matches(text)?
+  4. QuerySkill.matches(text)?
+  5. CuotaSkill.matches(text)?
+  └── [] vacío → ChatSkill (fallback LLM)
+       │
+       ├── 1 skill → handle() directo
+       └── 2+ skills → Planner (skills/planner.py)
+                         split por " y " / ";" / ","
+                         asigna fragmento a cada skill
+       │
+       ▼
+skill.handle(update, user_id, text)
+  1. extractor regex (<1ms) — extract_prefilter / extract_fallback
+  2. LLM fallback (Groq, ~500ms) — solo si regex devuelve None
+  3. handle_extraction() → DB → respuesta Telegram
+```
+
+---
+
+## Skills registradas
+
+| Orden | Skill | Intent | Detección |
+|---|---|---|---|
+| 1 | AttendanceSkill | `attendance` | keywords: faltó, atraso, ausente… |
+| 2 | HWReportSkill | `homework_report` | keywords: no entregó, cumplimiento… |
+| 3 | HomeworkSkill | `homework` | keywords: tarea, deber, examen… |
+| 4 | QuerySkill | `query` | trigger explícito + dominio |
+| 5 | CuotaSkill | `cuota` | keywords: cuota, actividad, pago… |
+| 6 | ChatSkill | `chat` | fallback — siempre al final |
+
+---
+
+## Tools Registry (por skill)
+
+Cada skill expone tools Python puras (sin Telegram) para:
+- Ejecución directa desde handlers
+- Formato Groq para LLM fallback (`.to_groq()`)
+- Reutilización futura en orquestador
+
+```
+skills/cuotas/tools.py      create_actividad, list_actividades, register_pago,
+                            get_estado_actividad, export_reporte, add_students_from_course
+
+skills/attendance/tools.py  mark_attendance, query_attendance
+
+skills/homework/tools.py    create_homework, report_missing
+
+skills/query/tools.py       query_attendance, query_homework
+```
+
+LLM fallback unificado en `skills/llm/tool_caller.py`:
+```
+texto → Groq (llama-3.1-8b-instant) con tool definitions
+      → tool_name + args
+      → ExtractionResult / CuotaExtract
 ```
 
 ---
@@ -107,7 +152,7 @@ Telegram reply:
 ## Flujo Modo Jornada
 
 ```
-06:00 — job_morning_notify (asyncio.gather — paralelo)
+07:00 — job_morning_notify (asyncio.gather — paralelo)
   - busca teachers con horario del día
   - envía mensaje con primer período a cada docente
 
@@ -120,7 +165,7 @@ Docente confirma llegada (Aquí)
   - grade_id + subject_id inyectados en contexto
 
 Docente registra: "Faltó Recalde"
-  - handlers._dispatch() detecta jornada activa
+  - _dispatch() detecta jornada activa
   - get_jornada_context() añade grade+subject al extraction
   - sin necesidad de especificar el curso
 
@@ -137,36 +182,52 @@ Al finalizar todos los períodos
 
 | Archivo | Responsabilidad |
 |---|---|
-| `main.py` | Arranque, registro de handlers, post_init (Redis + course_map) |
-| `handlers.py` | Entry point: texto y voz → `_dispatch()`, fallback rule-based |
+| `main.py` | Arranque, registro de handlers/callbacks, post_init |
+| `handlers.py` | Entry point texto/voz → `_dispatch()` con capas de intercepción |
 | `action_handler.py` | Ruteo por intent, persistencia, respuestas |
-| `query_handler.py` | Ejecuta consultas y formatea salida |
-| `attendance_handler.py` | Callbacks de asistencia (grade selection) |
+| `attendance_handler.py` | Callbacks de asistencia (selección de grado) |
 | `jornada_handler.py` | Modo Jornada: flujo hora a hora, notificación matutina |
 | `schedule_handler.py` | Registro de horario del docente |
-| `position_handler.py` | Registro de cargos institucionales del docente |
-| `db_handler.py` | Panel de base de datos |
-| `permissions.py` | get_access_level(telegram_id) → superadmin/admin/secretaria/teacher |
+| `position_handler.py` | Registro de cargos institucionales |
+| `db_handler.py` | Panel de base de datos `/db` |
+| `whatsapp_handler.py` | Setup y envío de notificaciones WhatsApp (Green API) |
+| `notif_handler.py` | Generación y envío de documentos PDF |
+| `help_handler.py` | Sistema de ayuda inline |
 | `mode.py` | Flag de módulo "libre" \| "jornada" |
-| `state.py` | Estado dual L1(RAM)+L2(Redis), TTL, JornadaSession |
-| `transcription.py` | Integración Groq Whisper para audio |
+| `state.py` | Estado dual L1(RAM)+L2(Redis) con TTL, todos los flows |
+| `transcription.py` | Groq Whisper para mensajes de voz |
 
 ### Skills (`src/schoolai/skills/`)
 
 | Módulo | Descripción |
 |---|---|
-| `extractor/llm.py` | LLM extractor, parseo JSON, mapa de cursos |
-| `extractor/rules.py` | Fallback rule-based: regex para asistencia/tarea sin LLM |
-| `extractor/schema.py` | Dataclasses: ExtractionResult, AttendanceExtract, etc. |
-| `homework/` | Repositorio de tareas |
-| `attendance/` | Fuzzy matching de nombres, servicio de persistencia |
-| `query/` | Resolución de consultas, formateo HTML/tablas |
-| `ia/` | Chat IA general con streaming |
-| `db/schedule_parser.py` | Parser texto libre "07:00-08:30 3BT Matemáticas" |
-| `db/schedule_service.py` | CRUD de schedules y teachers |
-| `db/position_service.py` | CRUD de cargos institucionales |
-| `llm/` | Cliente LLM unificado (OpenAI-compatible, multi-provider) |
-| `utils/text.py` | normalize() con lru_cache |
+| `registry.py` | SkillRegistry: register(), detect(), detect_all() |
+| `planner.py` | Divide texto multi-intent en fragmentos por skill |
+| `base.py` | BaseSkill: matches() con keywords O(1) + patterns regex |
+| `attendance/` | Skill + tools + matcher fuzzy + service |
+| `homework/` | Skill + tools + detector + repository |
+| `query/` | Skill + tools + extracción de períodos/cursos |
+| `cuotas/` | Skill + tools + handlers (create/pago/query) + service + exporter |
+| `ia/` | ChatSkill: chat IA general con streaming (Groq 70B) |
+| `llm/` | Cliente unificado OpenAI-compatible + tool_caller compartido |
+| `utils/` | normalize(), extract_rules, schema, keyboards |
+| `documents/` | Generación de documentos PDF/notificaciones |
+| `whatsapp/` | Integración Green API |
+
+### Cuotas (`src/schoolai/skills/cuotas/`)
+
+| Archivo | Responsabilidad |
+|---|---|
+| `skill.py` | CuotaSkill: detección + routing + LLM fallback |
+| `extractor.py` | Regex sin LLM: detecta action (create/pago/query/export/list) |
+| `tools.py` | 6 tools Python + llm_fallback(Groq) + ToolDef.to_groq() |
+| `handler.py` | Re-export de los 3 sub-handlers |
+| `handler_create.py` | Creación de actividad + callbacks post-creación (add/pick/addall/done) |
+| `handler_pago.py` | Registro de pagos + callback pago |
+| `handler_query.py` | Consultas, estado, export Excel |
+| `_helpers.py` | _get_teacher_id compartido |
+| `service.py` | CRUD en DB (Actividad, ActividadParticipante, ActividadPago) |
+| `exporter.py` | Generación Excel con openpyxl |
 
 ### API (`src/schoolai/api/`)
 
@@ -174,11 +235,12 @@ Al finalizar todos los períodos
 |---|---|
 | `auth.py` | create_access_token, get_current_user dependency |
 | `routers/auth.py` | POST /auth/token |
-| `routers/homework.py` | GET/PATCH /homework (protegido) |
-| `routers/attendance.py` | GET /attendance (protegido) |
-| `routers/students.py` | GET /students (protegido) |
-| `routers/grades.py` | GET /grades (público) |
-| `routers/subjects.py` | GET /subjects (público) |
+| `routers/homework.py` | GET/PATCH /homework |
+| `routers/attendance.py` | GET /attendance |
+| `routers/students.py` | GET /students |
+| `routers/grades.py` | GET /grades |
+| `routers/subjects.py` | GET /subjects |
+| `routers/cuotas.py` | GET/POST /cuotas/actividades, /participantes, /pagos |
 
 ---
 
@@ -199,7 +261,7 @@ id                              id
 person_id ──► people            area       (Ciencias Naturales, etc.)
 grade_id  ──► grades            name       (Física, Matemáticas, etc.)
 section                         sublevel   (basica|bachillerato)
-status (active|inactive)
+is_active
 
 teachers                        schedules
 ──────────────────────          ──────────────────────
@@ -210,26 +272,33 @@ is_active                       period_num
                                 start_time / end_time
 teacher_positions               grade_id   ──► grades
 ──────────────────────          subject_id ──► subjects
-id                              is_active
-teacher_id ──► teachers
-position_type                   homework
-  (tutor|jefe_area|             ──────────────────────
-   jefe_subnivel|               id
-   comision|cargo)              homework (text)
-grade_id   ──► grades (nullable)grade_id    ──► grades
-subnivel (nullable)             subject_id  ──► subjects
-area (nullable)                 sequence_num / trimester_num
-detail (nullable)               submission_date / delivery_date
-is_active                       is_open
-
-attendance                      homework_submissions
-──────────────────────          ──────────────────────
-id                              id
-student_id ──► students         homework_id ──► homework
-date                            student_id  ──► students
-status (F|AT|J)                 status (missing|late|partial)
-notes                           reported_at
-recorded_by
+id
+teacher_id ──► teachers         homework
+position_type                   ──────────────────────
+grade_id   ──► grades           id
+is_active                       homework (text)
+                                grade_id    ──► grades
+attendance                      subject_id  ──► subjects
+──────────────────────          sequence_num / trimester_num
+id                              submission_date / delivery_date
+student_id ──► students         is_open
+date
+status (F|AT|J)                 homework_submissions
+                                ──────────────────────
+actividades                     id
+──────────────────────          homework_id ──► homework
+id                              student_id  ──► students
+nombre                          status (missing|late|partial)
+monto
+teacher_id ──► teachers         actividad_participantes
+is_active                       ──────────────────────
+                                id
+actividad_pagos                 actividad_id ──► actividades
+──────────────────────          student_id   ──► students
+id                              total_pagado
+participante_id                 is_complete
+monto
+notas
 ```
 
 ---
@@ -254,42 +323,46 @@ Config: JWT_SECRET_KEY, API_SECRET, JWT_EXPIRE_HOURS=24
 
 ---
 
-## Estado de sesión (Redis + in-memory)
+## Estado de sesión (RAM + Redis)
 
 ```
-L1 (RAM) — dict por user_id, proceso-local, rápido
+L1 (RAM)   — dict por user_id, proceso-local, acceso inmediato
 L2 (Redis) — pickle serializado, sobrevive reinicios del bot
 
 Claves Redis:
-  db:{uid}   → DbFlow          TTL 3600s
-  sch:{uid}  → ScheduleFlow    TTL 3600s
-  pos:{uid}  → PositionFlow    TTL 3600s
-  att:{uid}  → PendingAttendance  TTL 3600s
-  sel:{uid}  → PendingSelection   TTL 3600s
-  jor:{uid}  → JornadaSession     TTL 86400s (dura todo el día)
+  db:{uid}     → DbFlow             TTL 3600s
+  sch:{uid}    → ScheduleFlow       TTL 3600s
+  pos:{uid}    → PositionFlow       TTL 3600s
+  att:{uid}    → PendingAttendance  TTL 3600s
+  sel:{uid}    → PendingSelection   TTL 3600s
+  cuota:{uid}  → PendingCuotaCreate TTL 3600s
+  jor:{uid}    → JornadaSession     TTL 86400s (dura todo el día)
 
-Si REDIS_URL no configurado → sólo L1 (comportamiento anterior).
+RAM only (no Redis, TTL por cleanup job c/10min):
+  _pending_pagos  → CuotaExtract pendiente de selección de actividad
+
+Si REDIS_URL no configurado → solo L1 (válido para desarrollo).
 ```
 
 ---
 
-## LLM multi-provider
+## LLM — Groq
 
 ```python
-# settings.py
-llm_extractor = "zhipu/glm-4-flash"    # intención + entidades
-llm_chat      = "zhipu/glm-4.5-air"    # chat IA general
-llm_router    = "zhipu/glm-4-flash"    # clasificador
-
-# format: "provider/model"
-# providers: zhipu, mistral, deepseek, moonshot, nvidia,
-#            minimax, openrouter, openai, groq
+# config.py
+llm_extractor = "groq/llama-3.1-8b-instant"   # fallback extractor — rápido
+llm_chat      = "groq/llama-3.3-70b-versatile" # chat IA general — streaming
 ```
 
-Fallback extractor (sin LLM):
-- `extractor/rules.py` — detecta faltó/tarde/justificado + nombre + curso con regex
-- Activa cuando `extract()` devuelve None (fallo de red o JSON inválido)
-- Devuelve None si el texto es ambiguo (evita falsos positivos)
+Estrategia por capas:
+1. **Regex (<1ms, sin costo)** — cubre el 85-90% de mensajes estructurados
+2. **LLM fallback (~500ms, costo mínimo)** — mensajes naturales/ambiguos
+3. **ChatSkill (Groq 70B)** — conversación libre, solo si ninguna skill matchea
+
+El fallback usa tool calling (función `call_groq_tools` en `skills/llm/tool_caller.py`):
+- El modelo recibe tool definitions en formato OpenAI
+- Elige la tool y extrae parámetros
+- El resultado se mapea a `ExtractionResult` o `CuotaExtract`
 
 ---
 
@@ -297,11 +370,11 @@ Fallback extractor (sin LLM):
 
 ```
 logs/
-  schoolai_2026-03-16.log      # rotación diaria
+  schoolai_2026-03-21.log      # rotación diaria
   schoolai_2026-03-15.log.gz   # comprimidos (retención 30 días)
 ```
 
-Niveles: DEBUG (raw LLM) · INFO (intenciones, acciones) · WARNING (ambigüedad) · ERROR (excepciones → Telegram admin)
+Niveles: `DEBUG` (detalle interno) · `INFO` (intenciones, acciones DB) · `WARNING` (ambigüedad, estado expirado) · `ERROR` (excepciones → Telegram admin)
 
 ---
 
@@ -311,39 +384,46 @@ Niveles: DEBUG (raw LLM) · INFO (intenciones, acciones) · WARNING (ambigüedad
 # Obligatorio
 TELEGRAM_BOT_TOKEN=...
 DATABASE_URL=postgresql+asyncpg://...
-ZHIPU_API_KEY=...
+GROQ_API_KEY=...          # LLM fallback + transcripción de voz
 
 # Modo Jornada
 TELEGRAM_BOT_TOKEN_DEV=...
-
-# Audio
-GROQ_API_KEY=...
 
 # API auth
 JWT_SECRET_KEY=<32+ chars aleatorios>
 API_SECRET=<clave compartida con PWA>
 JWT_EXPIRE_HOURS=24
 
-# Redis (opcional)
+# Redis (opcional — recomendado en producción)
 REDIS_URL=redis://localhost:6379/0
 
 # Acceso
 TELEGRAM_ALLOWED_USERS=123456789,987654321
 ADMIN_TELEGRAM_ID=123456789
+
+# LLM (opcional — override de modelos)
+LLM_EXTRACTOR=groq/llama-3.1-8b-instant
+LLM_CHAT=groq/llama-3.3-70b-versatile
 ```
 
 ---
 
 ## Decisiones de diseño
 
-**¿Por qué LLM + fallback rule-based?**
-El LLM maneja la variación lingüística alta (abreviaciones, errores, nombres de cursos). El fallback garantiza que fallos de red o cuota no bloqueen al docente para los casos más comunes (ausencias simples).
+**¿Por qué Skill Registry en lugar de LLM para detección de intención?**
+El LLM añadía ~500ms de latencia y costo en cada mensaje, incluyendo los simples como "faltó Pedro de 3bt". Con keywords O(1) + regex, el 90% de mensajes se resuelven en <1ms. El LLM queda reservado para los casos que el regex no puede manejar.
+
+**¿Por qué Planner separado del Registry?**
+El Registry solo detecta qué skills aplican. El Planner decide cómo dividir el texto cuando hay múltiples skills. Son responsabilidades distintas: el Registry es stateless y se ejecuta siempre; el Planner solo se activa en el ~5% de mensajes multi-intent.
+
+**¿Por qué Tools Registry si el handler ya llama a service.py directamente?**
+Las tools tienen metadata (nombre, descripción, JSON Schema) que se usa para el LLM fallback. También proveen una interfaz uniforme que el orquestador futuro puede usar sin conocer los internals de cada skill.
+
+**¿Por qué handler.py dividido en 3 sub-handlers?**
+El archivo original llegó a 712 líneas mezclando creación, pagos y consultas. La división facilita el mantenimiento: cada sub-handler tiene una sola responsabilidad y < 200 líneas.
 
 **¿Por qué Redis opcional?**
-La escuela puede no tener servidor Redis. Sin él el sistema funciona igual. Con él, los docentes no pierden su sesión de Jornada si el bot se reinicia durante el día escolar.
+La escuela puede no tener servidor Redis. Sin él el sistema funciona igual (solo RAM). Con él, los docentes no pierden su sesión de Jornada si el bot se reinicia durante el día escolar.
 
 **¿Por qué HS256 y no RS256?**
 Un solo servicio firma y verifica. No hay microservicios que necesiten verificar sin la clave privada. HS256 es suficiente y más simple.
-
-**¿Por qué Docker más tarde?**
-Durante desarrollo activo el rebuild de imágenes añade fricción sin valor. Se containeriza cuando el feature set sea estable y haya servidor de deploy.

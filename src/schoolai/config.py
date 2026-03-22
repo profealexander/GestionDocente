@@ -7,6 +7,7 @@ class Settings(BaseSettings):
         env_file=".env",
         env_file_encoding="utf-8",
         case_sensitive=False,
+        extra="ignore",
     )
 
     # Database
@@ -32,18 +33,8 @@ class Settings(BaseSettings):
     llm_chat:      str = "groq/llama-3.3-70b-versatile" # asistente IA
     llm_router:    str = "groq/llama-3.1-8b-instant"   # clasificador de mensajes
 
-    # ── API keys por proveedor ─────────────────────────────────────────────────
-    zhipu_api_key:      str = ""
-    mistral_api_key:    str = ""
-    deepseek_api_key:   str = ""
-    moonshot_api_key:   str = ""
-    nvidia_api_key:     str = ""
-    minimax_api_key:    str = ""
-    openrouter_api_key: str = ""
-    openai_api_key:     str = ""
-
-    # Groq — audio transcription (Whisper) + LLM opcional
-    groq_api_key: str = ""
+    # ── API keys ───────────────────────────────────────────────────────────────
+    groq_api_key: str = ""  # Groq — transcripción Whisper + LLM extractor/chat
 
     # FastAPI
     api_host: str = "0.0.0.0"  # nosec B104 — intencional, uvicorn escucha en todas las interfaces
@@ -76,21 +67,5 @@ class Settings(BaseSettings):
         if not self.telegram_allowed_users:
             return []
         return [int(uid.strip()) for uid in self.telegram_allowed_users.split(",") if uid.strip()]
-
-    # ── Compat con código antiguo que aún use settings.glm_* ──────────────────
-    @property
-    def glm_api_key(self) -> str:
-        return self.zhipu_api_key
-
-    @property
-    def glm_model(self) -> str:
-        _, model = self.llm_chat.split("/", 1)
-        return model
-
-    @property
-    def glm_extractor_model(self) -> str:
-        _, model = self.llm_extractor.split("/", 1)
-        return model
-
 
 settings = Settings()

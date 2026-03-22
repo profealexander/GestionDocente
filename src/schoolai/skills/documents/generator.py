@@ -3,7 +3,6 @@ from __future__ import annotations
 
 import io
 import os
-import tempfile
 from dataclasses import dataclass
 from datetime import date
 
@@ -117,8 +116,10 @@ def generate_pdf(ctx: NotificacionContext) -> bytes:
 
     def text(txt, size=11, bold=False, italic=False, align="L", color=(0, 0, 0)):
         style = ""
-        if bold:   style += "B"
-        if italic: style += "I"
+        if bold:
+            style += "B"
+        if italic:
+            style += "I"
         pdf.set_font("Helvetica", style, size)
         pdf.set_text_color(*color)
         pdf.set_x(25)

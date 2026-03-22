@@ -479,6 +479,60 @@ def clear_wa_setup(user_id: int) -> None:
     _rdel(f"was:{user_id}")
 
 
+# ── Cuota create state ────────────────────────────────────────────────────────
+
+@dataclass
+class PendingCuotaCreate:
+    actividad_id: int
+    actividad_nombre: str
+    step: Literal["await_numbers"]
+    grade_id: int
+    grade_name: str
+    student_list: list[dict]  # [{"idx": int, "student_id": int, "name": str}]
+
+
+_cuota_creates: dict[int, PendingCuotaCreate] = {}
+
+# ── Pending pago (cuota_pago callback) ────────────────────────────────────────
+
+_pending_pagos: dict[int, Any] = {}
+
+
+def set_pending_pago(user_id: int, data: Any) -> None:
+    _pending_pagos[user_id] = data
+    _touch("pago", user_id)
+
+
+def get_pending_pago(user_id: int) -> Any | None:
+    return _pending_pagos.get(user_id)
+
+
+def pop_pending_pago(user_id: int) -> Any | None:
+    _expire("pago", user_id)
+    return _pending_pagos.pop(user_id, None)
+
+
+def set_cuota_create(user_id: int, state: PendingCuotaCreate) -> None:
+    _cuota_creates[user_id] = state
+    _touch("cuota", user_id)
+    _rset(f"cuota:{user_id}", state, _REDIS_TTL_SHORT)
+
+
+def get_cuota_create(user_id: int) -> PendingCuotaCreate | None:
+    if user_id not in _cuota_creates:
+        obj = _rget(f"cuota:{user_id}")
+        if obj is not None:
+            _cuota_creates[user_id] = obj
+            _touch("cuota", user_id)
+    return _cuota_creates.get(user_id)
+
+
+def clear_cuota_create(user_id: int) -> None:
+    _cuota_creates.pop(user_id, None)
+    _expire("cuota", user_id)
+    _rdel(f"cuota:{user_id}")
+
+
 # ── TTL cleanup ───────────────────────────────────────────────────────────────
 
 _timestamps: dict[str, dict[int, float]] = {
@@ -489,6 +543,8 @@ _timestamps: dict[str, dict[int, float]] = {
     "position": {},
     "course": {},
     "wa_setup": {},
+    "cuota": {},
+    "pago": {},
 }
 _TTL = 3600  # 60 minutos
 
@@ -513,6 +569,8 @@ def cleanup_stale() -> int:
         ("position", _position_flows),
         ("course", _course_contexts),
         ("wa_setup", _wa_setups),
+        ("cuota", _cuota_creates),
+        ("pago", _pending_pagos),
     ]:
         expired = [uid for uid, ts in _timestamps[store].items() if now - ts > _TTL]
         for uid in expired:

@@ -13,7 +13,11 @@ from telegram.ext import ApplicationBuilder, CallbackQueryHandler, CommandHandle
 from telegram.request import HTTPXRequest
 
 from schoolai.bot.action_handler import handle_act_callback, handle_course_action_callback, handle_selection_callback
-from schoolai.skills.cuotas.handler import handle_add_grade_callback, handle_cuota_pago_callback, handle_cuota_sel_callback
+from schoolai.skills.cuotas.handler import (
+    handle_add_grade_callback, handle_cuota_pago_callback, handle_cuota_sel_callback,
+    handle_cuota_add_callback, handle_cuota_pick_callback,
+    handle_cuota_addall_callback, handle_cuota_done_callback,
+)
 from schoolai.bot.whatsapp_handler import handle_wa_notify_callback
 from schoolai.bot.notif_handler import handle_doc_notify_callback
 from schoolai.bot.attendance_handler import handle_attendance_callback
@@ -24,21 +28,26 @@ from schoolai.bot.jornada_handler import handle_jornada_callback, handle_jornada
 from schoolai.bot.position_handler import handle_position_callback, handle_position_text
 from schoolai.bot.schedule_handler import handle_schedule_callback, handle_schedule_text
 from schoolai.bot.state import (
-    cleanup_stale, clear_attendance, clear_course_context, clear_db_flow, clear_jornada,
+    cleanup_stale, clear_attendance, clear_course_context, clear_cuota_create, clear_db_flow, clear_jornada,
     clear_position_flow, clear_schedule_flow, clear_selection, clear_wa_notification, clear_wa_setup,
-    get_db_flow, get_position_flow, get_schedule_flow,
-    clear_jornada_all_stale,
+    get_cuota_create, get_db_flow, get_position_flow, get_schedule_flow,
+    clear_jornada_all_stale, pop_pending_pago,
 )
 from schoolai.bot.mode import set_mode
 from schoolai.config import settings
 
 
 async def _handle_start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
-    await update.message.reply_text(
-        "¡Hola! Toca *📅 Jornada* o escribe *j* para iniciar tu jornada.",
-        parse_mode="Markdown",
-        reply_markup=JORNADA_KEYBOARD,
-    )
+    from schoolai.bot.mode import is_jornada
+    if is_jornada():
+        await update.message.reply_text(
+            "¡Hola! Toca *📅 Jornada* o escribe *j* para iniciar tu jornada.",
+            parse_mode="Markdown",
+            reply_markup=JORNADA_KEYBOARD,
+        )
+    else:
+        from schoolai.bot.handlers import REMOVE_KEYBOARD
+        await update.message.reply_text("¡Hola! ¿En qué te puedo ayudar?", reply_markup=REMOVE_KEYBOARD)
 
 
 async def _handle_cancel(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
@@ -53,6 +62,8 @@ async def _handle_cancel(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
     clear_course_context(user_id)
     clear_wa_notification(user_id)
     clear_wa_setup(user_id)
+    clear_cuota_create(user_id)
+    pop_pending_pago(user_id)
     if is_jornada():
         await update.message.reply_text("Operación cancelada.", reply_markup=JORNADA_KEYBOARD)
     else:
@@ -76,6 +87,7 @@ class _DbFlowFilter(filters.MessageFilter):
             get_db_flow(user.id) is not None
             or get_schedule_flow(user.id) is not None
             or get_position_flow(user.id) is not None
+            or get_cuota_create(user.id) is not None
         )
 
 
@@ -87,6 +99,12 @@ async def _debug_callback(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
 
 
 async def _error_handler(update: object, context: ContextTypes.DEFAULT_TYPE) -> None:
+    import asyncio
+    from telegram.error import Conflict
+    if isinstance(context.error, Conflict):
+        logger.warning("[bot] Conflict detectado — esperando 10s para liberar sesion anterior...")
+        await asyncio.sleep(10)
+        return
     logger.error(f"[bot error] {context.error}", exc_info=context.error)
     if settings.admin_telegram_id:
         try:
@@ -104,10 +122,14 @@ async def _error_handler(update: object, context: ContextTypes.DEFAULT_TYPE) -> 
 
 
 async def _handle_db_or_schedule_text(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
-    """Routes text to schedule/position handlers first, falls back to db handler."""
+    """Routes text to schedule/position/cuota handlers first, falls back to db handler."""
     if await handle_schedule_text(update, context):
         return
     if await handle_position_text(update, context):
+        return
+    from schoolai.skills.cuotas.handler import handle_cuota_names_text
+    user_id = update.effective_user.id
+    if await handle_cuota_names_text(update, user_id):
         return
     await handle_db_text(update, context)
 
@@ -135,7 +157,10 @@ async def _post_init(app) -> None:
     registry.register(ChatSkill())   # siempre al final — fallback
 
     app.bot_data["jornada_mode"] = is_jornada()
-    await _send_jornada_keyboard_to_teachers(app.bot)
+    if is_jornada():
+        await _send_jornada_keyboard_to_teachers(app.bot)
+    else:
+        await _remove_keyboard_from_teachers(app.bot)
 
 
 async def _send_jornada_keyboard_to_teachers(bot) -> None:
@@ -166,6 +191,35 @@ async def _send_jornada_keyboard_to_teachers(bot) -> None:
                 logger.warning(f"[jornada_init] no se pudo enviar teclado a {telegram_id}: {e}")
     except Exception as e:
         logger.warning(f"[jornada_init] error al cargar docentes: {e}")
+
+
+async def _remove_keyboard_from_teachers(bot) -> None:
+    """Al arrancar en modo Libre, elimina el teclado persistente de jornada."""
+    from sqlalchemy import select
+    from schoolai.db.connection import async_session
+    from schoolai.db.models.teacher import Teacher
+    from schoolai.bot.handlers import REMOVE_KEYBOARD
+
+    try:
+        async with async_session() as session:
+            teachers = (await session.execute(
+                select(Teacher.telegram_id).where(
+                    Teacher.is_active.is_(True),
+                    Teacher.telegram_id.isnot(None),
+                )
+            )).scalars().all()
+
+        for telegram_id in teachers:
+            try:
+                await bot.send_message(
+                    chat_id=telegram_id,
+                    text="Bot listo.",
+                    reply_markup=REMOVE_KEYBOARD,
+                )
+            except Exception as e:
+                logger.warning(f"[libre_init] no se pudo limpiar teclado a {telegram_id}: {e}")
+    except Exception as e:
+        logger.warning(f"[libre_init] error al cargar docentes: {e}")
 
 
 def _setup_logging() -> None:
@@ -226,6 +280,10 @@ def run(dev: bool = False) -> None:
     app.add_handler(CallbackQueryHandler(handle_cuota_sel_callback, pattern=r"^cuota_sel:"))
     app.add_handler(CallbackQueryHandler(handle_add_grade_callback, pattern=r"^cuota_grade:"))
     app.add_handler(CallbackQueryHandler(handle_cuota_pago_callback, pattern=r"^cuota_pago:"))
+    app.add_handler(CallbackQueryHandler(handle_cuota_add_callback,    pattern=r"^cuota_add:"))
+    app.add_handler(CallbackQueryHandler(handle_cuota_pick_callback,   pattern=r"^cuota_pick:"))
+    app.add_handler(CallbackQueryHandler(handle_cuota_addall_callback, pattern=r"^cuota_addall:"))
+    app.add_handler(CallbackQueryHandler(handle_cuota_done_callback,   pattern=r"^cuota_done:"))
     app.add_handler(CallbackQueryHandler(handle_position_callback, pattern=r"^pos_"))
 
     # ── Modo Jornada — siempre activo ─────────────────────────────────────────

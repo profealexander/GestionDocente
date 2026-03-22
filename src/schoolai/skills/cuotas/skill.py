@@ -43,6 +43,7 @@ class CuotaSkill(BaseSkill):
 
     async def handle(self, update, user_id: int, text: str) -> None:
         from schoolai.skills.cuotas.extractor import extract_cuota
+        from schoolai.skills.cuotas.tools import llm_fallback
         from schoolai.skills.cuotas.handler import (
             handle_create,
             handle_export,
@@ -52,6 +53,8 @@ class CuotaSkill(BaseSkill):
         )
 
         data = extract_cuota(text)
+        if data is None:
+            data = await llm_fallback(text)
         if data is None:
             await update.message.reply_text(
                 "No entendí la instrucción de cuotas.\n"

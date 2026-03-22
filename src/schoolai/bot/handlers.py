@@ -9,11 +9,10 @@ from schoolai.bot.state import get_jornada
 from schoolai.bot.transcription import transcribe
 from schoolai.bot.whatsapp_handler import handle_wa_setup_text
 from schoolai.config import settings
-from schoolai.skills.ia.history import append as append_history
 from schoolai.skills.registry import registry
 from schoolai.skills.utils.courses import _ABBREV_TO_NAME, _NAME_TO_ABBREV, course_abbrev_map
 
-# Teclas de acceso rápido para iniciar Modo Jornada
+# Textos que activan el Modo Jornada — solo se evalúan cuando is_jornada() es True
 _JORNADA_TRIGGERS = {"j", "J", "1", "jornada", "Jornada", "iniciar", "Iniciar", "📅 Jornada"}
 
 JORNADA_KEYBOARD = ReplyKeyboardMarkup(
@@ -113,13 +112,21 @@ async def _show_course_action_menu(update: Update, course_info: tuple) -> None:
 
 
 async def _dispatch(update: Update, user_id: int, text: str) -> None:
-    # Capa 0: atajos hardcoded
-    if text in _JORNADA_TRIGGERS:
-        from schoolai.bot.jornada_handler import handle_jornada_command
-        await handle_jornada_command(update, None)
-        return
+    """Despacha el mensaje al skill correcto a través de capas de intercepción.
 
+    Capas (en orden):
+      0. Jornada triggers — solo en modo jornada
+      1. Selección pendiente (botones inline)
+      2. Setup de WhatsApp activo
+      3. Input numérico para cuotas (PendingCuotaCreate)
+      4. SkillRegistry.detect_all() → Planner si multi-intent
+    """
+    # Capa 0: atajos de jornada — solo en modo jornada
     if is_jornada():
+        if text in _JORNADA_TRIGGERS:
+            from schoolai.bot.jornada_handler import handle_jornada_command
+            await handle_jornada_command(update, None)
+            return
         session = get_jornada(user_id)
         if not session or session.status == "done":
             await update.message.reply_text(
@@ -135,8 +142,27 @@ async def _dispatch(update: Update, user_id: int, text: str) -> None:
     if await handle_wa_setup_text(update):
         return
 
+    from schoolai.skills.cuotas.handler import handle_cuota_names_text
+    if await handle_cuota_names_text(update, user_id):
+        return
+
     # Detección + ejecución
-    append_history(user_id, "user", text)
-    skill = registry.detect(text)
-    logger.info(f"[dispatch] intent={skill.intent} user={user_id}")
-    await skill.handle(update, user_id, text)
+    skills = registry.detect_all(text)
+
+    if not skills:
+        # Ninguna skill específica → ChatSkill fallback
+        skill = registry.detect(text)
+        logger.info(f"[dispatch] intent={skill.intent} user={user_id}")
+        await skill.handle(update, user_id, text)
+        return
+
+    if len(skills) == 1:
+        logger.info(f"[dispatch] intent={skills[0].intent} user={user_id}")
+        await skills[0].handle(update, user_id, text)
+        return
+
+    # Múltiples skills — Planner divide el texto y asigna fragmentos
+    logger.info(f"[dispatch] multi-intent={[s.intent for s in skills]} user={user_id}")
+    from schoolai.skills.planner import plan
+    for skill, fragment in plan(text, skills):
+        await skill.handle(update, user_id, fragment)

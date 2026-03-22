@@ -2,7 +2,7 @@
 from __future__ import annotations
 
 from datetime import date
-from sqlalchemy import select, func, text
+from sqlalchemy import select, func
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from schoolai.db.models.notification import Notification
@@ -13,8 +13,8 @@ from schoolai.db.models.teacher import Teacher
 
 def _iniciales(first_name: str, last_name: str) -> str:
     f = (first_name[0] if first_name else "X").upper()
-    l = (last_name[0]  if last_name  else "X").upper()
-    return f + l
+    ln = (last_name[0] if last_name  else "X").upper()
+    return f + ln
 
 
 async def _get_teacher_iniciales(teacher_id: int, session: AsyncSession) -> str:
