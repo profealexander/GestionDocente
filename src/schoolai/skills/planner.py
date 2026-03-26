@@ -17,11 +17,11 @@ from loguru import logger
 
 # Separadores que indican cambio de intención en el mismo mensaje
 _SPLIT_RE = re.compile(
-    r"\s*[;]\s*"                                   # punto y coma
-    r"|\s+(?:y\s+además|además)\s+"               # "y además", "además"
-    r"|\s+también\s+"                              # "también"
-    r"|\s*,\s*(?=\w)"                              # coma seguida de palabra
-    r"|\s+y\s+",                                   # " y " — más genérico, al final
+    r"\s*[;]\s*"  # punto y coma
+    r"|\s+(?:y\s+además|además)\s+"  # "y además", "además"
+    r"|\s+también\s+"  # "también"
+    r"|\s*,\s*(?=\w)"  # coma seguida de palabra
+    r"|\s+y\s+",  # " y " — más genérico, al final
     re.IGNORECASE,
 )
 

@@ -13,9 +13,9 @@ from schoolai.skills.utils.text import normalize
 
 class MatchType(Enum):
     NEW = "new"
-    EXACT_ID = "exact_id"      # matched by cédula
+    EXACT_ID = "exact_id"  # matched by cédula
     EXACT_NAME = "exact_name"  # normalized first+last match
-    SIMILAR = "similar"        # first name matches, last name similar
+    SIMILAR = "similar"  # first name matches, last name similar
 
 
 @dataclass
@@ -28,10 +28,7 @@ class DedupeResult:
 
 
 async def deduplicate(parsed_list: list[dict], session: AsyncSession) -> list[DedupeResult]:
-    results = []
-    for parsed in parsed_list:
-        results.append(await _check_one(parsed, session))
-    return results
+    return [await _check_one(parsed, session) for parsed in parsed_list]
 
 
 async def _check_one(parsed: dict, session: AsyncSession) -> DedupeResult:

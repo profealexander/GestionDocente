@@ -5,7 +5,8 @@ Flow:
       → lista de docentes → seleccionar
       → ver cargos actuales + [➕ Agregar] [🗑️ Eliminar X]
       → Agregar:
-          tipo → tutor (grado) | jefe_area (área) | jefe_subnivel (subnivel) | comision (texto) | cargo (valor)
+          tipo → tutor (grado) | jefe_area (área) | jefe_subnivel (subnivel)
+                  | comision (texto) | cargo (valor)
           → confirmar → guardar
       → Eliminar: confirmar → desactivar
 """
@@ -51,20 +52,25 @@ CARGO_LABELS = {
     "secretaria": "Secretaria/o",
 }
 POSITION_TYPE_LABELS = {
-    "tutor":         "📌 Tutor de curso",
-    "jefe_area":     "📚 Jefe de área",
+    "tutor": "📌 Tutor de curso",
+    "jefe_area": "📚 Jefe de área",
     "jefe_subnivel": "🏫 Jefe de subnivel",
-    "comision":      "👥 Comisión",
-    "cargo":         "🏛️ Cargo institucional",
+    "comision": "👥 Comisión",
+    "cargo": "🏛️ Cargo institucional",
 }
 
-_CONFIRM_KB = InlineKeyboardMarkup([[
-    InlineKeyboardButton("✅ Confirmar", callback_data="pos_confirm"),
-    InlineKeyboardButton("↩️ Volver",   callback_data="pos_back"),
-]])
+_CONFIRM_KB = InlineKeyboardMarkup(
+    [
+        [
+            InlineKeyboardButton("✅ Confirmar", callback_data="pos_confirm"),
+            InlineKeyboardButton("↩️ Volver", callback_data="pos_back"),
+        ],
+    ],
+)
 
 
 # ── Formateo ──────────────────────────────────────────────────────────────────
+
 
 def _fmt(p) -> str:
     if p.position_type == "tutor":
@@ -83,6 +89,7 @@ def _fmt(p) -> str:
 
 # ── Entry point ───────────────────────────────────────────────────────────────
 
+
 async def start_position_flow(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     user_id = update.effective_user.id
     clear_position_flow(user_id)
@@ -92,16 +99,18 @@ async def start_position_flow(update: Update, context: ContextTypes.DEFAULT_TYPE
 
     if not docentes:
         await update.effective_message.reply_text(
-            "No hay docentes registrados. Usa /db → Docente para registrarlos primero."
+            "No hay docentes registrados. Usa /db → Docente para registrarlos primero.",
         )
         return
 
     set_position_flow(user_id, PositionFlow(step="await_teacher"))
     buttons = [
-        [InlineKeyboardButton(
-            f"{p.last_name} {p.first_name}",
-            callback_data=f"pos_teacher:{p.id}",
-        )]
+        [
+            InlineKeyboardButton(
+                f"{p.last_name} {p.first_name}",
+                callback_data=f"pos_teacher:{p.id}",
+            ),
+        ]
         for p in docentes
     ]
     await update.effective_message.reply_text(
@@ -112,6 +121,7 @@ async def start_position_flow(update: Update, context: ContextTypes.DEFAULT_TYPE
 
 
 # ── Callback dispatcher ───────────────────────────────────────────────────────
+
 
 async def handle_position_callback(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     query = update.callback_query
@@ -149,6 +159,7 @@ async def handle_position_callback(update: Update, context: ContextTypes.DEFAULT
 
 # ── Text input (comision detail) ─────────────────────────────────────────────
 
+
 async def handle_position_text(update: Update, context: ContextTypes.DEFAULT_TYPE) -> bool:
     """Handles free-text input for comision detail. Returns True if handled."""
     user_id = update.effective_user.id
@@ -170,6 +181,7 @@ async def handle_position_text(update: Update, context: ContextTypes.DEFAULT_TYP
 
 # ── Step handlers ─────────────────────────────────────────────────────────────
 
+
 async def _on_teacher(query, user_id: int, person_id: int) -> None:
     async with async_session() as session:
         teacher, positions = await get_teacher_with_positions(session, person_id=person_id)
@@ -177,7 +189,7 @@ async def _on_teacher(query, user_id: int, person_id: int) -> None:
     if not teacher:
         await query.edit_message_text(
             "Este docente no tiene perfil vinculado al bot.\n"
-            "Primero debe usar /db → 📅 Horario para vincularse."
+            "Primero debe usar /db → 📅 Horario para vincularse.",
         )
         return
 
@@ -221,7 +233,9 @@ async def _on_type(query, user_id: int, position_type: str) -> None:
         flow.step = "await_grade"
         set_position_flow(user_id, flow)
         async with async_session() as session:
-            grades = (await session.execute(select(Grade).order_by(Grade.sort_order))).scalars().all()
+            grades = (
+                (await session.execute(select(Grade).order_by(Grade.sort_order))).scalars().all()
+            )
         await query.edit_message_text(
             f"*{flow.teacher_name}* — Tutor de:\n\n¿Cuál es su curso?",
             parse_mode=ParseMode.MARKDOWN,
@@ -249,8 +263,7 @@ async def _on_type(query, user_id: int, position_type: str) -> None:
         flow.areas_list = areas
         set_position_flow(user_id, flow)
         buttons = [
-            [InlineKeyboardButton(a, callback_data=f"pos_area:{i}")]
-            for i, a in enumerate(areas)
+            [InlineKeyboardButton(a, callback_data=f"pos_area:{i}")] for i, a in enumerate(areas)
         ]
         buttons.append([InlineKeyboardButton("↩️ Volver", callback_data="pos_back")])
         await query.edit_message_text(
@@ -359,15 +372,16 @@ async def _on_confirm(query, user_id: int) -> None:
         )
         _, positions = await get_teacher_with_positions(session, teacher_id=flow.teacher_id)
 
-    logger.info(f"[positions] added type={flow.position_type} teacher={flow.teacher_id} user={user_id}")
+    logger.info(
+        f"[positions] added type={flow.position_type} teacher={flow.teacher_id} user={user_id}",
+    )
     teacher_name = flow.teacher_name
     clear_position_flow(user_id)
 
     lines = [f"✅ *Cargo guardado — {teacher_name}*\n"]
     if positions:
         lines.append("*Cargos actuales:*")
-        for p in positions:
-            lines.append(f"  • {_fmt(p)}")
+        lines.extend(f"  • {_fmt(p)}" for p in positions)
 
     await query.edit_message_text("\n".join(lines), parse_mode=ParseMode.MARKDOWN)
 
@@ -389,10 +403,16 @@ async def _on_del_prompt(query, user_id: int, position_id: int) -> None:
     await query.edit_message_text(
         f"¿Eliminar este cargo?\n\n*{flow.teacher_name}*\n{label}",
         parse_mode=ParseMode.MARKDOWN,
-        reply_markup=InlineKeyboardMarkup([[
-            InlineKeyboardButton("🗑️ Sí, eliminar", callback_data=f"pos_confirm_del:{position_id}"),
-            InlineKeyboardButton("↩️ Cancelar",     callback_data="pos_back"),
-        ]]),
+        reply_markup=InlineKeyboardMarkup(
+            [
+                [
+                    InlineKeyboardButton(
+                        "🗑️ Sí, eliminar", callback_data=f"pos_confirm_del:{position_id}",
+                    ),
+                    InlineKeyboardButton("↩️ Cancelar", callback_data="pos_back"),
+                ],
+            ],
+        ),
     )
 
 
@@ -429,6 +449,7 @@ async def _on_back(query, user_id: int) -> None:
 
 # ── Shared view ───────────────────────────────────────────────────────────────
 
+
 async def _show_positions(reply_fn, teacher_name: str, positions: list) -> None:
     lines = [f"📋 *{teacher_name}*\n"]
     buttons = []
@@ -443,7 +464,7 @@ async def _show_positions(reply_fn, teacher_name: str, positions: list) -> None:
         lines.append("_Sin cargos asignados._")
 
     buttons.append([InlineKeyboardButton("➕ Agregar cargo", callback_data="pos_add")])
-    buttons.append([InlineKeyboardButton("❌ Cancelar",      callback_data="pos_cancel")])
+    buttons.append([InlineKeyboardButton("❌ Cancelar", callback_data="pos_cancel")])
 
     await reply_fn(
         "\n".join(lines),

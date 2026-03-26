@@ -14,7 +14,11 @@ async def get_teacher_by_telegram(session: AsyncSession, telegram_id: int) -> Te
 
 async def get_docentes(session: AsyncSession) -> list[Person]:
     """Returns all people with role=docente."""
-    stmt = select(Person).where(Person.role == "teacher", Person.status == "active").order_by(Person.last_name)
+    stmt = (
+        select(Person)
+        .where(Person.role == "teacher", Person.status == "active")
+        .order_by(Person.last_name)
+    )
     return (await session.execute(stmt)).unique().scalars().all()
 
 
@@ -45,22 +49,24 @@ async def save_schedule_periods(
         delete(Schedule).where(
             Schedule.teacher_id == teacher_id,
             Schedule.day_of_week == day_of_week,
-        )
+        ),
     )
 
     # Bulk insert new periods
-    session.add_all([
-        Schedule(
-            teacher_id=teacher_id,
-            day_of_week=day_of_week,
-            period_num=p["period_num"],
-            start_time=p["start_time"],
-            end_time=p["end_time"],
-            grade_id=p["grade_id"],
-            subject_id=p["subject_id"],
-        )
-        for p in periods
-    ])
+    session.add_all(
+        [
+            Schedule(
+                teacher_id=teacher_id,
+                day_of_week=day_of_week,
+                period_num=p["period_num"],
+                start_time=p["start_time"],
+                end_time=p["end_time"],
+                grade_id=p["grade_id"],
+                subject_id=p["subject_id"],
+            )
+            for p in periods
+        ],
+    )
 
     await session.commit()
     return len(periods)

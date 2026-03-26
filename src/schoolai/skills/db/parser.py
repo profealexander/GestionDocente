@@ -8,7 +8,6 @@ Supports:
 
 import re
 
-
 # Ecuador cédula: exactly 10 digits
 CEDULA_RE = re.compile(r"\b(\d{10})\b")
 # Leading numbering / bullet prefix

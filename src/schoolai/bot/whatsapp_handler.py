@@ -17,6 +17,7 @@ from telegram import InlineKeyboardButton, InlineKeyboardMarkup, Update
 from telegram.constants import ParseMode
 from telegram.ext import ContextTypes
 
+from schoolai.bot.callback_router import callback_router
 from schoolai.bot.state import (
     PendingWhatsAppNotification,
     PendingWhatsAppSetup,
@@ -29,8 +30,8 @@ from schoolai.bot.state import (
 )
 from schoolai.config import settings
 from schoolai.db.connection import async_session
-from schoolai.db.models.student import Student
 from schoolai.db.models.person import Person
+from schoolai.db.models.student import Student
 from schoolai.db.models.whatsapp_contact import WhatsAppContact
 from schoolai.skills.whatsapp.sender import format_homework_message, send_whatsapp
 
@@ -41,28 +42,35 @@ def _wa_send(phone: str, message: str):
 
 # ── Public: build notify buttons after hw_report ──────────────────────────────
 
+
 def notify_keyboard(student_ids: list[int]) -> InlineKeyboardMarkup:
     """Returns inline keyboard with notify buttons to attach to hw_report messages."""
     rows = [[InlineKeyboardButton("📱 Notificar a todos", callback_data="wa_notify:all")]]
     if len(student_ids) <= 5:
-        for sid in student_ids:
-            rows.append([InlineKeyboardButton(f"📱 Notificar a alumno {sid}", callback_data=f"wa_notify:{sid}")])
+        rows.extend(
+            [InlineKeyboardButton(f"📱 Notificar a alumno {sid}", callback_data=f"wa_notify:{sid}")]
+            for sid in student_ids
+        )
     return InlineKeyboardMarkup(rows)
 
 
 # ── Callback: wa_notify:all  or  wa_notify:{student_id} ──────────────────────
 
+
+@callback_router.register("wa_notify:")
 async def handle_wa_notify_callback(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     query = update.callback_query
     await query.answer()
     user_id = update.effective_user.id
     chat_id = update.effective_chat.id
 
-    scope = query.data.split(":", 1)[1]   # "all" or str(student_id)
+    scope = query.data.split(":", 1)[1]  # "all" or str(student_id)
     notif = get_wa_notification(user_id)
     if not notif:
         await query.edit_message_reply_markup(reply_markup=None)
-        await context.bot.send_message(chat_id, "La sesión de notificación expiró. Registra el cumplimiento de nuevo.")
+        await context.bot.send_message(
+            chat_id, "La sesión de notificación expiró. Registra el cumplimiento de nuevo.",
+        )
         return
 
     await query.edit_message_reply_markup(reply_markup=None)
@@ -83,15 +91,18 @@ async def handle_wa_notify_callback(update: Update, context: ContextTypes.DEFAUL
 
 
 async def _process_notifications(
-    user_id: int, chat_id: int, bot,
+    user_id: int,
+    chat_id: int,
+    bot,
     notif: PendingWhatsAppNotification,
-    student_ids: list[int], student_names: list[str],
+    student_ids: list[int],
+    student_names: list[str],
 ) -> None:
     """Load guardians, send to those with data, queue setup for those without."""
     sent_ok: list[str] = []
     sent_fail: list[str] = []
     missing_setup: list[tuple[int, str, str]] = []  # (guardian_id, guardian_name, student_name)
-    no_rep: list[tuple[int, str]] = []              # (student_id, student_name) sin representante
+    no_rep: list[tuple[int, str]] = []  # (student_id, student_name) sin representante
 
     async with async_session() as session:
         for sid, sname in zip(student_ids, student_names):
@@ -145,7 +156,7 @@ async def _process_notifications(
     if no_rep:
         sid_nr, sname_nr = no_rep[0]
         # Cola restante: otros sin-rep + guardians sin número
-        notif.student_ids   = [t[0] for t in no_rep[1:]] + [s[0] for s in missing_setup]
+        notif.student_ids = [t[0] for t in no_rep[1:]] + [s[0] for s in missing_setup]
         notif.student_names = [t[1] for t in no_rep[1:]] + [s[2] for s in missing_setup]
         set_wa_notification(user_id, notif)
 
@@ -191,12 +202,13 @@ async def _process_notifications(
         parse_mode=ParseMode.HTML,
     )
 
-    notif.student_ids   = [s[0] for s in missing_setup[1:]]
+    notif.student_ids = [s[0] for s in missing_setup[1:]]
     notif.student_names = [s[2] for s in missing_setup[1:]]
     set_wa_notification(user_id, notif)
 
 
 # ── Text handler: collect phone / apikey ──────────────────────────────────────
+
 
 async def handle_wa_setup_text(update: Update) -> bool:
     """Intercepts text while a WhatsApp setup flow is active.
@@ -221,7 +233,7 @@ async def handle_wa_setup_text(update: Update) -> bool:
             return True
 
         first_name = " ".join(name_parts[:-1])
-        last_name  = name_parts[-1]
+        last_name = name_parts[-1]
 
         async with async_session() as session:
             guardian = Person(
@@ -239,13 +251,14 @@ async def handle_wa_setup_text(update: Update) -> bool:
                 make_primary=True,
             )
 
-        setup.guardian_id   = guardian.id
+        setup.guardian_id = guardian.id
         setup.guardian_name = f"{first_name} {last_name}"
-        setup.step          = "await_phone"
+        setup.step = "await_phone"
         set_wa_setup(user_id, setup)
 
         await update.message.reply_text(
-            f"✅ Representante <b>{setup.guardian_name}</b> registrado y vinculado a <b>{setup.student_name}</b>.\n\n"
+            f"✅ Representante <b>{setup.guardian_name}</b> registrado "
+            f"y vinculado a <b>{setup.student_name}</b>.\n\n"
             f"¿Cuál es su número de WhatsApp? (ej: +593XXXXXXXXX)",
             parse_mode=ParseMode.HTML,
         )
@@ -255,29 +268,37 @@ async def handle_wa_setup_text(update: Update) -> bool:
         phone = text.replace(" ", "")
         if not phone.startswith("+") or len(phone) < 8:
             await update.message.reply_text(
-                "Formato inválido. Ingresa con código de país, ej: +593XXXXXXXXX"
+                "Formato inválido. Ingresa con código de país, ej: +593XXXXXXXXX",
             )
             return True
 
         # Save to whatsapp_contacts
         async with async_session() as session:
-            existing = (await session.execute(
-                select(WhatsAppContact).where(
-                    WhatsAppContact.person_id == setup.guardian_id,
-                    WhatsAppContact.phone == phone,
+            existing = (
+                await session.execute(
+                    select(WhatsAppContact).where(
+                        WhatsAppContact.person_id == setup.guardian_id,
+                        WhatsAppContact.phone == phone,
+                    ),
                 )
-            )).scalar_one_or_none()
+            ).scalar_one_or_none()
 
             if not existing:
-                has_any = (await session.execute(
-                    select(WhatsAppContact).where(WhatsAppContact.person_id == setup.guardian_id)
-                )).first()
-                session.add(WhatsAppContact(
-                    person_id=setup.guardian_id,
-                    phone=phone,
-                    is_primary=has_any is None,
-                    status="active",
-                ))
+                has_any = (
+                    await session.execute(
+                        select(WhatsAppContact).where(
+                            WhatsAppContact.person_id == setup.guardian_id,
+                        ),
+                    )
+                ).first()
+                session.add(
+                    WhatsAppContact(
+                        person_id=setup.guardian_id,
+                        phone=phone,
+                        is_primary=has_any is None,
+                        status="active",
+                    ),
+                )
                 await session.commit()
 
         setup.phone = phone
@@ -295,7 +316,7 @@ async def handle_wa_setup_text(update: Update) -> bool:
 
             # Continue with remaining missing guardians if any
             if notif.student_ids:
-                next_id   = notif.student_ids[0]
+                next_id = notif.student_ids[0]
                 next_name = notif.student_names[0]
                 async with async_session() as session:
                     student = await session.get(Student, next_id)
@@ -303,7 +324,11 @@ async def handle_wa_setup_text(update: Update) -> bool:
                         rep = student.primary_representative
                         if rep:
                             g = await session.get(Person, rep.person_id)
-                            active = [c for c in (g.whatsapp_contacts if g else []) if c.status == "active"]
+                            active = [
+                                c
+                                for c in (g.whatsapp_contacts if g else [])
+                                if c.status == "active"
+                            ]
                             if g and not active:
                                 gname = f"{g.first_name} {g.last_name}".strip()
                                 next_setup = PendingWhatsAppSetup(
@@ -313,11 +338,12 @@ async def handle_wa_setup_text(update: Update) -> bool:
                                     student_name=next_name,
                                 )
                                 set_wa_setup(user_id, next_setup)
-                                notif.student_ids   = notif.student_ids[1:]
+                                notif.student_ids = notif.student_ids[1:]
                                 notif.student_names = notif.student_names[1:]
                                 set_wa_notification(user_id, notif)
                                 await update.message.reply_text(
-                                    f"Siguiente representante: <b>{gname}</b> (alumno: {next_name})\n"
+                                    f"Siguiente representante: <b>{gname}</b> "
+                                    f"(alumno: {next_name})\n"
                                     "¿Cuál es su número de WhatsApp? (+593XXXXXXXXX)",
                                     parse_mode=ParseMode.HTML,
                                 )
@@ -328,7 +354,9 @@ async def handle_wa_setup_text(update: Update) -> bool:
     return False
 
 
-async def _send_single(chat_id: int, setup: PendingWhatsAppSetup, notif: PendingWhatsAppNotification) -> None:
+async def _send_single(
+    chat_id: int, setup: PendingWhatsAppSetup, notif: PendingWhatsAppNotification,
+) -> None:
     msg = format_homework_message(
         guardian_name=setup.guardian_name,
         student_name=setup.student_name,
@@ -338,12 +366,20 @@ async def _send_single(chat_id: int, setup: PendingWhatsAppSetup, notif: Pending
         delivery_date=notif.delivery_date,
     )
     async with async_session() as session:
-        contacts = (await session.execute(
-            select(WhatsAppContact).where(
-                WhatsAppContact.person_id == setup.guardian_id,
-                WhatsAppContact.status == "active",
+        contacts = (
+            (
+                await session.execute(
+                    select(WhatsAppContact).where(
+                        WhatsAppContact.person_id == setup.guardian_id,
+                        WhatsAppContact.status == "active",
+                    ),
+                )
             )
-        )).scalars().all()
+            .scalars()
+            .all()
+        )
         results = await asyncio.gather(*[_wa_send(c.phone, msg) for c in contacts])
         for c, ok in zip(contacts, results):
-            logger.info(f"[whatsapp] post-setup send guardian={setup.guardian_id} phone={c.phone} ok={ok}")
+            logger.info(
+                f"[whatsapp] post-setup send guardian={setup.guardian_id} phone={c.phone} ok={ok}",
+            )

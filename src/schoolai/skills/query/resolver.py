@@ -3,7 +3,7 @@
 from dataclasses import dataclass
 from datetime import date
 
-from sqlalchemy import select, and_
+from sqlalchemy import and_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from schoolai.db.models.attendance import Attendance
@@ -26,7 +26,7 @@ class AttendanceData:
     period_start: date
     period_end: date
     period_type: str
-    records: list[AttendanceRecord]   # only students with F/AT/J
+    records: list[AttendanceRecord]  # only students with F/AT/J
     total_students: int
 
 
@@ -75,14 +75,18 @@ async def resolve_attendance(
             name_map[s.id] = f"{p.first_name} {p.last_name}".strip()
 
     # Fetch attendance records in period
-    att_stmt = select(Attendance).where(
-        and_(
-            Attendance.student_id.in_(name_map.keys()),
-            Attendance.date >= intent.period_start,
-            Attendance.date <= intent.period_end,
-            Attendance.status.in_(["F", "AT", "J"]),
+    att_stmt = (
+        select(Attendance)
+        .where(
+            and_(
+                Attendance.student_id.in_(name_map.keys()),
+                Attendance.date >= intent.period_start,
+                Attendance.date <= intent.period_end,
+                Attendance.status.in_(["F", "AT", "J"]),
+            ),
         )
-    ).order_by(Attendance.student_id, Attendance.date)
+        .order_by(Attendance.student_id, Attendance.date)
+    )
 
     rows = (await session.execute(att_stmt)).scalars().all()
 
@@ -112,10 +116,7 @@ async def resolve_homework_multi(
     session: AsyncSession,
 ) -> list["HomeworkData"]:
     # Sequential — AsyncSession no soporta acceso concurrente desde asyncio.gather
-    results = []
-    for gid in grade_ids:
-        results.append(await resolve_homework(intent, gid, session))
-    return results
+    return [await resolve_homework(intent, gid, session) for gid in grade_ids]
 
 
 async def resolve_homework(
@@ -134,11 +135,7 @@ async def resolve_homework(
     if intent.trimester_num is not None:
         filters.append(Homework.trimester_num == intent.trimester_num)
 
-    stmt = (
-        select(Homework)
-        .where(and_(*filters))
-        .order_by(Homework.submission_date.desc())
-    )
+    stmt = select(Homework).where(and_(*filters)).order_by(Homework.submission_date.desc())
     rows = (await session.execute(stmt)).scalars().all()
 
     sf = intent.subject_filter.lower() if intent.subject_filter else None
@@ -152,7 +149,8 @@ async def resolve_homework(
             sequence_num=hw.sequence_num,
             teacher_name=(
                 f"{hw.teacher.person.first_name} {hw.teacher.person.last_name}".strip()
-                if hw.teacher and hw.teacher.person else None
+                if hw.teacher and hw.teacher.person
+                else None
             ),
         )
         for hw in rows

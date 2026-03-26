@@ -7,48 +7,82 @@ from datetime import date, timedelta
 from schoolai.skills.utils.text import normalize as _norm
 
 QUERY_KEYWORDS = [
-    "dame", "muestra", "mostrar", "ver", "lista", "listar",
-    "quién", "quien", "quienes", "cuántos", "cuantos",
-    "asistencia", "faltas", "faltaron", "tareas", "tarea",
+    "dame",
+    "muestra",
+    "mostrar",
+    "ver",
+    "lista",
+    "listar",
+    "quién",
+    "quien",
+    "quienes",
+    "cuántos",
+    "cuantos",
+    "asistencia",
+    "faltas",
+    "faltaron",
+    "tareas",
+    "tarea",
 ]
 
-ATTENDANCE_KEYWORDS = ["asistencia", "faltas", "faltaron", "atrasos", "justificados", "quien falto", "quién faltó"]
-HOMEWORK_KEYWORDS   = ["tareas", "tarea", "actividades", "actividad", "pendientes"]
+ATTENDANCE_KEYWORDS = [
+    "asistencia",
+    "faltas",
+    "faltaron",
+    "atrasos",
+    "justificados",
+    "quien falto",
+    "quién faltó",
+]
+HOMEWORK_KEYWORDS = ["tareas", "tarea", "actividades", "actividad", "pendientes"]
 
 # Pre-normalizados para comparar contra texto normalizado (mayúsculas, sin acentos)
-_QUERY_KEYWORDS_N     = [_norm(k) for k in QUERY_KEYWORDS]
+_QUERY_KEYWORDS_N = [_norm(k) for k in QUERY_KEYWORDS]
 _ATTENDANCE_KEYWORDS_N = [_norm(k) for k in ATTENDANCE_KEYWORDS]
-_HOMEWORK_KEYWORDS_N  = [_norm(k) for k in HOMEWORK_KEYWORDS]
+_HOMEWORK_KEYWORDS_N = [_norm(k) for k in HOMEWORK_KEYWORDS]
 
 PERIOD_PATTERNS = [
-    (r"\bhoy\b",                          "day",   0),
-    (r"\besta\s+semana\b",                "week",  0),
-    (r"\bsemana\s+pasada\b",              "week", -1),
-    (r"\beste\s+mes\b",                   "month", 0),
-    (r"\bmes\s+pasado\b",                 "month",-1),
-    (r"\btrimestre\b",                    "trimester", 0),
-    (r"\b(enero|february|marzo|abril|mayo|junio|julio|agosto|"
-     r"septiembre|octubre|noviembre|diciembre)\b", "named_month", 0),
+    (r"\bhoy\b", "day", 0),
+    (r"\besta\s+semana\b", "week", 0),
+    (r"\bsemana\s+pasada\b", "week", -1),
+    (r"\beste\s+mes\b", "month", 0),
+    (r"\bmes\s+pasado\b", "month", -1),
+    (r"\btrimestre\b", "trimester", 0),
+    (
+        r"\b(enero|february|marzo|abril|mayo|junio|julio|agosto|"
+        r"septiembre|octubre|noviembre|diciembre)\b",
+        "named_month",
+        0,
+    ),
 ]
 
 MONTH_MAP = {
-    "enero": 1, "febrero": 2, "marzo": 3, "abril": 4,
-    "mayo": 5, "junio": 6, "julio": 7, "agosto": 8,
-    "septiembre": 9, "octubre": 10, "noviembre": 11, "diciembre": 12,
+    "enero": 1,
+    "febrero": 2,
+    "marzo": 3,
+    "abril": 4,
+    "mayo": 5,
+    "junio": 6,
+    "julio": 7,
+    "agosto": 8,
+    "septiembre": 9,
+    "octubre": 10,
+    "noviembre": 11,
+    "diciembre": 12,
 }
 
 # Trimestres año lectivo 2025-2026
 TRIMESTERS = [
-    (1, date(2025,  9,  1), date(2025, 12,  7)),
-    (2, date(2025, 12,  8), date(2026,  3, 22)),
-    (3, date(2026,  3, 23), date(2026,  6, 15)),
+    (1, date(2025, 9, 1), date(2025, 12, 7)),
+    (2, date(2025, 12, 8), date(2026, 3, 22)),
+    (3, date(2026, 3, 23), date(2026, 6, 15)),
 ]
 
 
 @dataclass
 class QueryIntent:
-    type: str           # "attendance" | "homework" | "unknown"
-    period: str         # "day" | "week" | "month" | "trimester"
+    type: str  # "attendance" | "homework" | "unknown"
+    period: str  # "day" | "week" | "month" | "trimester"
     period_start: date
     period_end: date
     trimester_num: int | None = None

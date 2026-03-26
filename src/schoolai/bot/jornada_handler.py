@@ -17,7 +17,8 @@ Callbacks:
 """
 
 import asyncio
-from datetime import date, datetime, time as _time
+from datetime import date, datetime
+from datetime import time as _time
 from functools import cache
 
 from loguru import logger
@@ -25,8 +26,9 @@ from sqlalchemy import select
 from telegram import InlineKeyboardButton, InlineKeyboardMarkup
 from telegram.constants import ParseMode
 from telegram.ext import ContextTypes
-from schoolai.bot.handlers import JORNADA_KEYBOARD, REMOVE_KEYBOARD
 
+from schoolai.bot.handlers import JORNADA_KEYBOARD, REMOVE_KEYBOARD
+from schoolai.bot.sop import SOPEngine
 from schoolai.bot.state import (
     DAY_NAMES,
     JornadaSession,
@@ -38,21 +40,61 @@ from schoolai.db.connection import async_session
 from schoolai.db.models.teacher import Teacher
 from schoolai.skills.db.schedule_service import get_schedule_for_day, get_teacher_by_telegram
 
-
 # ── Teclados estáticos cacheados ──────────────────────────────────────────────
 
-_ACTIVE_KEYBOARD = InlineKeyboardMarkup([[
-    InlineKeyboardButton("▶️ Siguiente clase", callback_data="jor_next"),
-    InlineKeyboardButton("⏸ Pausar",           callback_data="jor_pause"),
-]])
+_ACTIVE_KEYBOARD = InlineKeyboardMarkup(
+    [
+        [
+            InlineKeyboardButton("▶️ Siguiente clase", callback_data="jor_next"),
+            InlineKeyboardButton("⏸ Pausar", callback_data="jor_pause"),
+        ],
+    ],
+)
 
-_FINISHED_KEYBOARD = InlineKeyboardMarkup([[
-    InlineKeyboardButton("🔄 Recorrer desde el inicio", callback_data="jor_restart"),
-    InlineKeyboardButton("📋 Seleccionar período",      callback_data="jor_pick"),
-]])
+_FINISHED_KEYBOARD = InlineKeyboardMarkup(
+    [
+        [
+            InlineKeyboardButton("🔄 Recorrer desde el inicio", callback_data="jor_restart"),
+            InlineKeyboardButton("📋 Seleccionar período", callback_data="jor_pick"),
+        ],
+    ],
+)
+
+# ── SOP transition table ───────────────────────────────────────────────────────
+# Built lazily (after all _on_* functions are defined) via _build_sop().
+_JORNADA_SOP: SOPEngine | None = None
+
+
+def _build_sop() -> SOPEngine:
+    return SOPEngine(
+        {
+            # jor_start — arranca desde cualquier estado
+            ("*", "jor_start"): _on_start,
+            # waiting — tarjeta de período mostrada, esperando al docente
+            ("waiting", "jor_here"): _on_here,
+            ("waiting", "jor_skip"): _on_skip,
+            ("waiting", "jor_pause"): _on_pause,
+            ("waiting", "jor_end"): _on_end,
+            # active — docente en clase
+            ("active", "jor_next"): _on_next,
+            ("active", "jor_pause"): _on_pause,
+            ("active", "jor_end"): _on_end,
+            # paused — en receso
+            ("paused", "jor_resume"): _on_resume,
+            ("paused", "jor_end"): _on_end,
+            # done — todos los períodos terminados
+            ("done", "jor_restart"): _on_restart,
+            ("done", "jor_pick"): _on_pick,
+            # navegación libre (cualquier estado)
+            ("*", "jor_restart"): _on_restart,
+            ("*", "jor_pick"): _on_pick,
+            # jor_goto:{i} se parsea por separado en el dispatcher
+        },
+    )
 
 
 # ── Job 06:00 ─────────────────────────────────────────────────────────────────
+
 
 async def job_morning_notify(context: ContextTypes.DEFAULT_TYPE) -> None:
     """Envía invitación a Modo Jornada a todos los docentes con horario hoy."""
@@ -62,20 +104,30 @@ async def job_morning_notify(context: ContextTypes.DEFAULT_TYPE) -> None:
 
     async with async_session() as session:
         teachers = (
-            await session.execute(
-                select(Teacher).where(Teacher.is_active.is_(True), Teacher.telegram_id.isnot(None))
+            (
+                await session.execute(
+                    select(Teacher).where(
+                        Teacher.is_active.is_(True), Teacher.telegram_id.isnot(None),
+                    ),
+                )
             )
-        ).scalars().all()
+            .scalars()
+            .all()
+        )
 
         # Pre-load schedules para todos los docentes en paralelo
         schedules = await asyncio.gather(
-            *[get_schedule_for_day(session, teacher.id, today) for teacher in teachers]
+            *[get_schedule_for_day(session, teacher.id, today) for teacher in teachers],
         )
         teacher_periods = list(zip(teachers, schedules))
 
-    _start_btn = InlineKeyboardMarkup([[
-        InlineKeyboardButton("🟢 Iniciar Modo Jornada", callback_data="jor_start"),
-    ]])
+    _start_btn = InlineKeyboardMarkup(
+        [
+            [
+                InlineKeyboardButton("🟢 Iniciar Modo Jornada", callback_data="jor_start"),
+            ],
+        ],
+    )
 
     async def _notify(teacher, periods) -> None:
         if not periods:
@@ -93,7 +145,9 @@ async def job_morning_notify(context: ContextTypes.DEFAULT_TYPE) -> None:
                 parse_mode=ParseMode.MARKDOWN,
                 reply_markup=_start_btn,
             )
-            logger.info(f"[jornada] morning notify → teacher={teacher.id} telegram={teacher.telegram_id}")
+            logger.info(
+                f"[jornada] morning notify → teacher={teacher.id} telegram={teacher.telegram_id}",
+            )
         except Exception as e:
             logger.warning(f"[jornada] could not notify teacher={teacher.id}: {e}")
 
@@ -101,6 +155,7 @@ async def job_morning_notify(context: ContextTypes.DEFAULT_TYPE) -> None:
 
 
 # ── Comando /jornada ───────────────────────────────────────────────────────────
+
 
 async def handle_jornada_command(update, context) -> None:
     """Permite iniciar Modo Jornada manualmente en cualquier momento."""
@@ -121,7 +176,7 @@ async def handle_jornada_command(update, context) -> None:
         if not teacher:
             await update.message.reply_text(
                 "No tienes un perfil de docente vinculado.\n"
-                "Usa /db → 📅 Horario para configurarlo."
+                "Usa /db → 📅 Horario para configurarlo.",
             )
             return
 
@@ -130,7 +185,7 @@ async def handle_jornada_command(update, context) -> None:
     if not periods:
         await update.message.reply_text(
             f"No tienes clases registradas para hoy ({DAY_NAMES[today]}).\n"
-            "Usa /db → 📅 Horario para registrar tu horario."
+            "Usa /db → 📅 Horario para registrar tu horario.",
         )
         return
 
@@ -168,35 +223,43 @@ async def handle_jornada_command(update, context) -> None:
 
 # ── Callback dispatcher ───────────────────────────────────────────────────────
 
+
 async def handle_jornada_callback(update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    global _JORNADA_SOP
+    if _JORNADA_SOP is None:
+        _JORNADA_SOP = _build_sop()
+
     query = update.callback_query
     await query.answer()
     user_id = update.effective_user.id
     data = query.data
 
-    if data == "jor_start":
-        await _on_start(query, user_id, context)
-    elif data == "jor_here":
-        await _on_here(query, user_id, context)
-    elif data == "jor_skip":
-        await _on_skip(query, user_id, context)
-    elif data == "jor_next":
-        await _on_next(query, user_id, context)
-    elif data == "jor_pause":
-        await _on_pause(query, user_id)
-    elif data == "jor_resume":
-        await _on_resume(query, user_id, context)
-    elif data == "jor_end":
-        await _on_end(query, user_id)
-    elif data == "jor_restart":
-        await _on_restart(query, user_id, context)
-    elif data == "jor_pick":
-        await _on_pick(query, user_id)
-    elif data.startswith("jor_goto:"):
+    # Weekend gate: bloquear jor_start en fin de semana
+    if data == "jor_start" and date.today().weekday() > 4:
+        await query.answer("Hoy es fin de semana. ¡Descansa! 😄", show_alert=True)
+        return
+
+    # jor_goto:{i} — tratamiento especial por el argumento numérico
+    if data.startswith("jor_goto:"):
         await _on_goto(query, user_id, int(data.split(":")[1]), context)
+        return
+
+    jornada = get_jornada(user_id)
+    status = jornada.status if jornada else "none"
+
+    handler = _JORNADA_SOP.get_handler(status, data)
+    if handler is None:
+        logger.warning(
+            f"[jornada] transición inválida status={status!r} trigger={data!r} user={user_id}",
+        )
+        await query.answer("Acción no disponible en este estado.", show_alert=True)
+        return
+
+    await handler(query, user_id, context)
 
 
 # ── Step handlers ─────────────────────────────────────────────────────────────
+
 
 async def _on_start(query, user_id: int, context: ContextTypes.DEFAULT_TYPE) -> None:
     today = date.today().weekday()
@@ -267,7 +330,9 @@ async def _on_here(query, user_id: int, context: ContextTypes.DEFAULT_TYPE) -> N
         reply_markup=_ACTIVE_KEYBOARD,
     )
     await query.message.reply_text("\u200b", reply_markup=REMOVE_KEYBOARD)
-    logger.info(f"[jornada] active user={user_id} grade={p['grade_name']} subject={p['subject_name']}")
+    logger.info(
+        f"[jornada] active user={user_id} grade={p['grade_name']} subject={p['subject_name']}",
+    )
 
 
 async def _on_skip(query, user_id: int, context: ContextTypes.DEFAULT_TYPE) -> None:
@@ -308,7 +373,7 @@ async def _on_next(query, user_id: int, context: ContextTypes.DEFAULT_TYPE) -> N
     await _send_period_card(context.bot, jornada, user_id)
 
 
-async def _on_pause(query, user_id: int) -> None:
+async def _on_pause(query, user_id: int, context=None) -> None:
     jornada = get_jornada(user_id)
     if not jornada:
         return
@@ -325,10 +390,14 @@ async def _on_pause(query, user_id: int) -> None:
         f"Próxima clase: {period_info}\n\n"
         "_Estás en Modo Libre. Toca Retomar cuando estés listo._",
         parse_mode=ParseMode.MARKDOWN,
-        reply_markup=InlineKeyboardMarkup([[
-            InlineKeyboardButton("🟢 Retomar Jornada", callback_data="jor_resume"),
-            InlineKeyboardButton("🔴 Finalizar",       callback_data="jor_end"),
-        ]]),
+        reply_markup=InlineKeyboardMarkup(
+            [
+                [
+                    InlineKeyboardButton("🟢 Retomar Jornada", callback_data="jor_resume"),
+                    InlineKeyboardButton("🔴 Finalizar", callback_data="jor_end"),
+                ],
+            ],
+        ),
     )
     logger.info(f"[jornada] paused user={user_id}")
 
@@ -345,7 +414,7 @@ async def _on_resume(query, user_id: int, context: ContextTypes.DEFAULT_TYPE) ->
     logger.info(f"[jornada] resumed user={user_id}")
 
 
-async def _on_end(query, user_id: int) -> None:
+async def _on_end(query, user_id: int, context=None) -> None:
     jornada = get_jornada(user_id)
     completed = jornada.current_index if jornada else 0
     clear_jornada(user_id)
@@ -360,6 +429,7 @@ async def _on_end(query, user_id: int) -> None:
 
 
 # ── Helpers ───────────────────────────────────────────────────────────────────
+
 
 @cache
 def _parse_time(s: str) -> _time:
@@ -379,24 +449,24 @@ def _current_period_index(periods: list[dict]) -> int:
 
     for i, p in enumerate(periods):
         start = _parse_time(p["start_time"])
-        end   = _parse_time(p["end_time"])
+        end = _parse_time(p["end_time"])
         if start <= now <= end:
-            return i           # dentro del período
+            return i  # dentro del período
         if now < start:
-            return i           # antes de que empiece este período
+            return i  # antes de que empiece este período
 
-    return len(periods)        # todos pasaron
+    return len(periods)  # todos pasaron
 
 
 def _build_period_list(periods) -> list[dict]:
     return [
         {
-            "period_num":   p.period_num,
-            "start_time":   p.start_time,
-            "end_time":     p.end_time,
-            "grade_id":     p.grade_id,
-            "grade_name":   p.grade.name,
-            "subject_id":   p.subject_id,
+            "period_num": p.period_num,
+            "start_time": p.start_time,
+            "end_time": p.end_time,
+            "grade_id": p.grade_id,
+            "grade_name": p.grade.name,
+            "subject_id": p.subject_id,
             "subject_name": p.subject.name,
         }
         for p in periods
@@ -417,10 +487,10 @@ async def _send_period_card(bot, jornada: JornadaSession, user_id: int) -> None:
     buttons = [
         [
             InlineKeyboardButton("✅ Estoy en clase", callback_data="jor_here"),
-            InlineKeyboardButton("⏭ Saltar",          callback_data="jor_skip"),
+            InlineKeyboardButton("⏭ Saltar", callback_data="jor_skip"),
         ],
         [
-            InlineKeyboardButton("⏸ Pausar Jornada",    callback_data="jor_pause"),
+            InlineKeyboardButton("⏸ Pausar Jornada", callback_data="jor_pause"),
             InlineKeyboardButton("🔴 Finalizar Jornada", callback_data="jor_end"),
         ],
     ]
@@ -439,9 +509,7 @@ async def _finish_jornada(bot, user_id: int, jornada: JornadaSession) -> None:
     await bot.send_message(
         chat_id=jornada.chat_id,
         text=(
-            f"🎉 *¡Jornada completada!*\n"
-            f"Clases del día: *{total}*\n\n"
-            "_Buen trabajo. Hasta mañana._"
+            f"🎉 *¡Jornada completada!*\nClases del día: *{total}*\n\n_Buen trabajo. Hasta mañana._"
         ),
         parse_mode=ParseMode.MARKDOWN,
         reply_markup=JORNADA_KEYBOARD,
@@ -462,16 +530,18 @@ async def _on_restart(query, user_id: int, context) -> None:
     await _send_period_card(context.bot, jornada, user_id)
 
 
-async def _on_pick(query, user_id: int) -> None:
+async def _on_pick(query, user_id: int, context=None) -> None:
     """Muestra la lista de todos los períodos para seleccionar uno."""
     jornada = get_jornada(user_id)
     if not jornada:
         return
     buttons = [
-        [InlineKeyboardButton(
-            f"{p['period_num']}. {p['grade_name']} — {p['subject_name']}  {p['start_time']}",
-            callback_data=f"jor_goto:{i}",
-        )]
+        [
+            InlineKeyboardButton(
+                f"{p['period_num']}. {p['grade_name']} — {p['subject_name']}  {p['start_time']}",
+                callback_data=f"jor_goto:{i}",
+            ),
+        ]
         for i, p in enumerate(jornada.periods)
     ]
     await query.edit_message_text(
@@ -496,12 +566,10 @@ async def _on_goto(query, user_id: int, index: int, context) -> None:
 
 # ── Banner de contexto activo (para appender en respuestas) ───────────────────
 
+
 def jornada_context_banner(user_id: int) -> str | None:
     """Retorna una línea de contexto para adjuntar a respuestas del bot."""
     s = get_jornada(user_id)
     if not s or s.status != "active":
         return None
-    return (
-        f"\n\n📌 _Modo Jornada: {s.grade_name} — {s.subject_name}_  "
-        f"[▶️ Siguiente](jor_next)"
-    )
+    return f"\n\n📌 _Modo Jornada: {s.grade_name} — {s.subject_name}_  [▶️ Siguiente](jor_next)"

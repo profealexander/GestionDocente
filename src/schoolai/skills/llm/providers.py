@@ -2,6 +2,13 @@
 
 # provider_name → {"base_url": str | None, "key": settings attribute name}
 PROVIDERS: dict[str, dict] = {
+    # Z.AI — international endpoint (GLM-4.7-Flash, GLM-4.7, etc.)
+    # Docs: https://docs.z.ai/api-reference/llm/chat-completion
+    "zai": {
+        "base_url": "https://api.z.ai/api/paas/v4/",
+        "key": "zai_api_key",
+    },
+    # ZhipuAI — China endpoint (legacy, mantener para compatibilidad)
     "zhipu": {
         "base_url": "https://open.bigmodel.cn/api/paas/v4/",
         "key": "zhipu_api_key",

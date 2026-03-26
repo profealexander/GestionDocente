@@ -5,11 +5,11 @@ from __future__ import annotations
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from schoolai.db.models.cuota import Actividad, ActividadParticipante, ActividadPago
+from schoolai.db.models.cuota import Actividad, ActividadPago, ActividadParticipante
 from schoolai.db.models.student import Student
 
-
 # ── Actividades ───────────────────────────────────────────────────────────────
+
 
 async def create_actividad(
     session: AsyncSession,
@@ -44,6 +44,30 @@ async def get_actividades(
     return (await session.execute(stmt.order_by(Actividad.created_at.desc()))).scalars().all()
 
 
+async def update_actividad(
+    session: AsyncSession,
+    actividad_id: int,
+    nombre: str | None = None,
+    monto: float | None = None,
+    descripcion: str | None = None,
+    is_active: bool | None = None,
+) -> Actividad | None:
+    actividad = await session.get(Actividad, actividad_id)
+    if not actividad:
+        return None
+    if nombre is not None:
+        actividad.nombre = nombre
+    if monto is not None:
+        actividad.monto = monto
+    if descripcion is not None:
+        actividad.descripcion = descripcion
+    if is_active is not None:
+        actividad.is_active = is_active
+    await session.commit()
+    await session.refresh(actividad)
+    return actividad
+
+
 async def get_actividad_by_nombre(
     session: AsyncSession,
     nombre: str,
@@ -58,6 +82,7 @@ async def get_actividad_by_nombre(
 
 # ── Participantes ─────────────────────────────────────────────────────────────
 
+
 async def add_participantes(
     session: AsyncSession,
     actividad_id: int,
@@ -66,12 +91,18 @@ async def add_participantes(
     """Agrega estudiantes a una actividad (ignora duplicados). Retorna cuántos se agregaron."""
     added = 0
     for sid in student_ids:
-        existing = (await session.execute(
-            select(ActividadParticipante).where(
-                ActividadParticipante.actividad_id == actividad_id,
-                ActividadParticipante.student_id == sid,
+        existing = (
+            (
+                await session.execute(
+                    select(ActividadParticipante).where(
+                        ActividadParticipante.actividad_id == actividad_id,
+                        ActividadParticipante.student_id == sid,
+                    ),
+                )
             )
-        )).scalars().first()
+            .scalars()
+            .first()
+        )
         if not existing:
             session.add(ActividadParticipante(actividad_id=actividad_id, student_id=sid))
             added += 1
@@ -92,14 +123,19 @@ async def get_participantes(
 
 
 async def get_students_in_grade(session: AsyncSession, grade_id: int) -> list[Student]:
-    stmt = select(Student).where(
-        Student.grade_id == grade_id,
-        Student.is_active.is_(True),
-    ).order_by(Student.last_name, Student.first_name)
+    stmt = (
+        select(Student)
+        .where(
+            Student.grade_id == grade_id,
+            Student.status == "active",
+        )
+        .order_by(Student.last_name, Student.first_name)
+    )
     return (await session.execute(stmt)).scalars().all()
 
 
 # ── Pagos ─────────────────────────────────────────────────────────────────────
+
 
 async def register_pago(
     session: AsyncSession,
@@ -112,12 +148,18 @@ async def register_pago(
 ) -> tuple[ActividadPago, ActividadParticipante]:
     """Registra un pago. Crea el participante si no existe. Actualiza totales."""
     # Upsert participante
-    participante = (await session.execute(
-        select(ActividadParticipante).where(
-            ActividadParticipante.actividad_id == actividad_id,
-            ActividadParticipante.student_id == student_id,
+    participante = (
+        (
+            await session.execute(
+                select(ActividadParticipante).where(
+                    ActividadParticipante.actividad_id == actividad_id,
+                    ActividadParticipante.student_id == student_id,
+                ),
+            )
         )
-    )).scalars().first()
+        .scalars()
+        .first()
+    )
 
     if not participante:
         participante = ActividadParticipante(
@@ -148,6 +190,55 @@ async def register_pago(
     await session.commit()
     await session.refresh(participante)
     return pago, participante
+
+
+async def find_or_create_student(
+    session: AsyncSession,
+    name: str,
+    grade_id: int,
+) -> tuple[int, bool]:
+    """Busca un estudiante por nombre fuzzy en el grado dado.
+
+    Retorna (student_id, was_created).
+    Si no existe, crea Person + Student minimal y retorna (id, True).
+    """
+    from schoolai.skills.attendance.matcher import match_names
+
+    results = await match_names([{"name": name, "status": "F"}], grade_id, session)
+    if results and results[0].matched_id:
+        return results[0].matched_id, False
+
+    # Crear registro minimal: parsear nombre en partes
+    parts = name.strip().split()
+    if len(parts) == 1:
+        first_name, last_name = parts[0].title(), "—"
+    elif len(parts) == 2:
+        first_name, last_name = parts[0].title(), parts[1].title()
+    elif len(parts) == 3:
+        first_name, last_name = parts[0].title(), parts[1].title()
+        second_last = parts[2].title()
+    else:
+        first_name = parts[0].title()
+        last_name = parts[1].title()
+        second_last = parts[2].title() if len(parts) > 2 else None
+
+    from schoolai.db.models.person import Person
+
+    person = Person(
+        first_name=first_name,
+        last_name=last_name,
+        second_last_name=locals().get("second_last"),
+        role="student",
+        status="active",
+    )
+    session.add(person)
+    await session.flush()
+
+    student = Student(person_id=person.id, grade_id=grade_id, section="A", status="active")
+    session.add(student)
+    await session.flush()
+    await session.commit()
+    return student.id, True
 
 
 async def get_estado_actividad(

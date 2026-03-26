@@ -1,5 +1,6 @@
 """Esquemas de datos para extracción de intención y entidades."""
-from dataclasses import dataclass
+
+from dataclasses import dataclass, field
 from typing import Literal
 
 
@@ -7,9 +8,9 @@ from typing import Literal
 class AttendanceExtract:
     names: list[str]
     course: str | None
-    date: str          # "today" | "yesterday" | "YYYY-MM-DD"
+    date: str  # "today" | "yesterday" | "YYYY-MM-DD"
     status: Literal["absent", "late", "justified", "all_present"]
-    complete: bool     # False si falta course
+    complete: bool  # False si falta course
 
 
 @dataclass
@@ -17,27 +18,28 @@ class HomeworkExtract:
     description: str
     course: str | None
     subject: str | None
-    delivery_date: str | None   # "YYYY-MM-DD" | nombre día | None
-    complete: bool              # False si falta course o subject
+    delivery_date: str | None  # "YYYY-MM-DD" | nombre día | None
+    complete: bool  # False si falta course o subject
+    subjects: list[str] = field(default_factory=list)  # todas las materias detectadas
 
 
 @dataclass
 class QueryExtract:
     query_type: Literal["attendance", "homework"]
-    courses: list[str]   # abreviaturas de cursos, [] si no se mencionó ninguno
-    period: str          # today|yesterday|week|last_week|month|last_month|trimester|...
-    complete: bool       # False si courses está vacío
+    courses: list[str]  # abreviaturas de cursos, [] si no se mencionó ninguno
+    period: str  # today|yesterday|week|last_week|month|last_month|trimester|...
+    complete: bool  # False si courses está vacío
     subject: str | None = None  # materia específica si se mencionó
 
 
 @dataclass
 class HomeworkReportExtract:
-    names: list[str]           # quienes no cumplieron
-    homework_ref: int | None   # número de tarea (ej: 3)
+    names: list[str]  # quienes no cumplieron
+    homework_ref: int | None  # número de tarea (ej: 3)
     course: str | None
     subject: str | None
-    status: str                # "missing" | "late" | "partial"
-    complete: bool             # False si falta course o homework_ref
+    status: str  # "missing" | "late" | "partial"
+    complete: bool  # False si falta course o homework_ref
 
 
 @dataclass
@@ -49,3 +51,4 @@ class ChatExtract:
 class ExtractionResult:
     intent: Literal["attendance", "homework", "homework_report", "query", "chat"]
     data: AttendanceExtract | HomeworkExtract | HomeworkReportExtract | QueryExtract | ChatExtract
+    via_llm: bool = False  # True cuando se usó LLM fallback (confianza menor)

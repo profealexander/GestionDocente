@@ -33,6 +33,7 @@ class StudentUpdate(BaseModel):
 
 class BulkStudentIn(BaseModel):
     """One name entry for bulk import. full_name = 'APELLIDO1 APELLIDO2, NOMBRE1 NOMBRE2'"""
+
     full_name: str
     grade_id: int
     section: str = "A"
@@ -40,6 +41,7 @@ class BulkStudentIn(BaseModel):
 
 class BulkImportPayload(BaseModel):
     students: list[BulkStudentIn]
+
 
 router = APIRouter(
     prefix="/students",
@@ -64,7 +66,7 @@ def _to_out(s: Student) -> StudentOut:
     "/",
     response_model=list[StudentOut],
     summary="List students",
-    description="Returns students optionally filtered by grade or status. Ordered by grade and name.",
+    description="Returns students optionally filtered by grade or status. Ordered by grade and name.",  # noqa: E501
 )
 async def list_students(
     grade_id: Optional[int] = Query(None, description="Filter by grade ID"),
@@ -140,7 +142,9 @@ async def _create_student(session: AsyncSession, body: StudentCreate) -> Student
     )
     session.add(person)
     await session.flush()
-    student = Student(person_id=person.id, grade_id=body.grade_id, section=body.section, status="active")
+    student = Student(
+        person_id=person.id, grade_id=body.grade_id, section=body.section, status="active",
+    )
     session.add(student)
     await session.flush()
     await session.refresh(student)

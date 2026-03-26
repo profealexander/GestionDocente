@@ -10,6 +10,7 @@ Flow:
   5. Generate Word (sin firma) → save to data/docs/{teacher_id}/{num_doc}.docx
   6. Report result to teacher
 """
+
 from __future__ import annotations
 
 import io
@@ -21,6 +22,7 @@ from telegram import InlineKeyboardButton, InlineKeyboardMarkup, Update
 from telegram.constants import ParseMode
 from telegram.ext import ContextTypes
 
+from schoolai.bot.callback_router import callback_router
 from schoolai.config import settings
 from schoolai.db.connection import async_session
 from schoolai.db.models.student import Student
@@ -32,27 +34,34 @@ from schoolai.skills.documents.repository import get_notificacion_context
 from schoolai.skills.whatsapp.sender import send_whatsapp_pdf
 
 _DOCS_ROOT = os.path.abspath(
-    os.path.join(os.path.dirname(__file__), "..", "..", "..", "data", "docs")
+    os.path.join(os.path.dirname(__file__), "..", "..", "..", "data", "docs"),
 )
 
 
-def doc_notify_keyboard(hw_id: int, student_ids: list[int], student_names: list[str]) -> InlineKeyboardMarkup:
+def doc_notify_keyboard(
+    hw_id: int, student_ids: list[int], student_names: list[str],
+) -> InlineKeyboardMarkup:
     """Inline keyboard with one [📄 Notificar] button per student."""
     rows = []
     for sid, sname in zip(student_ids, student_names):
-        rows.append([InlineKeyboardButton(
-            f"📄 Notificar a {sname}",
-            callback_data=f"doc_notify:{hw_id}:{sid}",
-        )])
+        rows.append(
+            [
+                InlineKeyboardButton(
+                    f"📄 Notificar a {sname}",
+                    callback_data=f"doc_notify:{hw_id}:{sid}",
+                ),
+            ],
+        )
     return InlineKeyboardMarkup(rows)
 
 
+@callback_router.register("doc_notify:")
 async def handle_doc_notify_callback(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     query = update.callback_query
     await query.answer()
 
-    parts = query.data.split(":")   # doc_notify:{hw_id}:{student_id}
-    hw_id      = int(parts[1])
+    parts = query.data.split(":")  # doc_notify:{hw_id}:{student_id}
+    hw_id = int(parts[1])
     student_id = int(parts[2])
 
     user_id = update.effective_user.id
@@ -62,9 +71,11 @@ async def handle_doc_notify_callback(update: Update, context: ContextTypes.DEFAU
 
     async with async_session() as session:
         # Resolve teacher
-        teacher = (await session.execute(
-            select(Teacher).where(Teacher.telegram_id == user_id)
-        )).scalars().first()
+        teacher = (
+            (await session.execute(select(Teacher).where(Teacher.telegram_id == user_id)))
+            .scalars()
+            .first()
+        )
 
         if not teacher:
             await context.bot.send_message(chat_id, "❌ No encontré tu registro como docente.")
@@ -106,12 +117,18 @@ async def handle_doc_notify_callback(update: Update, context: ContextTypes.DEFAU
         rep_phone: str | None = None
         student = await session.get(Student, student_id)
         if student and student.primary_representative:
-            contacts = (await session.execute(
-                select(WhatsAppContact).where(
-                    WhatsAppContact.person_id == student.primary_representative.person_id,
-                    WhatsAppContact.status == "active",
+            contacts = (
+                (
+                    await session.execute(
+                        select(WhatsAppContact).where(
+                            WhatsAppContact.person_id == student.primary_representative.person_id,
+                            WhatsAppContact.status == "active",
+                        ),
+                    )
                 )
-            )).scalars().all()
+                .scalars()
+                .all()
+            )
             if contacts:
                 rep_phone = contacts[0].phone
 
@@ -121,7 +138,7 @@ async def handle_doc_notify_callback(update: Update, context: ContextTypes.DEFAU
     try:
         ctx.firma_path = get_signature_path(teacher_id)
         word_bytes = generate_word(ctx)
-        pdf_bytes  = generate_pdf(ctx)
+        pdf_bytes = generate_pdf(ctx)
     except Exception as exc:
         logger.error(f"[doc_notify] document generation failed: {exc}")
         await context.bot.send_message(chat_id, f"❌ Error al generar documentos: {exc}")
@@ -131,7 +148,7 @@ async def handle_doc_notify_callback(update: Update, context: ContextTypes.DEFAU
     try:
         doc_dir = os.path.join(_DOCS_ROOT, str(teacher_id))
         os.makedirs(doc_dir, exist_ok=True)
-        with open(os.path.join(doc_dir, f"{num_doc}.docx"), "wb") as f:
+        with open(os.path.join(doc_dir, f"{num_doc}.docx"), "wb") as f:  # noqa: ASYNC230
             f.write(word_bytes)
         logger.info(f"[doc_notify] Word saved: {doc_dir}/{num_doc}.docx")
     except Exception as exc:

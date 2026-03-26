@@ -33,7 +33,9 @@ async def send_whatsapp(instance_id: str, token: str, phone: str, message: str) 
         if ok:
             logger.info(f"[whatsapp] enviado a {phone}")
         else:
-            logger.warning(f"[whatsapp] fallo phone={phone} status={resp.status_code} body={resp.text[:200]}")
+            logger.warning(
+                f"[whatsapp] fallo phone={phone} status={resp.status_code} body={resp.text[:200]}",
+            )
         return bool(ok)
     except Exception as exc:
         logger.error(f"[whatsapp] error phone={phone}: {exc}")
@@ -62,7 +64,10 @@ async def send_whatsapp_pdf(
         if ok:
             logger.info(f"[whatsapp] PDF enviado a {phone}")
         else:
-            logger.warning(f"[whatsapp] fallo PDF phone={phone} status={resp.status_code} body={resp.text[:200]}")
+            logger.warning(
+                f"[whatsapp] fallo PDF phone={phone} "
+                f"status={resp.status_code} body={resp.text[:200]}",
+            )
         return bool(ok)
     except Exception as exc:
         logger.error(f"[whatsapp] error PDF phone={phone}: {exc}")

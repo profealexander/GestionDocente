@@ -19,10 +19,16 @@ from schoolai.skills.cuotas.service import (
 
 
 def _actividad_pago_keyboard(actividades) -> InlineKeyboardMarkup:
-    return InlineKeyboardMarkup([
-        [InlineKeyboardButton(f"💰 {a.nombre} (${a.monto:.0f})", callback_data=f"cuota_pago:{a.id}")]
-        for a in actividades
-    ])
+    return InlineKeyboardMarkup(
+        [
+            [
+                InlineKeyboardButton(
+                    f"💰 {a.nombre} (${a.monto:.0f})", callback_data=f"cuota_pago:{a.id}",
+                ),
+            ]
+            for a in actividades
+        ],
+    )
 
 
 async def _resolve_names(session, nombres: list[str], course: str | None):
@@ -31,17 +37,18 @@ async def _resolve_names(session, nombres: list[str], course: str | None):
 
     if course:
         from schoolai.skills.homework.repository import find_grade
-        grade    = await find_grade(session, course)
+
+        grade = await find_grade(session, course)
         grade_id = grade.id if grade else None
         if grade_id:
             return await match_names(extracted, grade_id, session)
 
     # Sin curso — buscar en todos los grados, primer match gana
     from sqlalchemy import select
+
     from schoolai.db.models.grade import Grade
-    grades = (await session.execute(
-        select(Grade).where(Grade.is_active.is_(True))
-    )).scalars().all()
+
+    grades = (await session.execute(select(Grade).where(Grade.is_active.is_(True)))).scalars().all()
 
     for g in grades:
         results = await match_names(extracted, g.id, session)
@@ -51,9 +58,11 @@ async def _resolve_names(session, nombres: list[str], course: str | None):
     return await match_names(extracted, grades[0].id if grades else 0, session)
 
 
-async def _send_pago_result(update_or_query, session, actividad, data: CuotaExtract, *, use_edit: bool = False) -> None:
+async def _send_pago_result(
+    update_or_query, session, actividad, data: CuotaExtract, *, use_edit: bool = False,
+) -> None:
     name_results = await _resolve_names(session, data.nombres, data.course)
-    resolved  = [r for r in name_results if r.resolved]
+    resolved = [r for r in name_results if r.resolved]
     not_found = [r for r in name_results if r.not_found]
     ambiguous = [r for r in name_results if r.ambiguous]
 
@@ -66,9 +75,9 @@ async def _send_pago_result(update_or_query, session, actividad, data: CuotaExtr
             student_id=r.matched_id,
             monto=data.monto,
         )
-        total    = float(participante.total_pagado)
+        total = float(participante.total_pagado)
         restante = max(0.0, float(actividad.monto) - total)
-        estado   = "✅ Completo" if participante.is_complete else f"⚠️ Faltan ${restante:.2f}"
+        estado = "✅ Completo" if participante.is_complete else f"⚠️ Faltan ${restante:.2f}"
         lines.append(f"• {r.matched_name.title()} — ${data.monto:.2f}  {estado}")
 
     if not_found:
@@ -86,8 +95,7 @@ async def _send_pago_result(update_or_query, session, actividad, data: CuotaExtr
 async def handle_pago(update, user_id: int, data: CuotaExtract) -> None:
     if not data.nombres:
         await update.message.reply_text(
-            "No identifiqué a quién registrar el pago.\n"
-            "_Ejemplo: García pagó $30 para el Paseo_",
+            "No identifiqué a quién registrar el pago.\n_Ejemplo: García pagó $30 para el Paseo_",
             parse_mode=ParseMode.MARKDOWN,
         )
         return
@@ -121,7 +129,8 @@ async def handle_pago(update, user_id: int, data: CuotaExtract) -> None:
 
         if not actividad:
             await update.message.reply_text(
-                f"No encontré la actividad *{data.nombre}*.", parse_mode=ParseMode.MARKDOWN,
+                f"No encontré la actividad *{data.nombre}*.",
+                parse_mode=ParseMode.MARKDOWN,
             )
             return
 
@@ -132,9 +141,9 @@ async def handle_pago(update, user_id: int, data: CuotaExtract) -> None:
 
 async def handle_cuota_pago_callback(update, context) -> None:
     """cuota_pago:{actividad_id} — retoma un pago pendiente con la actividad elegida."""
-    query        = update.callback_query
+    query = update.callback_query
     await query.answer()
-    user_id      = update.effective_user.id
+    user_id = update.effective_user.id
     actividad_id = int(query.data.split(":")[1])
     await query.edit_message_reply_markup(reply_markup=None)
 
@@ -145,6 +154,7 @@ async def handle_cuota_pago_callback(update, context) -> None:
 
     async with async_session() as session:
         from schoolai.skills.cuotas.service import get_estado_actividad
+
         actividad, _ = await get_estado_actividad(session, actividad_id)
         if not actividad:
             await query.edit_message_text("Actividad no encontrada.")

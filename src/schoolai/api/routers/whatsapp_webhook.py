@@ -45,6 +45,7 @@ async def _ensure_registry() -> None:
 
     if not registry._skills:
         from importlib.metadata import entry_points as _eps
+
         skill_classes = [ep.load() for ep in _eps(group="schoolai.skills")]
         for skill_cls in sorted(skill_classes, key=lambda c: getattr(c, "priority", 50)):
             registry.register(skill_cls())
@@ -53,6 +54,7 @@ async def _ensure_registry() -> None:
 
 
 # ── Endpoint ──────────────────────────────────────────────────────────────────
+
 
 @router.post("/whatsapp")
 async def whatsapp_webhook(request: Request) -> dict:
@@ -83,12 +85,14 @@ async def whatsapp_webhook(request: Request) -> dict:
 
     # Buscar docente por número de WhatsApp
     async with async_session() as session:
-        teacher = (await session.execute(
-            select(Teacher).where(
-                Teacher.whatsapp_phone == phone,
-                Teacher.is_active.is_(True),
+        teacher = (
+            await session.execute(
+                select(Teacher).where(
+                    Teacher.whatsapp_phone == phone,
+                    Teacher.is_active.is_(True),
+                ),
             )
-        )).scalar_one_or_none()
+        ).scalar_one_or_none()
 
     if teacher is None:
         logger.warning(f"[wa_webhook] número no registrado: {phone}")

@@ -129,8 +129,7 @@ class CronService:
         self._path.parent.mkdir(parents=True, exist_ok=True)
         # Solo persistir hora y minuto (no description — esa viene del código)
         minimal = {
-            name: {"hour": cfg["hour"], "minute": cfg["minute"]}
-            for name, cfg in self._jobs.items()
+            name: {"hour": cfg["hour"], "minute": cfg["minute"]} for name, cfg in self._jobs.items()
         }
         self._path.write_text(json.dumps(minimal, indent=2))
 

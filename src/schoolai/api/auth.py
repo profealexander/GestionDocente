@@ -79,17 +79,21 @@ async def get_current_user(
         sub: str = payload["sub"]
         role: str = payload.get("role", "teacher")
         if sub.startswith("teacher:"):
-            return {"teacher_id": int(sub.split(":")[1]), "username": payload.get("username"), "role": role}
+            return {
+                "teacher_id": int(sub.split(":")[1]),
+                "username": payload.get("username"),
+                "role": role,
+            }
         return {"telegram_id": int(sub), "role": role}
-    except jwt.ExpiredSignatureError:
+    except jwt.ExpiredSignatureError as exc:
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="Token expirado. Solicita uno nuevo en /auth/token.",
             headers={"WWW-Authenticate": "Bearer"},
-        )
-    except (jwt.InvalidTokenError, KeyError, ValueError):
+        ) from exc
+    except (jwt.InvalidTokenError, KeyError, ValueError) as exc:
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="Token inválido.",
             headers={"WWW-Authenticate": "Bearer"},
-        )
+        ) from exc

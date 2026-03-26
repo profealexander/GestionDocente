@@ -1,4 +1,5 @@
 """Generador de documentos Word y PDF para notificaciones."""
+
 from __future__ import annotations
 
 import io
@@ -13,6 +14,7 @@ TEMPLATES_DIR = os.path.join(os.path.dirname(__file__), "templates")
 SIGNATURES_DIR = os.path.join(os.path.dirname(__file__), "signatures")
 
 _REPLACEMENTS = {"—": "-", "–": "-", "\u2019": "'", "\u201c": '"', "\u201d": '"', "\u2026": "..."}
+
 
 def _safe(text: str) -> str:
     """Reemplaza caracteres fuera de latin-1 para compatibilidad con fpdf."""
@@ -34,33 +36,36 @@ class NotificacionContext:
     fecha_limite: str
     docente_nombre: str
     docente_cargo: str
-    firma_path: str | None = None   # ruta a imagen de firma (solo PDF)
+    firma_path: str | None = None  # ruta a imagen de firma (solo PDF)
 
 
 # ── Word ──────────────────────────────────────────────────────────────────────
+
 
 def generate_word(ctx: NotificacionContext) -> bytes:
     """Genera el documento Word sin firma. Retorna bytes."""
     tpl = DocxTemplate(os.path.join(TEMPLATES_DIR, "notificacion_tarea.docx"))
     # num_doc format: NOT-2026-EA-001-CE-01
     num_parts = ctx.num_doc.split("-")
-    anio      = num_parts[1] if len(num_parts) > 1 else ""
-    num_seq   = num_parts[3] if len(num_parts) > 3 else (num_parts[2] if len(num_parts) > 2 else "001")
-    ini_num   = num_parts[4] if len(num_parts) > 4 else (num_parts[3] if len(num_parts) > 3 else "")
+    anio = num_parts[1] if len(num_parts) > 1 else ""
+    num_seq = (
+        num_parts[3] if len(num_parts) > 3 else (num_parts[2] if len(num_parts) > 2 else "001")
+    )
+    ini_num = num_parts[4] if len(num_parts) > 4 else (num_parts[3] if len(num_parts) > 3 else "")
     context = {
-        "num_seq":           num_seq,
-        "iniciales_num":     ini_num,
-        "anio":              anio,
-        "fecha":             ctx.fecha,
-        "representante":     ctx.representante,
-        "estudiante":        ctx.estudiante,
-        "curso":             ctx.curso,
-        "asignatura":        ctx.asignatura,
-        "descripcion":       ctx.descripcion,
-        "fecha_programada":  ctx.fecha_programada,
-        "fecha_limite":      ctx.fecha_limite,
-        "docente_nombre":    ctx.docente_nombre,
-        "docente_cargo":     ctx.docente_cargo,
+        "num_seq": num_seq,
+        "iniciales_num": ini_num,
+        "anio": anio,
+        "fecha": ctx.fecha,
+        "representante": ctx.representante,
+        "estudiante": ctx.estudiante,
+        "curso": ctx.curso,
+        "asignatura": ctx.asignatura,
+        "descripcion": ctx.descripcion,
+        "fecha_programada": ctx.fecha_programada,
+        "fecha_limite": ctx.fecha_limite,
+        "docente_nombre": ctx.docente_nombre,
+        "docente_cargo": ctx.docente_cargo,
         "firma_placeholder": "",  # en blanco para Word
     }
     tpl.render(context)
@@ -71,8 +76,21 @@ def generate_word(ctx: NotificacionContext) -> bytes:
 
 # ── PDF ───────────────────────────────────────────────────────────────────────
 
-MONTHS_ES = ["", "enero", "febrero", "marzo", "abril", "mayo", "junio",
-             "julio", "agosto", "septiembre", "octubre", "noviembre", "diciembre"]
+MONTHS_ES = [
+    "",
+    "enero",
+    "febrero",
+    "marzo",
+    "abril",
+    "mayo",
+    "junio",
+    "julio",
+    "agosto",
+    "septiembre",
+    "octubre",
+    "noviembre",
+    "diciembre",
+]
 
 
 def _fecha_larga(d: date) -> str:
@@ -83,7 +101,7 @@ class _NotifPDF(FPDF):
     def __init__(self, docente_nombre: str, docente_cargo: str):
         super().__init__(orientation="P", unit="mm", format="A4")
         self._doc_nombre = docente_nombre
-        self._doc_cargo  = docente_cargo
+        self._doc_cargo = docente_cargo
         self.set_margins(left=25, top=25, right=20)
         self.set_auto_page_break(auto=True, margin=25)
 
@@ -132,8 +150,13 @@ def generate_pdf(ctx: NotificacionContext) -> bytes:
     ln(3)
 
     # Título
-    text("NOTIFICACIÓN POR NO ENTREGA DE ACTIVIDADES",
-         size=13, bold=True, align="C", color=(0, 70, 127))
+    text(
+        "NOTIFICACIÓN POR NO ENTREGA DE ACTIVIDADES",
+        size=13,
+        bold=True,
+        align="C",
+        color=(0, 70, 127),
+    )
     ln(6)
 
     # Datos
@@ -149,7 +172,7 @@ def generate_pdf(ctx: NotificacionContext) -> bytes:
     text(
         f"Por medio de la presente, informo a usted que su representado/a, el estudiante "
         f"{ctx.estudiante}, de {ctx.curso}, no ha cumplido con la entrega de la(s) "
-        f"siguiente(s) actividad(es) formativa(s):"
+        f"siguiente(s) actividad(es) formativa(s):",
     )
     ln(3)
 
@@ -161,27 +184,29 @@ def generate_pdf(ctx: NotificacionContext) -> bytes:
     pdf.multi_cell(W, 6, _safe(f"  Asignatura: {ctx.asignatura}"), fill=True)
     ln(1)
     pdf.set_x(25)
-    pdf.multi_cell(W, 6, _safe(f"  Actividad: {ctx.descripcion}  |  Fecha: {ctx.fecha_programada}"), fill=True)
+    pdf.multi_cell(
+        W, 6, _safe(f"  Actividad: {ctx.descripcion}  |  Fecha: {ctx.fecha_programada}"), fill=True,
+    )
     ln(3)
 
     text(
         "Esta situación afecta directamente el proceso de evaluación formativa y el "
         "desarrollo de sus destrezas. Con el fin de evitar que el estudiante caiga en "
-        "un promedio inferior a 7,00/10, se le solicita:"
+        "un promedio inferior a 7,00/10, se le solicita:",
     )
     ln(2)
     text("  • Justificar la inasistencia o falta de entrega en un plazo de 48 horas.")
     text(
         f"  • Entregar las actividades pendientes hasta el día {ctx.fecha_limite}, las cuales "
         f"serán calificadas según lo establece el Modelo Institucional de Evaluación para "
-        f"casos de entrega tardía."
+        f"casos de entrega tardía.",
     )
     ln(3)
 
     text(
         "Le recordamos que, según el Art. 13 de la LOEI, es obligación de los padres de "
         "familia participar en el proceso educativo y supervisar el cumplimiento de las "
-        "tareas escolares."
+        "tareas escolares.",
     )
     ln(8)
 
@@ -213,6 +238,7 @@ def generate_pdf(ctx: NotificacionContext) -> bytes:
 
 
 # ── Helpers ───────────────────────────────────────────────────────────────────
+
 
 def get_signature_path(teacher_id: int) -> str | None:
     for ext in ("png", "jpg", "jpeg"):

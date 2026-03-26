@@ -3,11 +3,15 @@ Convierte NOTIFICACION V1.docx → plantilla docxtpl con variables Jinja2.
 Modifica SOLO el texto de los runs que tienen {{ }}, nada más.
 Una notificación = una materia (sin loop).
 """
+
 import os
 import shutil
+
 from docx import Document
 
-SRC = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "..", "..", "..", "NOTIFICACION V1.docx"))
+SRC = os.path.abspath(
+    os.path.join(os.path.dirname(__file__), "..", "..", "..", "..", "NOTIFICACION V1.docx"),
+)
 OUT = os.path.join(os.path.dirname(__file__), "templates", "notificacion_tarea.docx")
 
 
@@ -54,14 +58,15 @@ def build():
             r.text = "{{ asignatura }}"
 
     # ── [11] Actividad + fecha programada ─────────────────────────────────────
-    # Runs: "Actividad" " 1" ":" " " "{{ student_name }} " "[Ej:...] | " "Fecha programada:" " " "{{ student_name }} " "[Fecha]"
+    # Runs: "Actividad" " 1" ":" " " "{{ student_name }} " "[Ej:...] | "
+    #        "Fecha programada:" " " "{{ student_name }} " "[Fecha]"
     sn_count = 0
     for r in paras[11].runs:
-        if r.text.strip() == "1":          # quitar el "1" de "Actividad 1"
+        if r.text.strip() == "1":  # quitar el "1" de "Actividad 1"
             r.text = ""
-        elif "[Ej:" in r.text:             # reemplazar ejemplo pero conservar " | "
+        elif "[Ej:" in r.text:  # reemplazar ejemplo pero conservar " | "
             r.text = " | "
-        elif "[Fecha]" in r.text:          # quitar "[Fecha]"
+        elif "[Fecha]" in r.text:  # quitar "[Fecha]"
             r.text = ""
         elif "student_name" in r.text:
             if sn_count == 0:
@@ -71,7 +76,8 @@ def build():
             sn_count += 1
 
     # ── [14] Fecha límite ─────────────────────────────────────────────────────
-    # Runs: "Entregar" " las actividades...hasta el día " "{{ " "fechas sumas..." "}}" ", las cuales..."
+    # Runs: "Entregar" " las actividades...hasta el día "
+    #        "{{ " "fechas sumas..." "}}" ", las cuales..."
     for r in paras[14].runs:
         if r.text.strip() in ("{{", "{{ "):
             r.text = ""

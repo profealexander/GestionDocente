@@ -16,10 +16,23 @@ TOOLS: list[ToolDef] = [
         parameters={
             "type": "object",
             "properties": {
-                "descripcion": {"type": "string",  "description": "Descripción completa de la tarea"},
-                "curso":       {"type": "string",  "description": "Abreviatura del curso, ej: 3bt"},
-                "materia":     {"type": "string",  "description": "Materia o asignatura, ej: Matemáticas"},
-                "fecha_entrega": {"type": "string","description": "Fecha de entrega YYYY-MM-DD o nombre día. Opcional."},
+                "descripcion": {
+                    "type": "string",
+                    "description": "Descripción completa de la tarea",
+                },
+                "curso": {"type": "string", "description": "Abreviatura del curso, ej: 3bt"},
+                "materias": {
+                    "type": "array",
+                    "items": {"type": "string"},
+                    "description": (
+                        "Lista de materias. Si la tarea es para varias materias, "
+                        "incluir todas. Ej: ['Filosofía', 'Gestión Contable']"
+                    ),
+                },
+                "fecha_entrega": {
+                    "type": "string",
+                    "description": "Fecha de entrega YYYY-MM-DD o nombre día. Opcional.",
+                },
             },
             "required": ["descripcion", "curso"],
         },
@@ -31,11 +44,19 @@ TOOLS: list[ToolDef] = [
         parameters={
             "type": "object",
             "properties": {
-                "nombres":    {"type": "array", "items": {"type": "string"}, "description": "Apellidos de los que no cumplieron"},
-                "curso":      {"type": "string",  "description": "Abreviatura del curso"},
-                "tarea_ref":  {"type": "integer", "description": "Número de tarea, ej: 3"},
-                "materia":    {"type": "string",  "description": "Materia. Opcional."},
-                "status":     {"type": "string",  "enum": ["missing", "late", "partial"], "description": "Tipo de incumplimiento"},
+                "nombres": {
+                    "type": "array",
+                    "items": {"type": "string"},
+                    "description": "Apellidos de los que no cumplieron",
+                },
+                "curso": {"type": "string", "description": "Abreviatura del curso"},
+                "tarea_ref": {"type": "integer", "description": "Número de tarea, ej: 3"},
+                "materia": {"type": "string", "description": "Materia. Opcional."},
+                "status": {
+                    "type": "string",
+                    "enum": ["missing", "late", "partial"],
+                    "description": "Tipo de incumplimiento",
+                },
             },
             "required": ["nombres", "curso"],
         },
@@ -48,16 +69,25 @@ TOOLS_BY_NAME: dict[str, ToolDef] = {t.name: t for t in TOOLS}
 
 def _tool_call_to_result(tool_name: str, args: dict):
     from schoolai.skills.utils.schema import (
-        ExtractionResult, HomeworkExtract, HomeworkReportExtract,
+        ExtractionResult,
+        HomeworkExtract,
+        HomeworkReportExtract,
     )
 
     if tool_name == "create_homework":
+        materias = args.get("materias", [])
+        if isinstance(materias, str):
+            materias = [materias] if materias else []
+        # compat con campo singular legado
+        if not materias and args.get("materia"):
+            materias = [args["materia"]]
         return ExtractionResult(
             intent="homework",
             data=HomeworkExtract(
                 description=args.get("descripcion", ""),
                 course=args.get("curso"),
-                subject=args.get("materia"),
+                subject=materias[0] if materias else None,
+                subjects=materias,
                 delivery_date=args.get("fecha_entrega"),
                 complete=bool(args.get("curso") and args.get("descripcion")),
             ),

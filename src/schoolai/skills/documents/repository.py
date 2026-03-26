@@ -1,8 +1,10 @@
 """Obtiene datos de la DB para generar documentos."""
+
 from __future__ import annotations
 
 from datetime import date, timedelta
 
+from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from schoolai.db.models.grade import Grade
@@ -11,19 +13,36 @@ from schoolai.db.models.person import Person
 from schoolai.db.models.student import Student
 from schoolai.db.models.student_representative import StudentRepresentative
 from schoolai.db.models.teacher import Teacher
-from sqlalchemy import select
 from schoolai.skills.documents.generator import NotificacionContext
 
-MONTHS_ES = ["", "enero", "febrero", "marzo", "abril", "mayo", "junio",
-             "julio", "agosto", "septiembre", "octubre", "noviembre", "diciembre"]
+MONTHS_ES = [
+    "",
+    "enero",
+    "febrero",
+    "marzo",
+    "abril",
+    "mayo",
+    "junio",
+    "julio",
+    "agosto",
+    "septiembre",
+    "octubre",
+    "noviembre",
+    "diciembre",
+]
 
 HOLIDAYS = {
     # Feriados Ecuador — año lectivo 2025-2026
-    date(2025, 11,  2), date(2025, 11,  3),
-    date(2025, 12, 25), date(2026,  1,  1),
-    date(2026,  2, 16), date(2026,  2, 17),
-    date(2026,  4, 10), date(2026,  4, 13),
-    date(2026,  5,  1), date(2026,  5, 25),
+    date(2025, 11, 2),
+    date(2025, 11, 3),
+    date(2025, 12, 25),
+    date(2026, 1, 1),
+    date(2026, 2, 16),
+    date(2026, 2, 17),
+    date(2026, 4, 10),
+    date(2026, 4, 13),
+    date(2026, 5, 1),
+    date(2026, 5, 25),
 }
 
 
@@ -73,21 +92,29 @@ async def get_notificacion_context(
     rep_row = (await session.execute(rep_stmt)).scalars().first()
     if rep_row:
         rep_person = await session.get(Person, rep_row.person_id)
-        representante = f"{rep_person.first_name} {rep_person.last_name}".strip() if rep_person else "Representante Legal"
+        representante = (
+            f"{rep_person.first_name} {rep_person.last_name}".strip()
+            if rep_person
+            else "Representante Legal"
+        )
     else:
         representante = "Representante Legal"
 
     # Docente
     teacher = await session.get(Teacher, teacher_id)
     teacher_person = await session.get(Person, teacher.person_id)
-    docente_nombre = f"{teacher_person.first_name} {teacher_person.last_name}".strip() if teacher_person else ""
+    docente_nombre = (
+        f"{teacher_person.first_name} {teacher_person.last_name}".strip() if teacher_person else ""
+    )
     docente_cargo = (teacher_person.title or "DOCENTE") if teacher_person else "DOCENTE"
 
     # Tarea
     hw = await session.get(Homework, hw_id)
     asignatura = hw.subject.name if (hw and hw.subject) else "Asignación"
     descripcion = hw.homework if hw else ""
-    fecha_programada = hw.delivery_date.strftime("%d/%m/%Y") if (hw and hw.delivery_date) else "Sin fecha"
+    fecha_programada = (
+        hw.delivery_date.strftime("%d/%m/%Y") if (hw and hw.delivery_date) else "Sin fecha"
+    )
 
     fecha_limite = _add_business_days(today, 2)
 

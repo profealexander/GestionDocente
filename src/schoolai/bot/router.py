@@ -9,7 +9,8 @@ from schoolai.skills.llm import get_client, parse_model
 
 CLASSIFIER_PROMPT = """Classify the following teacher message into exactly one word:
 
-- attendance → records who was absent, late, or justified (faltó, faltaron, atraso, tardanza, justificado, no vino, etc.)
+- attendance → records who was absent, late, or justified
+               (faltó, faltaron, atraso, tardanza, justificado, no vino, etc.)
 - homework   → registers a task, assignment, activity, project, exam, or evaluation
 - chat       → greeting, question, general inquiry, or any other conversation
 - unknown    → completely unclear intent
@@ -31,6 +32,7 @@ async def classify(text: str) -> str:
         return "unknown"
 
     try:
+
         def _call():
             return client.chat.completions.create(
                 model=model,

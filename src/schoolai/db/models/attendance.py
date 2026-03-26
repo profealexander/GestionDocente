@@ -10,7 +10,9 @@ class Attendance(Base):
     __tablename__ = "attendance"
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
-    student_id: Mapped[int | None] = mapped_column(Integer, ForeignKey("students.id"), nullable=True)
+    student_id: Mapped[int | None] = mapped_column(
+        Integer, ForeignKey("students.id"), nullable=True,
+    )
     date: Mapped[date] = mapped_column(Date, nullable=False)
     status: Mapped[str] = mapped_column(String(1), nullable=False)  # A | T
     notes: Mapped[str | None] = mapped_column(String, nullable=True)

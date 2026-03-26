@@ -15,14 +15,27 @@ class AttendanceSkill(BaseSkill):
     priority = 10
 
     # Keywords normalizados (sin acentos, minúsculas) — detección O(1)
-    keywords: frozenset[str] = frozenset(normalize(w) for w in (
-        "falta", "faltas", "falto", "faltaron",
-        "atraso", "atrasos", "atrasado", "atrasada",
-        "tardio", "tardo",
-        "justificado", "justificada",
-        "ausente", "ausentes",
-        "inasistencia", "inasistencias",
-    ))
+    keywords: frozenset[str] = frozenset(
+        normalize(w)
+        for w in (
+            "falta",
+            "faltas",
+            "falto",
+            "faltaron",
+            "atraso",
+            "atrasos",
+            "atrasado",
+            "atrasada",
+            "tardio",
+            "tardo",
+            "justificado",
+            "justificada",
+            "ausente",
+            "ausentes",
+            "inasistencia",
+            "inasistencias",
+        )
+    )
 
     # Patrones adicionales como fallback al keyword check
     patterns: list[re.Pattern] = [
@@ -35,20 +48,22 @@ class AttendanceSkill(BaseSkill):
             r"|nadie\s+falt[oó]|todos\s+vinieron|sin\s+ausencias?"
             r"|asistencia\s+completa)\b",
             re.IGNORECASE,
-        )
+        ),
     ]
 
     async def handle(self, update, user_id: int, text: str) -> None:
         """Extrae datos del mensaje y delega a action_handler._handle_attendance."""
-        from schoolai.skills.utils.extract_rules import extract_prefilter, extract_fallback
-        from schoolai.skills.attendance.tools import llm_fallback
         from schoolai.bot.action_handler import handle_extraction
+        from schoolai.skills.attendance.tools import llm_fallback
+        from schoolai.skills.utils.extract_rules import extract_fallback, extract_prefilter
 
         result = extract_prefilter(text)
         if result is None or result.intent != "attendance":
             result = extract_fallback(text)
         if result is None or result.intent != "attendance":
             result = await llm_fallback(text)
+            if result and result.intent == "attendance":
+                result.via_llm = True
         if result is None or result.intent != "attendance":
             await update.message.reply_text(
                 "No pude interpretar el mensaje de asistencia.\n"

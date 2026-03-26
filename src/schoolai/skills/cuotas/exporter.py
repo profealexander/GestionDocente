@@ -36,7 +36,10 @@ def export_actividad_excel(
     ws["A1"].alignment = Alignment(horizontal="center")
 
     ws.merge_cells("A2:F2")
-    ws["A2"] = f"Monto total: ${monto_total:.2f}   |   Exportado: {datetime.now().strftime('%d/%m/%Y %H:%M')}"
+    ws["A2"] = (
+        f"Monto total: ${monto_total:.2f}   |   "
+        f"Exportado: {datetime.now().strftime('%d/%m/%Y %H:%M')}"
+    )
     ws["A2"].alignment = Alignment(horizontal="center")
 
     # ── Títulos de columnas ───────────────────────────────────────────────────
@@ -49,28 +52,35 @@ def export_actividad_excel(
 
     # ── Filas de estudiantes ──────────────────────────────────────────────────
     green = _hex_fill("D8F3DC")
-    red   = _hex_fill("FFCDD2")
+    red = _hex_fill("FFCDD2")
     yellow = _hex_fill("FFF9C4")
 
     for i, p in enumerate(participantes, 1):
-        student   = p.student
-        last_name  = getattr(student, "last_name",  "") or ""
+        student = p.student
+        last_name = getattr(student, "last_name", "") or ""
         first_name = getattr(student, "first_name", "") or ""
-        total      = float(p.total_pagado or 0)
-        pendiente  = max(0.0, monto_total - total)
+        total = float(p.total_pagado or 0)
+        pendiente = max(0.0, monto_total - total)
 
         if p.is_complete:
             estado = "✅ Completo"
-            fill   = green
+            fill = green
         elif total > 0:
             estado = f"⚠️ Parcial (${total:.2f})"
-            fill   = yellow
+            fill = yellow
         else:
             estado = "❌ Pendiente"
-            fill   = red
+            fill = red
 
         row = i + 4
-        values = [i, last_name.title(), first_name.title(), f"${total:.2f}", f"${pendiente:.2f}", estado]
+        values = [
+            i,
+            last_name.title(),
+            first_name.title(),
+            f"${total:.2f}",
+            f"${pendiente:.2f}",
+            estado,
+        ]
         for col, val in enumerate(values, 1):
             cell = ws.cell(row=row, column=col, value=val)
             cell.fill = fill
@@ -78,8 +88,10 @@ def export_actividad_excel(
 
     # ── Resumen ───────────────────────────────────────────────────────────────
     total_row = len(participantes) + 6
-    completos  = sum(1 for p in participantes if p.is_complete)
-    parciales  = sum(1 for p in participantes if not p.is_complete and float(p.total_pagado or 0) > 0)
+    completos = sum(1 for p in participantes if p.is_complete)
+    parciales = sum(
+        1 for p in participantes if not p.is_complete and float(p.total_pagado or 0) > 0
+    )
     pendientes = len(participantes) - completos - parciales
 
     ws.cell(row=total_row, column=1, value="RESUMEN").font = Font(bold=True)

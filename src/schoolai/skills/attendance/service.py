@@ -32,15 +32,17 @@ async def save_absences(
         delete(Attendance).where(
             Attendance.student_id.in_(student_ids),
             Attendance.date == attendance_date,
-        )
+        ),
     )
 
     for sid in student_ids:
-        session.add(Attendance(
-            student_id=sid,
-            date=attendance_date,
-            status=statuses.get(sid, ABSENT),
-        ))
+        session.add(
+            Attendance(
+                student_id=sid,
+                date=attendance_date,
+                status=statuses.get(sid, ABSENT),
+            ),
+        )
 
     await session.commit()
     return AttendanceResult(saved=len(student_ids), date=attendance_date, grade_name="")

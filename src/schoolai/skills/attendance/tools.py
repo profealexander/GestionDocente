@@ -17,15 +17,28 @@ TOOLS: list[ToolDef] = [
             "type": "object",
             "properties": {
                 "nombres": {
-                    "type": "array", "items": {"type": "string"},
-                    "description": "Apellidos o nombres de los estudiantes. Lista vacía si todos asistieron.",
+                    "type": "array",
+                    "items": {"type": "string"},
+                    "description": (
+                        "Apellidos o nombres de los estudiantes. "
+                        "Lista vacía si todos asistieron."
+                    ),
                 },
-                "curso":  {"type": "string",  "description": "Abreviatura del curso, ej: 3bt, 8egb, prep"},
-                "fecha":  {"type": "string",  "description": "today, yesterday, o YYYY-MM-DD. Default: today"},
+                "curso": {
+                    "type": "string",
+                    "description": "Abreviatura del curso, ej: 3bt, 8egb, prep",
+                },
+                "fecha": {
+                    "type": "string",
+                    "description": "today, yesterday, o YYYY-MM-DD. Default: today",
+                },
                 "status": {
                     "type": "string",
                     "enum": ["absent", "late", "justified", "all_present"],
-                    "description": "absent=falta, late=atraso, justified=justificado, all_present=todos presentes",
+                    "description": (
+                        "absent=falta, late=atraso, "
+                        "justified=justificado, all_present=todos presentes"
+                    ),
                 },
             },
             "required": ["nombres", "curso"],
@@ -38,8 +51,15 @@ TOOLS: list[ToolDef] = [
         parameters={
             "type": "object",
             "properties": {
-                "cursos": {"type": "array", "items": {"type": "string"}, "description": "Abreviaturas de cursos"},
-                "period": {"type": "string", "description": "today, yesterday, week, month, trimester_1/2/3"},
+                "cursos": {
+                    "type": "array",
+                    "items": {"type": "string"},
+                    "description": "Abreviaturas de cursos",
+                },
+                "period": {
+                    "type": "string",
+                    "description": "today, yesterday, week, month, trimester_1/2/3",
+                },
             },
             "required": ["cursos"],
         },
@@ -52,7 +72,9 @@ TOOLS_BY_NAME: dict[str, ToolDef] = {t.name: t for t in TOOLS}
 
 def _tool_call_to_result(tool_name: str, args: dict):
     from schoolai.skills.utils.schema import (
-        AttendanceExtract, ExtractionResult, QueryExtract,
+        AttendanceExtract,
+        ExtractionResult,
+        QueryExtract,
     )
 
     if tool_name == "mark_attendance":

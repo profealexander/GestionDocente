@@ -35,6 +35,11 @@ class ChatSkill(BaseSkill):
             if course_info:
                 await _show_course_action_menu(update, course_info)
                 return
+            from schoolai.bot.handlers import _detect_course_group, _show_course_group_menu
+            group_courses = _detect_course_group(text)
+            if group_courses:
+                await _show_course_group_menu(update, group_courses)
+                return
 
         sent = await update.message.reply_text("...")
         buffer: list[str] = []

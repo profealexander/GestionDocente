@@ -24,7 +24,9 @@ class Person(Base):
     status: Mapped[str] = mapped_column(String, nullable=False, default="active")
 
     whatsapp_contacts: Mapped[list["WhatsAppContact"]] = relationship(  # noqa: F821
-        "WhatsAppContact", back_populates="person", lazy="selectin",
+        "WhatsAppContact",
+        back_populates="person",
+        lazy="selectin",
         primaryjoin="Person.id == WhatsAppContact.person_id",
         order_by="WhatsAppContact.is_primary.desc()",
     )

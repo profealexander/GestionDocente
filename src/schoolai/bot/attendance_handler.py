@@ -7,10 +7,12 @@ Flow: detect → extract names → ask grade if missing → resolve ambiguous na
 from datetime import date
 
 from loguru import logger
+from sqlalchemy import select
 from telegram import InlineKeyboardButton, InlineKeyboardMarkup, Update
 from telegram.constants import ParseMode
 from telegram.ext import ContextTypes
 
+from schoolai.bot.callback_router import callback_router
 from schoolai.bot.state import (
     PendingAttendance,
     clear_attendance,
@@ -19,7 +21,7 @@ from schoolai.bot.state import (
 )
 from schoolai.db.connection import async_session
 from schoolai.db.models.grade import Grade
-from schoolai.skills.attendance.constants import ABSENT, LATE, JUSTIFIED
+from schoolai.skills.attendance.constants import ABSENT, JUSTIFIED, LATE
 from schoolai.skills.attendance.detector import extract_absences
 from schoolai.skills.attendance.matcher import MatchResult, match_names
 from schoolai.skills.attendance.service import save_absences
@@ -27,10 +29,8 @@ from schoolai.skills.homework.detector import extract_course
 from schoolai.skills.homework.repository import find_grade
 from schoolai.skills.utils.keyboards import grade_keyboard
 
-from sqlalchemy import select
-
-
 # ── Entry: called from dispatcher when attendance message detected ─────────────
+
 
 async def start_attendance(update: Update, text: str) -> None:
     user_id = update.effective_user.id
@@ -54,7 +54,9 @@ async def start_attendance(update: Update, text: str) -> None:
     if not grade:
         # Ask for grade
         async with async_session() as session:
-            grades = (await session.execute(select(Grade).order_by(Grade.sort_order))).scalars().all()
+            grades = (
+                (await session.execute(select(Grade).order_by(Grade.sort_order))).scalars().all()
+            )
 
         state = PendingAttendance(
             step="await_grade",
@@ -88,6 +90,8 @@ async def start_attendance(update: Update, text: str) -> None:
 
 # ── Callback dispatcher ───────────────────────────────────────────────────────
 
+
+@callback_router.register("att_")
 async def handle_attendance_callback(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     query = update.callback_query
     await query.answer()
@@ -110,6 +114,7 @@ async def handle_attendance_callback(update: Update, context: ContextTypes.DEFAU
 
 # ── Step: grade selected ──────────────────────────────────────────────────────
 
+
 async def _on_grade(query, user_id: int, grade_id: int, grade_name: str) -> None:
     state = get_attendance(user_id)
     if not state:
@@ -125,6 +130,7 @@ async def _on_grade(query, user_id: int, grade_id: int, grade_name: str) -> None
 
 # ── Matching ──────────────────────────────────────────────────────────────────
 
+
 async def _run_matching(update: Update, user_id: int, state: PendingAttendance) -> None:
     async with async_session() as session:
         results = await match_names(state.extracted, state.grade_id, session)
@@ -137,13 +143,17 @@ async def _run_matching_on_query(query, user_id: int, state: PendingAttendance) 
     await _process_results(query.edit_message_text, user_id, state, results)
 
 
-async def _process_results(reply_fn, user_id: int, state: PendingAttendance, results: list[MatchResult]) -> None:
+async def _process_results(
+    reply_fn, user_id: int, state: PendingAttendance, results: list[MatchResult],
+) -> None:
     resolved = [r for r in results if r.resolved]
     ambiguous = [r for r in results if r.ambiguous]
     not_found = [r for r in results if r.not_found]
 
     # Add resolved to confirmed (include name for display)
-    state.confirmed = [{"student_id": r.matched_id, "status": r.status, "name": r.matched_name} for r in resolved]
+    state.confirmed = [
+        {"student_id": r.matched_id, "status": r.status, "name": r.matched_name} for r in resolved
+    ]
     state.ambiguous = ambiguous
     set_attendance(user_id, state)
 
@@ -161,6 +171,7 @@ async def _process_results(reply_fn, user_id: int, state: PendingAttendance, res
 
 
 # ── Ambiguity resolution ──────────────────────────────────────────────────────
+
 
 async def _ask_ambiguous(reply_fn, match: MatchResult, idx: int, not_found: list) -> None:
     note = ""
@@ -187,8 +198,12 @@ async def _on_resolve(query, user_id: int, idx: int, student_id: int) -> None:
         return
 
     resolved_match = state.ambiguous[idx]
-    name = next((c["name"] for c in resolved_match.candidates if c["id"] == student_id), str(student_id))
-    state.confirmed.append({"student_id": student_id, "status": resolved_match.status, "name": name})
+    name = next(
+        (c["name"] for c in resolved_match.candidates if c["id"] == student_id), str(student_id),
+    )
+    state.confirmed.append(
+        {"student_id": student_id, "status": resolved_match.status, "name": name},
+    )
     state.ambiguous = [r for i, r in enumerate(state.ambiguous) if i != idx]
     set_attendance(user_id, state)
 
@@ -217,7 +232,10 @@ async def _on_skip(query, user_id: int) -> None:
 
 # ── Save ──────────────────────────────────────────────────────────────────────
 
-async def _save_and_reply(reply_fn, user_id: int, state: PendingAttendance, not_found: list) -> None:
+
+async def _save_and_reply(
+    reply_fn, user_id: int, state: PendingAttendance, not_found: list,
+) -> None:
     if not state.confirmed:
         clear_attendance(user_id)
         await reply_fn("No se registró ninguna ausencia.")
@@ -231,8 +249,8 @@ async def _save_and_reply(reply_fn, user_id: int, state: PendingAttendance, not_
 
     clear_attendance(user_id)
 
-    absent    = [c for c in state.confirmed if c["status"] == ABSENT]
-    late      = [c for c in state.confirmed if c["status"] == LATE]
+    absent = [c for c in state.confirmed if c["status"] == ABSENT]
+    late = [c for c in state.confirmed if c["status"] == LATE]
     justified = [c for c in state.confirmed if c["status"] == JUSTIFIED]
 
     lines = [f"📋 *{state.grade_name} — {state.attendance_date.strftime('%d/%m/%Y')}*\n"]

@@ -1,6 +1,7 @@
 """Extracción de entidades basada en reglas/regex — sin LLM."""
 
 import re
+from datetime import date
 from functools import lru_cache
 
 from schoolai.skills.utils.schema import (
@@ -16,50 +17,80 @@ _NAME_MAX_LEN = 50
 
 # ── Query pre-filter ──────────────────────────────────────────────────────────
 
-_QUERY_ATT_RE = re.compile(r"\b(asistencia|inasistencias?|faltas?)\b", re.IGNORECASE)
-_QUERY_HW_RE  = re.compile(r"\b(tareas?|deberes?|actividades?|pendientes?)\b", re.IGNORECASE)
+_QUERY_ATT_RE = re.compile(
+    r"\b(asistencias?|aistencias?|asitencias?|asistncias?|asisencia"
+    r"|inasistencias?|faltas?)\b",
+    re.IGNORECASE,
+)
+_QUERY_HW_RE = re.compile(r"\b(tareas?|deberes?|pendientes?)\b", re.IGNORECASE)
 _QUERY_TRIGGER_RE = re.compile(
     r"^\s*(ver|dame|muestra|lista|mostrar|que\s+hay|hay|cuantas?|reporte|listado)\b",
     re.IGNORECASE,
 )
 
-_ATT_KW: frozenset[str] = frozenset(normalize(w) for w in (
-    "asistencia", "inasistencia", "inasistencias", "falta", "faltas",
-    "atrasos", "justificados", "quien falto", "quién faltó",
-))
-_HW_KW: frozenset[str] = frozenset(normalize(w) for w in (
-    "tareas", "tarea", "actividades", "actividad", "deberes", "pendientes",
-))
-_TRIGGER_KW: frozenset[str] = frozenset(normalize(w) for w in (
-    "ver", "dame", "muestra", "lista", "mostrar", "hay", "cuantas",
-    "cuántas", "reporte", "listado",
-))
+_ATT_KW: frozenset[str] = frozenset(
+    normalize(w)
+    for w in (
+        "asistencia",
+        "inasistencia",
+        "inasistencias",
+        "falta",
+        "faltas",
+        "atrasos",
+        "justificados",
+        "quien falto",
+        "quién faltó",
+    )
+)
+_HW_KW: frozenset[str] = frozenset(
+    normalize(w)
+    for w in (
+        "tareas",
+        "tarea",
+        "deberes",
+        "pendientes",
+    )
+)
+_TRIGGER_KW: frozenset[str] = frozenset(
+    normalize(w)
+    for w in (
+        "ver",
+        "dame",
+        "muestra",
+        "lista",
+        "mostrar",
+        "hay",
+        "cuantas",
+        "cuántas",
+        "reporte",
+        "listado",
+    )
+)
 
 _COURSE_GROUPS: dict[str, list[str]] = {
-    normalize("bachillerato"):      ["1bt", "2bt", "3bt"],
-    normalize("basica superior"):   ["8egb", "9egb", "10egb"],
-    normalize("basica media"):      ["5egb", "6egb", "7egb"],
-    normalize("basica elemental"):  ["2egb", "3egb", "4egb"],
-    normalize("egb"):               ["2egb", "3egb", "4egb", "5egb", "6egb",
-                                     "7egb", "8egb", "9egb", "10egb"],
-    normalize("inicial"):           ["i1", "i2"],
+    normalize("bachillerato"): ["1bt", "2bt", "3bt"],
+    normalize("basica superior"): ["8egb", "9egb", "10egb"],
+    normalize("basica media"): ["5egb", "6egb", "7egb"],
+    normalize("basica elemental"): ["2egb", "3egb", "4egb"],
+    normalize("egb"): ["2egb", "3egb", "4egb", "5egb", "6egb", "7egb", "8egb", "9egb", "10egb"],
+    normalize("inicial"): ["i1", "i2"],
 }
 
 _PERIOD_TOKENS: tuple[tuple[str, str], ...] = (
-    (normalize("primer trimestre"),  "trimester_1"),
-    (normalize("trimestre 1"),       "trimester_1"),
+    (normalize("primer trimestre"), "trimester_1"),
+    (normalize("trimestre 1"), "trimester_1"),
     (normalize("segundo trimestre"), "trimester_2"),
-    (normalize("trimestre 2"),       "trimester_2"),
-    (normalize("tercer trimestre"),  "trimester_3"),
-    (normalize("trimestre 3"),       "trimester_3"),
-    (normalize("semana pasada"),     "last_week"),
-    (normalize("esta semana"),       "week"),
-    (normalize("semana"),            "week"),
-    (normalize("mes pasado"),        "last_month"),
-    (normalize("este mes"),          "month"),
-    (normalize("mes"),               "month"),
-    (normalize("ayer"),              "yesterday"),
-    (normalize("hoy"),               "today"),
+    (normalize("trimestre 2"), "trimester_2"),
+    (normalize("tercer trimestre"), "trimester_3"),
+    (normalize("trimestre 3"), "trimester_3"),
+    (normalize("semana pasada"), "last_week"),
+    (normalize("esta semana"), "week"),
+    (normalize("semana"), "week"),
+    (normalize("mes pasado"), "last_month"),
+    (normalize("este mes"), "month"),
+    (normalize("mes"), "month"),
+    (normalize("ayer"), "yesterday"),
+    (normalize("hoy"), "today"),
 )
 
 # ── Attendance patterns ───────────────────────────────────────────────────────
@@ -70,10 +101,10 @@ _ABSENT_RE = re.compile(
     re.IGNORECASE,
 )
 _LATE_RE = re.compile(
-    r"\b(llego?\s+tarde|lleg[oó]\s+tarde|atrasad[ao]|tardi[oó]|atraso)\b", re.IGNORECASE
+    r"\b(llego?\s+tarde|lleg[oó]\s+tarde|atrasad[ao]|tardi[oó]|atraso)\b", re.IGNORECASE,
 )
 _JUSTIFIED_RE = re.compile(
-    r"\b(justificad[ao]|con\s+permiso|permiso\s+m[eé]dico|enferm[ao])\b", re.IGNORECASE
+    r"\b(justificad[ao]|con\s+permiso|permiso\s+m[eé]dico|enferm[ao])\b", re.IGNORECASE,
 )
 _YESTERDAY_RE = re.compile(r"\bayer\b", re.IGNORECASE)
 _ALL_PRESENT_RE = re.compile(
@@ -95,22 +126,39 @@ _HW_RE = re.compile(
 _COURSE_RE = re.compile(r"\b(\d{1,2}(?:bt|egb)|prep|i[12])\b", re.IGNORECASE)
 
 _COURSE_ALIASES: dict[str, str] = {
-    "1bt": "1bt", "2bt": "2bt", "3bt": "3bt",
-    "2egb": "2egb", "3egb": "3egb", "4egb": "4egb",
-    "5egb": "5egb", "6egb": "6egb", "7egb": "7egb",
-    "8egb": "8egb", "9egb": "9egb", "10egb": "10egb",
-    "prep": "prep", "i1": "i1", "i2": "i2",
+    "1bt": "1bt",
+    "2bt": "2bt",
+    "3bt": "3bt",
+    "2egb": "2egb",
+    "3egb": "3egb",
+    "4egb": "4egb",
+    "5egb": "5egb",
+    "6egb": "6egb",
+    "7egb": "7egb",
+    "8egb": "8egb",
+    "9egb": "9egb",
+    "10egb": "10egb",
+    "prep": "prep",
+    "i1": "i1",
+    "i2": "i2",
 }
 
 _COURSE_VERBAL: dict[str, str] = {
-    normalize("primero bt"):    "1bt",   normalize("segundo bt"):  "2bt",
-    normalize("tercero bt"):    "3bt",   normalize("segundo egb"): "2egb",
-    normalize("tercero egb"):   "3egb",  normalize("cuarto egb"):  "4egb",
-    normalize("quinto egb"):    "5egb",  normalize("sexto egb"):   "6egb",
-    normalize("septimo egb"):   "7egb",  normalize("octavo egb"):  "8egb",
-    normalize("noveno egb"):    "9egb",  normalize("decimo egb"):  "10egb",
-    normalize("inicial 1"):     "i1",    normalize("inicial 2"):   "i2",
-    normalize("preparatoria"):  "prep",
+    normalize("primero bt"): "1bt",
+    normalize("segundo bt"): "2bt",
+    normalize("tercero bt"): "3bt",
+    normalize("segundo egb"): "2egb",
+    normalize("tercero egb"): "3egb",
+    normalize("cuarto egb"): "4egb",
+    normalize("quinto egb"): "5egb",
+    normalize("sexto egb"): "6egb",
+    normalize("septimo egb"): "7egb",
+    normalize("octavo egb"): "8egb",
+    normalize("noveno egb"): "9egb",
+    normalize("decimo egb"): "10egb",
+    normalize("inicial 1"): "i1",
+    normalize("inicial 2"): "i2",
+    normalize("preparatoria"): "prep",
 }
 
 # ── Helpers ───────────────────────────────────────────────────────────────────
@@ -131,8 +179,8 @@ def _extract_names(text: str, status_re: re.Pattern) -> list[str]:
     m = status_re.search(text)
     if not m:
         return []
-    left  = text[:m.start()].strip().rstrip(",.")
-    right = _COURSE_RE.sub("", text[m.end():]).strip().lstrip(",.")
+    left = text[: m.start()].strip().rstrip(",.")
+    right = _COURSE_RE.sub("", text[m.end() :]).strip().lstrip(",.")
     right = re.sub(r"\b(en|de|del|para|con)\b", "", right, flags=re.IGNORECASE).strip(", .")
 
     def _split(segment: str) -> list[str]:
@@ -163,9 +211,11 @@ def _extract_courses_prefilter(norm_text: str) -> list[str]:
     found = [abbrev for phrase, abbrev in _COURSE_VERBAL.items() if phrase in norm_text]
     if found:
         return found
-    direct = [_COURSE_ALIASES[m.group(0).lower()]
-              for m in _COURSE_RE.finditer(norm_text)
-              if m.group(0).lower() in _COURSE_ALIASES]
+    direct = [
+        _COURSE_ALIASES[m.group(0).lower()]
+        for m in _COURSE_RE.finditer(norm_text)
+        if m.group(0).lower() in _COURSE_ALIASES
+    ]
     if direct:
         return direct
     for group_norm, abbrevs in _COURSE_GROUPS.items():
@@ -174,10 +224,47 @@ def _extract_courses_prefilter(norm_text: str) -> list[str]:
     return []
 
 
+_DAY_OF_MONTH_RE = re.compile(r"\bdel?\s+(\d{1,2})\b")
+_DAY_NAME_RE = re.compile(
+    r"\b(lunes|martes|mi[eé]rcoles|jueves|viernes|s[aá]bado|domingo)\b", re.IGNORECASE,
+)
+_DAY_NAME_MAP = {
+    "lunes": "lunes", "martes": "martes",
+    "miercoles": "miercoles", "miércoles": "miercoles",
+    "jueves": "jueves", "viernes": "viernes",
+    "sabado": "sabado", "sábado": "sabado", "domingo": "domingo",
+}
+
+
 def _extract_period(norm_text: str, default: str) -> str:
     for token, period in _PERIOD_TOKENS:
         if token in norm_text:
             return period
+    # "del 17" / "dia 17" → día del mes actual (ISO)
+    m = _DAY_OF_MONTH_RE.search(norm_text)
+    if m:
+        day = int(m.group(1))
+        today = date.today()
+        try:
+            d = today.replace(day=day)
+            # Si el día aún no llegó este mes → mes anterior
+            if d > today:
+                first = today.replace(day=1)
+                import calendar
+                prev_month = first.replace(
+                    day=1,
+                    month=first.month - 1 if first.month > 1 else 12,
+                    year=first.year if first.month > 1 else first.year - 1,
+                )
+                last_prev = calendar.monthrange(prev_month.year, prev_month.month)[1]
+                d = prev_month.replace(day=min(day, last_prev))
+            return d.isoformat()
+        except ValueError:
+            pass
+    # nombre de día (lunes…domingo) → más reciente pasado
+    m = _DAY_NAME_RE.search(norm_text)
+    if m:
+        return m.group(1).lower().replace("é", "e").replace("á", "a")
     return default
 
 
@@ -206,7 +293,7 @@ def extract_prefilter(text: str) -> ExtractionResult | None:
     if not t:
         return None
 
-    norm   = normalize(t)
+    norm = normalize(t)
     tokens = _norm_tokens(norm)
 
     if _ALL_PRESENT_RE.search(t):
@@ -220,13 +307,16 @@ def extract_prefilter(text: str) -> ExtractionResult | None:
         return ExtractionResult(
             intent="attendance",
             data=AttendanceExtract(
-                names=[], course=course, date=at_date,
-                status="all_present", complete=True,
+                names=[],
+                course=course,
+                date=at_date,
+                status="all_present",
+                complete=True,
             ),
         )
 
     is_att = bool(_QUERY_ATT_RE.search(t)) or bool(tokens & _ATT_KW)
-    is_hw  = bool(_QUERY_HW_RE.search(t))  or bool(tokens & _HW_KW)
+    is_hw = bool(_QUERY_HW_RE.search(t)) or bool(tokens & _HW_KW)
 
     if is_att and is_hw:
         return None
@@ -256,22 +346,28 @@ def extract_fallback(text: str) -> ExtractionResult | None:
         return ExtractionResult(
             intent="attendance",
             data=AttendanceExtract(
-                names=[], course=course, date=at_date,
-                status="all_present", complete=True,
+                names=[],
+                course=course,
+                date=at_date,
+                status="all_present",
+                complete=True,
             ),
         )
 
     pat, status = _first_status_re(text)
     if pat is not None:
-        names  = _extract_names(text, pat)
+        names = _extract_names(text, pat)
         course = _extract_course(text)
         at_date = "yesterday" if _YESTERDAY_RE.search(text) else "today"
         if names:
             return ExtractionResult(
                 intent="attendance",
                 data=AttendanceExtract(
-                    names=names, course=course, date=at_date,
-                    status=status, complete=course is not None,
+                    names=names,
+                    course=course,
+                    date=at_date,
+                    status=status,
+                    complete=course is not None,
                 ),
             )
 
@@ -280,8 +376,11 @@ def extract_fallback(text: str) -> ExtractionResult | None:
         return ExtractionResult(
             intent="homework",
             data=HomeworkExtract(
-                description=text.strip(), course=course,
-                subject=None, delivery_date=None, complete=False,
+                description=text.strip(),
+                course=course,
+                subject=None,
+                delivery_date=None,
+                complete=False,
             ),
         )
 

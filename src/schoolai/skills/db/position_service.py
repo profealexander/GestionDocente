@@ -22,11 +22,7 @@ async def get_teacher_with_positions(
     else:
         raise ValueError("Must pass person_id or teacher_id")
 
-    stmt = (
-        select(Teacher)
-        .where(condition)
-        .options(selectinload(Teacher.positions))
-    )
+    stmt = select(Teacher).where(condition).options(selectinload(Teacher.positions))
     teacher = (await session.execute(stmt)).scalars().first()
     if not teacher:
         return None, []

@@ -2,10 +2,25 @@ import re
 from datetime import date, timedelta
 
 HOMEWORK_KEYWORDS = [
-    "tarea", "actividad", "ejercicio", "trabajo", "investigar",
-    "leer", "resolver", "estudiar", "entregar", "proyecto",
-    "práctica", "practica", "homework", "asignación", "asignacion",
-    "examen", "prueba", "evaluación", "evaluacion",
+    "tarea",
+    "actividad",
+    "ejercicio",
+    "trabajo",
+    "investigar",
+    "leer",
+    "resolver",
+    "estudiar",
+    "entregar",
+    "proyecto",
+    "práctica",
+    "practica",
+    "homework",
+    "asignación",
+    "asignacion",
+    "examen",
+    "prueba",
+    "evaluación",
+    "evaluacion",
 ]
 
 COURSE_PATTERNS = [
@@ -37,14 +52,21 @@ DATE_PATTERNS = [
 ]
 
 WEEKDAY_MAP = {
-    "lunes": 0, "martes": 1, "miércoles": 2, "miercoles": 2,
-    "jueves": 3, "viernes": 4, "sábado": 5, "sabado": 5, "domingo": 6,
+    "lunes": 0,
+    "martes": 1,
+    "miércoles": 2,
+    "miercoles": 2,
+    "jueves": 3,
+    "viernes": 4,
+    "sábado": 5,
+    "sabado": 5,
+    "domingo": 6,
 }
 
 # Pre-compiled at module load — avoids recompilation on every call
-_COURSE_PATTERNS_RE   = [re.compile(p) for p in COURSE_PATTERNS]
-_SUBJECT_PATTERNS_RE  = [re.compile(p) for p in SUBJECT_PATTERNS]
-_DATE_PATTERNS_RE     = [(re.compile(p), kind) for p, kind in DATE_PATTERNS]
+_COURSE_PATTERNS_RE = [re.compile(p) for p in COURSE_PATTERNS]
+_SUBJECT_PATTERNS_RE = [re.compile(p) for p in SUBJECT_PATTERNS]
+_DATE_PATTERNS_RE = [(re.compile(p), kind) for p, kind in DATE_PATTERNS]
 
 
 def is_homework_message(text: str) -> bool:
@@ -62,12 +84,20 @@ def extract_course(text: str) -> str | None:
 
 
 def extract_subject(text: str) -> str | None:
+    found = extract_subjects(text)
+    return found[0] if found else None
+
+
+def extract_subjects(text: str) -> list[str]:
+    """Devuelve todas las materias mencionadas en el texto."""
     text_lower = text.lower()
+    found: list[str] = []
     for pat in _SUBJECT_PATTERNS_RE:
-        match = pat.search(text_lower)
-        if match:
-            return match.group(0).strip()
-    return None
+        for match in pat.finditer(text_lower):
+            s = match.group(0).strip()
+            if s not in found:
+                found.append(s)
+    return found
 
 
 def extract_date(text: str) -> date | None:

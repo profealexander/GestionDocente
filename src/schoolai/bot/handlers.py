@@ -1,7 +1,14 @@
 from loguru import logger
-from telegram import InlineKeyboardButton, InlineKeyboardMarkup, KeyboardButton, ReplyKeyboardMarkup, ReplyKeyboardRemove, Update
-from telegram.ext import ContextTypes
+from telegram import (
+    InlineKeyboardButton,
+    InlineKeyboardMarkup,
+    KeyboardButton,
+    ReplyKeyboardMarkup,
+    ReplyKeyboardRemove,
+    Update,
+)
 from telegram.constants import ParseMode
+from telegram.ext import ContextTypes
 
 from schoolai.bot.action_handler import resolve_selection_text
 from schoolai.bot.mode import is_jornada
@@ -10,7 +17,12 @@ from schoolai.bot.transcription import transcribe
 from schoolai.bot.whatsapp_handler import handle_wa_setup_text
 from schoolai.config import settings
 from schoolai.skills.registry import registry
-from schoolai.skills.utils.courses import _ABBREV_TO_NAME, _NAME_TO_ABBREV, course_abbrev_map
+from schoolai.skills.utils.courses import (
+    _ABBREV_TO_NAME,
+    _NAME_TO_ABBREV,
+    COURSE_GROUP_ALIASES,
+    course_abbrev_map,
+)
 
 # Textos que activan el Modo Jornada — solo se evalúan cuando is_jornada() es True
 _JORNADA_TRIGGERS = {"j", "J", "1", "jornada", "Jornada", "iniciar", "Iniciar", "📅 Jornada"}
@@ -63,7 +75,9 @@ async def handle_voice(update: Update, context: ContextTypes.DEFAULT_TYPE) -> No
         logger.info(f"[voice] {user.id}: {text[:80]}")
     except Exception as e:
         logger.error(f"Transcription error: {e}")
-        await update.message.reply_text("Error al transcribir el audio. Intenta enviarlo como texto.")
+        await update.message.reply_text(
+            "Error al transcribir el audio. Intenta enviarlo como texto.",
+        )
         return
 
     await update.message.reply_text(f'Escuché: "{text}"')
@@ -91,23 +105,65 @@ def _detect_course_only(text: str) -> tuple[str, int, str] | None:
 
 async def _show_course_action_menu(update: Update, course_info: tuple) -> None:
     abbrev, _grade_id, grade_name = course_info
-    keyboard = InlineKeyboardMarkup([
+    keyboard = InlineKeyboardMarkup(
         [
-            InlineKeyboardButton("📝 Registrar tarea",       callback_data=f"course_action:hw:{abbrev}"),
-            InlineKeyboardButton("✅ Registrar asistencia",  callback_data=f"course_action:att:{abbrev}"),
+            [
+                InlineKeyboardButton(
+                    "📝 Registrar tarea", callback_data=f"course_action:hw:{abbrev}",
+                ),
+                InlineKeyboardButton(
+                    "✅ Registrar asistencia", callback_data=f"course_action:att:{abbrev}",
+                ),
+            ],
+            [
+                InlineKeyboardButton(
+                    "📋 Ver tareas", callback_data=f"course_action:query_hw:{abbrev}",
+                ),
+                InlineKeyboardButton(
+                    "📊 Cumplimiento", callback_data=f"course_action:compliance:{abbrev}",
+                ),
+            ],
+            [
+                InlineKeyboardButton(
+                    "📈 Ver asistencia hoy", callback_data=f"course_action:query_att:{abbrev}",
+                ),
+            ],
         ],
-        [
-            InlineKeyboardButton("📋 Ver tareas",            callback_data=f"course_action:query_hw:{abbrev}"),
-            InlineKeyboardButton("📊 Cumplimiento",          callback_data=f"course_action:compliance:{abbrev}"),
-        ],
-        [
-            InlineKeyboardButton("📈 Ver asistencia hoy",   callback_data=f"course_action:query_att:{abbrev}"),
-        ],
-    ])
+    )
     await update.message.reply_text(
         f"¿Qué deseas hacer con <b>{grade_name.title()}</b>?",
         parse_mode=ParseMode.HTML,
         reply_markup=keyboard,
+    )
+
+
+def _detect_course_group(text: str) -> list[tuple[str, str]] | None:
+    """Detecta si el texto es un alias de grupo (ej. 'bachillerato').
+
+    Retorna lista de (abbrev, grade_name) de los cursos del grupo,
+    o None si no es un alias conocido o los cursos no están en el mapa.
+    """
+    key = text.strip().lower()
+    abbrevs = COURSE_GROUP_ALIASES.get(key)
+    if not abbrevs:
+        return None
+    courses = [
+        (a, _ABBREV_TO_NAME.get(a, a.upper()))
+        for a in abbrevs
+        if a in course_abbrev_map
+    ]
+    return courses or None
+
+
+async def _show_course_group_menu(update: Update, courses: list[tuple[str, str]]) -> None:
+    """Muestra un teclado para elegir el curso específico dentro del grupo."""
+    buttons = [
+        [InlineKeyboardButton(name.title(), callback_data=f"course_action:pick:{abbrev}")]
+        for abbrev, name in courses
+    ]
+    await update.message.reply_text(
+        "¿A cuál curso te refieres?",
+        reply_markup=InlineKeyboardMarkup(buttons),
     )
 
 
@@ -125,6 +181,7 @@ async def _dispatch(update: Update, user_id: int, text: str) -> None:
     if is_jornada():
         if text in _JORNADA_TRIGGERS:
             from schoolai.bot.jornada_handler import handle_jornada_command
+
             await handle_jornada_command(update, None)
             return
         session = get_jornada(user_id)
@@ -142,8 +199,9 @@ async def _dispatch(update: Update, user_id: int, text: str) -> None:
     if await handle_wa_setup_text(update):
         return
 
-    from schoolai.skills.cuotas.handler import handle_cuota_names_text
-    if await handle_cuota_names_text(update, user_id):
+    from schoolai.bot.text_interceptors import text_interceptors
+
+    if await text_interceptors.run(update, user_id):
         return
 
     # Detección + ejecución
@@ -164,5 +222,6 @@ async def _dispatch(update: Update, user_id: int, text: str) -> None:
     # Múltiples skills — Planner divide el texto y asigna fragmentos
     logger.info(f"[dispatch] multi-intent={[s.intent for s in skills]} user={user_id}")
     from schoolai.skills.planner import plan
+
     for skill, fragment in plan(text, skills):
         await skill.handle(update, user_id, fragment)

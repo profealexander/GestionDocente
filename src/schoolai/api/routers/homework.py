@@ -20,6 +20,7 @@ class HomeworkCreate(BaseModel):
     subject_id: Optional[int] = None
     delivery_date: Optional[datetime.date] = None
 
+
 router = APIRouter(
     prefix="/homework",
     tags=["Homework"],
@@ -53,6 +54,7 @@ async def create_homework(
     session: AsyncSession = Depends(get_session),
 ):
     from schoolai.skills.homework.repository import save_homework
+
     hw = await save_homework(
         session,
         homework=body.description,

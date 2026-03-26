@@ -12,6 +12,7 @@ from schoolai.skills.cuotas.handler_create import (
     handle_cuota_names_text,
     handle_cuota_pick_callback,
 )
+from schoolai.skills.cuotas.handler_edit import handle_edit
 from schoolai.skills.cuotas.handler_pago import (
     handle_cuota_pago_callback,
     handle_pago,
@@ -32,6 +33,8 @@ __all__ = [
     "handle_cuota_done_callback",
     "handle_cuota_names_text",
     "handle_add_grade_callback",
+    # edit
+    "handle_edit",
     # pago
     "handle_pago",
     "handle_cuota_pago_callback",

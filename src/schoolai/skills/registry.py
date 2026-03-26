@@ -45,26 +45,36 @@ class SkillRegistry:
         """Detecta qué skill corresponde al texto.
 
         Itera las skills en orden de registro y devuelve la primera que hace match.
-        Si ninguna hace match, devuelve la ChatSkill (fallback).
+        Fallback: OrchestratorSkill (si registrada) → ChatSkill.
         """
         for skill in self._skills:
             if skill.matches(text):
                 logger.debug(f"[registry] detected intent={skill.intent}")
                 return skill
-        # Fallback a chat (debe ser la última registrada)
+        # Fallback 1: orchestrator (GLM multi-tool)
+        orchestrator = self._by_intent.get("orchestrator")
+        if orchestrator is not None:
+            logger.debug("[registry] no match → orchestrator fallback")
+            return orchestrator
+        # Fallback 2: chat (si orchestrator no está registrado)
         chat = self._by_intent.get("chat")
         if chat is None:
-            raise RuntimeError("ChatSkill no registrada — llama registry.register(ChatSkill()) al arrancar.")
+            raise RuntimeError(
+                "ChatSkill no registrada — llama registry.register(ChatSkill()) al arrancar.",
+            )
         logger.debug("[registry] no match → chat fallback")
         return chat
 
     def detect_all(self, text: str) -> list[BaseSkill]:
         """Detecta todas las skills que hacen match con el texto.
 
-        Excluye ChatSkill (intent="chat") — es fallback exclusivo de detect().
+        Excluye fallbacks (intent="chat" y intent="orchestrator") — son exclusivos de detect().
         Si ninguna hace match, retorna lista vacía (el caller decide el fallback).
         """
-        return [s for s in self._skills if s.intent != "chat" and s.matches(text)]
+        return [
+            s for s in self._skills
+            if s.intent not in ("chat", "orchestrator") and s.matches(text)
+        ]
 
     def get(self, intent: str) -> BaseSkill | None:
         """Obtiene una skill por su intent. Devuelve None si no existe."""

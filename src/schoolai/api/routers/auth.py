@@ -18,7 +18,7 @@ class TokenResponse(BaseModel):
     access_token: str
     token_type: str = "bearer"
     role: str
-    expires_in: int   # seconds
+    expires_in: int  # seconds
 
 
 @router.post(
@@ -78,21 +78,26 @@ async def login(body: LoginRequest) -> TokenResponse:
         )
 
     import bcrypt as _bcrypt
+    from sqlalchemy import select
+
     from schoolai.db.connection import async_session
     from schoolai.db.models.teacher import Teacher
-    from sqlalchemy import select
 
     async with async_session() as session:
         result = await session.execute(
-            select(Teacher).where(Teacher.username == body.username, Teacher.is_active == True)  # noqa: E712
+            select(Teacher).where(Teacher.username == body.username, Teacher.is_active == True),  # noqa: E712
         )
         teacher = result.scalar_one_or_none()
 
     if not teacher or not teacher.password_hash:
-        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Credenciales inválidas.")
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED, detail="Credenciales inválidas.",
+        )
 
     if not _bcrypt.checkpw(body.password.encode(), teacher.password_hash.encode()):
-        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Credenciales inválidas.")
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED, detail="Credenciales inválidas.",
+        )
 
     role = await _resolve_role(teacher.telegram_id) if teacher.telegram_id else "teacher"
     token = create_access_token_for_teacher(teacher.id, teacher.username, role)
@@ -107,12 +112,14 @@ async def login(body: LoginRequest) -> TokenResponse:
 async def _resolve_role(telegram_id: int) -> str:
     """Determine role from DB + superadmin config."""
     from schoolai.bot.permissions import ADMIN_CARGOS, is_superadmin
+
     if is_superadmin(telegram_id):
         return "superadmin"
 
     try:
         from schoolai.db.connection import async_session
         from schoolai.skills.db.position_service import get_admin_cargo
+
         async with async_session() as session:
             cargo = await get_admin_cargo(session, telegram_id)
         if cargo in ADMIN_CARGOS:
@@ -120,6 +127,6 @@ async def _resolve_role(telegram_id: int) -> str:
         if cargo == "secretaria":
             return "secretaria"
     except Exception:
-        pass   # DB not reachable → default to teacher
+        pass  # DB not reachable → default to teacher
 
     return "teacher"

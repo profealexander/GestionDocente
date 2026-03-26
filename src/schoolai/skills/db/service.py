@@ -12,13 +12,13 @@ from schoolai.skills.db.deduplicator import DedupeResult, MatchType
 
 # /db usa etiquetas en español; el constraint de DB requiere valores en inglés
 _ROLE_MAP: dict[str, str] = {
-    "estudiante":          "student",
-    "docente":             "teacher",
-    "directivo":           "executive",
-    "administrativo":      "admin",
-    "representante":       "parent",
+    "estudiante": "student",
+    "docente": "teacher",
+    "directivo": "executive",
+    "administrativo": "admin",
+    "representante": "parent",
     "representante_legal": "legal_representative",
-    "autoridad":           "authority",
+    "autoridad": "authority",
 }
 
 
@@ -45,11 +45,13 @@ async def save_people(
                 await session.flush()  # get person.id
 
                 if role == "estudiante" and grade_id and section:
-                    session.add(Student(
-                        person_id=person.id,
-                        grade_id=grade_id,
-                        section=section,
-                    ))
+                    session.add(
+                        Student(
+                            person_id=person.id,
+                            grade_id=grade_id,
+                            section=section,
+                        ),
+                    )
                 created += 1
 
             case MatchType.EXACT_ID | MatchType.EXACT_NAME:
@@ -74,12 +76,14 @@ async def link_representative(
     Si make_primary=True, quita el flag primario de los demás primero.
     """
     # Verificar si ya existe el vínculo
-    existing = (await session.execute(
-        select(StudentRepresentative).where(
-            StudentRepresentative.student_id == student_id,
-            StudentRepresentative.person_id  == person_id,
+    existing = (
+        await session.execute(
+            select(StudentRepresentative).where(
+                StudentRepresentative.student_id == student_id,
+                StudentRepresentative.person_id == person_id,
+            ),
         )
-    )).scalar_one_or_none()
+    ).scalar_one_or_none()
 
     if existing:
         existing.status = "active"
@@ -93,21 +97,25 @@ async def link_representative(
             await session.execute(
                 update(StudentRepresentative)
                 .where(StudentRepresentative.student_id == student_id)
-                .values(is_primary_notify=False)
+                .values(is_primary_notify=False),
             )
         # ¿Es el primero? → automáticamente primario
-        any_existing = (await session.execute(
-            select(StudentRepresentative.id)
-            .where(StudentRepresentative.student_id == student_id)
-            .limit(1)
-        )).first()
-        session.add(StudentRepresentative(
-            student_id=student_id,
-            person_id=person_id,
-            relationship_type=relationship_type,
-            is_primary_notify=make_primary or any_existing is None,
-            status="active",
-        ))
+        any_existing = (
+            await session.execute(
+                select(StudentRepresentative.id)
+                .where(StudentRepresentative.student_id == student_id)
+                .limit(1),
+            )
+        ).first()
+        session.add(
+            StudentRepresentative(
+                student_id=student_id,
+                person_id=person_id,
+                relationship_type=relationship_type,
+                is_primary_notify=make_primary or any_existing is None,
+                status="active",
+            ),
+        )
     await session.commit()
 
 

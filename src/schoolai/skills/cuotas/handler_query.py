@@ -19,10 +19,16 @@ from schoolai.skills.cuotas.service import (
 
 
 def _actividad_keyboard(actividades) -> InlineKeyboardMarkup:
-    return InlineKeyboardMarkup([
-        [InlineKeyboardButton(f"📋 {a.nombre} (${a.monto:.0f})", callback_data=f"cuota_sel:{a.id}")]
-        for a in actividades
-    ])
+    return InlineKeyboardMarkup(
+        [
+            [
+                InlineKeyboardButton(
+                    f"📋 {a.nombre} (${a.monto:.0f})", callback_data=f"cuota_sel:{a.id}",
+                ),
+            ]
+            for a in actividades
+        ],
+    )
 
 
 async def _send_estado(target, actividad_id: int, session, *, use_edit: bool = False) -> None:
@@ -36,10 +42,12 @@ async def _send_estado(target, actividad_id: int, session, *, use_edit: bool = F
         return
 
     total_part = len(participantes)
-    completos  = sum(1 for p in participantes if p.is_complete)
-    parciales  = sum(1 for p in participantes if not p.is_complete and float(p.total_pagado or 0) > 0)
+    completos = sum(1 for p in participantes if p.is_complete)
+    parciales = sum(
+        1 for p in participantes if not p.is_complete and float(p.total_pagado or 0) > 0
+    )
     pendientes = total_part - completos - parciales
-    recaudado  = sum(float(p.total_pagado or 0) for p in participantes)
+    recaudado = sum(float(p.total_pagado or 0) for p in participantes)
 
     lines = [
         f"📊 *CUOTAS — {actividad.nombre}*",
@@ -54,7 +62,7 @@ async def _send_estado(target, actividad_id: int, session, *, use_edit: bool = F
     if pending_list:
         lines.append("\n*Pendientes:*")
         for p in pending_list:
-            name   = p.student.last_name.title() if p.student and p.student.last_name else "—"
+            name = p.student.last_name.title() if p.student and p.student.last_name else "—"
             pagado = float(p.total_pagado or 0)
             lines.append(f"  • {name} (${pagado:.0f}/${actividad.monto:.0f})")
         if len([p for p in participantes if not p.is_complete]) > 10:
@@ -77,8 +85,7 @@ async def handle_list(update, user_id: int) -> None:
         return
 
     lines = ["📋 *Actividades activas:*\n"]
-    for a in actividades:
-        lines.append(f"• *{a.nombre}* — ${a.monto:.2f}")
+    lines.extend(f"• *{a.nombre}* — ${a.monto:.2f}" for a in actividades)
     await update.message.reply_text("\n".join(lines), parse_mode=ParseMode.MARKDOWN)
 
 
@@ -124,7 +131,8 @@ async def handle_export(update, user_id: int, data: CuotaExtract) -> None:
             actividad = await get_actividad_by_nombre(session, data.nombre)
             if not actividad:
                 await update.message.reply_text(
-                    f"No encontré la actividad *{data.nombre}*.", parse_mode=ParseMode.MARKDOWN,
+                    f"No encontré la actividad *{data.nombre}*.",
+                    parse_mode=ParseMode.MARKDOWN,
                 )
                 return
         else:
@@ -159,12 +167,14 @@ async def handle_export(update, user_id: int, data: CuotaExtract) -> None:
         caption=f"📊 Reporte: *{actividad.nombre}*",
         parse_mode=ParseMode.MARKDOWN,
     )
-    logger.info(f"[cuotas] export user={user_id} actividad={actividad_id} rows={len(participantes)}")
+    logger.info(
+        f"[cuotas] export user={user_id} actividad={actividad_id} rows={len(participantes)}",
+    )
 
 
 async def handle_cuota_sel_callback(update, context) -> None:
     """cuota_sel:{actividad_id} — elegir actividad para ver estado."""
-    query        = update.callback_query
+    query = update.callback_query
     await query.answer()
     actividad_id = int(query.data.split(":")[1])
     await query.edit_message_reply_markup(reply_markup=None)

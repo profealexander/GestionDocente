@@ -18,15 +18,15 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import Any, Callable
 
-
 # ── Definición de tool ─────────────────────────────────────────────────────────
+
 
 @dataclass
 class ToolDef:
     name: str
     description: str
-    parameters: dict[str, Any]   # JSON Schema — listo para Groq
-    fn: Callable                 # función async Python
+    parameters: dict[str, Any]  # JSON Schema — listo para Groq
+    fn: Callable  # función async Python
 
     def to_groq(self) -> dict:
         """Convierte al formato OpenAI/Groq tool definition."""
@@ -42,6 +42,7 @@ class ToolDef:
 
 # ── Funciones Python (sin Telegram, sin sesión externa) ───────────────────────
 
+
 async def _create_actividad(
     nombre: str,
     monto: float,
@@ -50,6 +51,7 @@ async def _create_actividad(
 ):
     from schoolai.db.connection import async_session
     from schoolai.skills.cuotas.service import create_actividad
+
     async with async_session() as session:
         return await create_actividad(session, nombre, monto, teacher_id, descripcion)
 
@@ -57,6 +59,7 @@ async def _create_actividad(
 async def _list_actividades(teacher_id: int | None = None, only_active: bool = True):
     from schoolai.db.connection import async_session
     from schoolai.skills.cuotas.service import get_actividades
+
     async with async_session() as session:
         return await get_actividades(session, teacher_id=teacher_id, only_active=only_active)
 
@@ -64,6 +67,7 @@ async def _list_actividades(teacher_id: int | None = None, only_active: bool = T
 async def _get_actividad_by_nombre(nombre: str):
     from schoolai.db.connection import async_session
     from schoolai.skills.cuotas.service import get_actividad_by_nombre
+
     async with async_session() as session:
         return await get_actividad_by_nombre(session, nombre)
 
@@ -71,6 +75,7 @@ async def _get_actividad_by_nombre(nombre: str):
 async def _get_estado_actividad(actividad_id: int):
     from schoolai.db.connection import async_session
     from schoolai.skills.cuotas.service import get_estado_actividad
+
     async with async_session() as session:
         return await get_estado_actividad(session, actividad_id)
 
@@ -78,6 +83,7 @@ async def _get_estado_actividad(actividad_id: int):
 async def _add_participantes(actividad_id: int, student_ids: list[int]) -> int:
     from schoolai.db.connection import async_session
     from schoolai.skills.cuotas.service import add_participantes
+
     async with async_session() as session:
         return await add_participantes(session, actividad_id, student_ids)
 
@@ -85,8 +91,9 @@ async def _add_participantes(actividad_id: int, student_ids: list[int]) -> int:
 async def _add_students_from_course(actividad_id: int, course_abbrev: str) -> int:
     """Agrega todos los alumnos activos de un curso a la actividad."""
     from schoolai.db.connection import async_session
-    from schoolai.skills.cuotas.service import get_students_in_grade, add_participantes
+    from schoolai.skills.cuotas.service import add_participantes, get_students_in_grade
     from schoolai.skills.homework.repository import find_grade
+
     async with async_session() as session:
         grade = await find_grade(session, course_abbrev)
         if not grade:
@@ -103,6 +110,7 @@ async def _register_pago(
 ):
     from schoolai.db.connection import async_session
     from schoolai.skills.cuotas.service import register_pago
+
     async with async_session() as session:
         return await register_pago(session, actividad_id, student_id, monto, notas)
 
@@ -110,8 +118,9 @@ async def _register_pago(
 async def _export_actividad(actividad_id: int) -> tuple | None:
     """Retorna (actividad, participantes, xlsx_bytes) o None si no existe."""
     from schoolai.db.connection import async_session
-    from schoolai.skills.cuotas.service import get_estado_actividad
     from schoolai.skills.cuotas.exporter import export_actividad_excel
+    from schoolai.skills.cuotas.service import get_estado_actividad
+
     async with async_session() as session:
         actividad, participantes = await get_estado_actividad(session, actividad_id)
     if not actividad or not participantes:
@@ -129,9 +138,15 @@ TOOLS: list[ToolDef] = [
         parameters={
             "type": "object",
             "properties": {
-                "nombre":     {"type": "string",  "description": "Nombre de la actividad, ej: Paseo de Grado"},
-                "monto":      {"type": "number",  "description": "Monto total en dólares, ej: 50"},
-                "course":     {"type": "string",  "description": "Abreviatura del curso, ej: 3bt. Opcional."},
+                "nombre": {
+                    "type": "string",
+                    "description": "Nombre de la actividad, ej: Paseo de Grado",
+                },
+                "monto": {"type": "number", "description": "Monto total en dólares, ej: 50"},
+                "course": {
+                    "type": "string",
+                    "description": "Abreviatura del curso, ej: 3bt. Opcional.",
+                },
             },
             "required": ["nombre", "monto"],
         },
@@ -153,11 +168,14 @@ TOOLS: list[ToolDef] = [
         parameters={
             "type": "object",
             "properties": {
-                "nombre": {"type": "string", "description": "Nombre o parte del nombre de la actividad"},
+                "nombre": {
+                    "type": "string",
+                    "description": "Nombre o parte del nombre de la actividad",
+                },
             },
             "required": ["nombre"],
         },
-        fn=_get_actividad_by_nombre,   # resuelve nombre → id internamente en skill.py
+        fn=_get_actividad_by_nombre,  # resuelve nombre → id internamente en skill.py
     ),
     ToolDef(
         name="register_pago",
@@ -165,10 +183,14 @@ TOOLS: list[ToolDef] = [
         parameters={
             "type": "object",
             "properties": {
-                "nombres":  {"type": "array",  "items": {"type": "string"}, "description": "Apellidos o nombres de los estudiantes"},
-                "monto":    {"type": "number", "description": "Monto pagado en dólares"},
-                "actividad":{"type": "string", "description": "Nombre de la actividad"},
-                "course":   {"type": "string", "description": "Abreviatura del curso. Opcional."},
+                "nombres": {
+                    "type": "array",
+                    "items": {"type": "string"},
+                    "description": "Apellidos o nombres de los estudiantes",
+                },
+                "monto": {"type": "number", "description": "Monto pagado en dólares"},
+                "actividad": {"type": "string", "description": "Nombre de la actividad"},
+                "course": {"type": "string", "description": "Abreviatura del curso. Opcional."},
             },
             "required": ["nombres", "monto"],
         },
@@ -188,12 +210,15 @@ TOOLS: list[ToolDef] = [
     ),
     ToolDef(
         name="add_students_from_course",
-        description="Agrega todos los alumnos activos de un curso como participantes de una actividad.",
+        description=(
+            "Agrega todos los alumnos activos de un curso "
+            "como participantes de una actividad."
+        ),
         parameters={
             "type": "object",
             "properties": {
                 "actividad_id": {"type": "integer", "description": "ID de la actividad"},
-                "course":       {"type": "string",  "description": "Abreviatura del curso, ej: 3bt"},
+                "course": {"type": "string", "description": "Abreviatura del curso, ej: 3bt"},
             },
             "required": ["actividad_id", "course"],
         },
@@ -212,6 +237,7 @@ async def run_tool(name: str, **kwargs) -> Any:
 
 
 # ── LLM Fallback (Groq) ────────────────────────────────────────────────────────
+
 
 def _tool_call_to_extract(tool_name: str, args: dict):
     """Convierte una tool call de Groq a CuotaExtract."""
@@ -256,7 +282,8 @@ async def llm_fallback(text: str):
     from schoolai.skills.llm.tool_caller import call_groq_tools
 
     result = await call_groq_tools(
-        text, TOOLS,
+        text,
+        TOOLS,
         system_prompt=(
             "Eres asistente escolar. Analiza el mensaje del docente y llama "
             "la herramienta más apropiada. Solo responde con una tool call."

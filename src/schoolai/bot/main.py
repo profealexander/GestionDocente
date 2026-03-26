@@ -3,44 +3,86 @@ from pathlib import Path
 
 try:
     import uvloop
+
     uvloop.install()
 except ImportError:
     pass  # uvloop no disponible (Windows/CI)
 
 from loguru import logger
 from telegram import Update
-from telegram.ext import ApplicationBuilder, CallbackQueryHandler, CommandHandler, ContextTypes, MessageHandler, filters
+from telegram.ext import (
+    ApplicationBuilder,
+    CallbackQueryHandler,
+    CommandHandler,
+    ContextTypes,
+    MessageHandler,
+    filters,
+)
 from telegram.request import HTTPXRequest
 
-from schoolai.bot.action_handler import handle_act_callback, handle_course_action_callback, handle_selection_callback
-from schoolai.skills.cuotas.handler import (
-    handle_add_grade_callback, handle_cuota_pago_callback, handle_cuota_sel_callback,
-    handle_cuota_add_callback, handle_cuota_pick_callback,
-    handle_cuota_addall_callback, handle_cuota_done_callback,
+import schoolai.skills.cuotas.handler_edit  # noqa: F401 — triggers auto-register
+import schoolai.skills.homework.handler_edit  # noqa: F401 — triggers auto-register
+from schoolai.bot.action_handler import (
+    handle_act_callback,
+    handle_act_confirm_callback,
+    handle_course_action_callback,
+    handle_selection_callback,
 )
-from schoolai.bot.whatsapp_handler import handle_wa_notify_callback
-from schoolai.bot.notif_handler import handle_doc_notify_callback
 from schoolai.bot.attendance_handler import handle_attendance_callback
-from schoolai.bot.db_handler import handle_db_callback, handle_db_command, handle_db_text
-from schoolai.bot.help_handler import handle_help_back, handle_help_callback, handle_help_command
-from schoolai.bot.handlers import handle_text, handle_voice, JORNADA_KEYBOARD
+from schoolai.bot.callback_router import callback_router
 from schoolai.bot.cron_handler import handle_cron_command
 from schoolai.bot.cron_service import cron_service
-from schoolai.bot.jornada_handler import handle_jornada_callback, handle_jornada_command, job_morning_notify
+from schoolai.bot.db_handler import handle_db_callback, handle_db_command, handle_db_text
+from schoolai.bot.handlers import JORNADA_KEYBOARD, handle_text, handle_voice
+from schoolai.bot.help_handler import handle_help_back, handle_help_callback, handle_help_command
+from schoolai.bot.jornada_handler import (
+    handle_jornada_callback,
+    handle_jornada_command,
+    job_morning_notify,
+)
+from schoolai.bot.mode import set_mode
+from schoolai.bot.notif_handler import handle_doc_notify_callback
 from schoolai.bot.position_handler import handle_position_callback, handle_position_text
 from schoolai.bot.schedule_handler import handle_schedule_callback, handle_schedule_text
 from schoolai.bot.state import (
-    cleanup_stale, clear_attendance, clear_course_context, clear_cuota_create, clear_db_flow, clear_jornada,
-    clear_position_flow, clear_schedule_flow, clear_selection, clear_wa_notification, clear_wa_setup,
-    get_cuota_create, get_db_flow, get_position_flow, get_schedule_flow,
-    clear_jornada_all_stale, pop_pending_pago,
+    cleanup_stale,
+    clear_attendance,
+    clear_course_context,
+    clear_cuota_create,
+    clear_cuota_edit_field,
+    clear_cuota_participante,
+    clear_db_flow,
+    clear_hw_edit_field,
+    clear_jornada,
+    clear_jornada_all_stale,
+    clear_pending_confirm,
+    clear_position_flow,
+    clear_schedule_flow,
+    clear_selection,
+    clear_wa_notification,
+    clear_wa_setup,
+    get_cuota_create,
+    get_db_flow,
+    get_position_flow,
+    get_schedule_flow,
+    pop_pending_pago,
 )
-from schoolai.bot.mode import set_mode
+from schoolai.bot.whatsapp_handler import handle_wa_notify_callback
 from schoolai.config import settings
+from schoolai.skills.cuotas.handler import (
+    handle_add_grade_callback,
+    handle_cuota_add_callback,
+    handle_cuota_addall_callback,
+    handle_cuota_done_callback,
+    handle_cuota_pago_callback,
+    handle_cuota_pick_callback,
+    handle_cuota_sel_callback,
+)
 
 
 async def _handle_start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     from schoolai.bot.mode import is_jornada
+
     if is_jornada():
         await update.message.reply_text(
             "¡Hola! Toca *📅 Jornada* o escribe *j* para iniciar tu jornada.",
@@ -49,11 +91,15 @@ async def _handle_start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> N
         )
     else:
         from schoolai.bot.handlers import REMOVE_KEYBOARD
-        await update.message.reply_text("¡Hola! ¿En qué te puedo ayudar?", reply_markup=REMOVE_KEYBOARD)
+
+        await update.message.reply_text(
+            "¡Hola! ¿En qué te puedo ayudar?", reply_markup=REMOVE_KEYBOARD,
+        )
 
 
 async def _handle_cancel(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     from schoolai.bot.mode import is_jornada
+
     user_id = update.effective_user.id
     clear_db_flow(user_id)
     clear_attendance(user_id)
@@ -65,6 +111,10 @@ async def _handle_cancel(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
     clear_wa_notification(user_id)
     clear_wa_setup(user_id)
     clear_cuota_create(user_id)
+    clear_cuota_edit_field(user_id)
+    clear_cuota_participante(user_id)
+    clear_hw_edit_field(user_id)
+    clear_pending_confirm(user_id)
     pop_pending_pago(user_id)
     if is_jornada():
         await update.message.reply_text("Operación cancelada.", reply_markup=JORNADA_KEYBOARD)
@@ -81,6 +131,7 @@ async def _run_cleanup(context: ContextTypes.DEFAULT_TYPE) -> None:
 
 class _DbFlowFilter(filters.MessageFilter):
     """Matches messages while a /db or schedule flow is active for the sender."""
+
     def filter(self, message) -> bool:
         user = message.from_user
         if user is None:
@@ -102,7 +153,9 @@ async def _debug_callback(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
 
 async def _error_handler(update: object, context: ContextTypes.DEFAULT_TYPE) -> None:
     import asyncio
+
     from telegram.error import Conflict
+
     if isinstance(context.error, Conflict):
         logger.warning("[bot] Conflict detectado — esperando 10s para liberar sesion anterior...")
         await asyncio.sleep(10)
@@ -111,7 +164,7 @@ async def _error_handler(update: object, context: ContextTypes.DEFAULT_TYPE) -> 
     if settings.admin_telegram_id:
         try:
             user = getattr(update, "effective_user", None)
-            msg  = getattr(getattr(update, "message", None), "text", "—")
+            msg = getattr(getattr(update, "message", None), "text", "—")
             text = (
                 f"⚠️ <b>Error en SchoolAI</b>\n"
                 f"Usuario: {user.id if user else '?'} (@{user.username if user else '?'})\n"
@@ -130,6 +183,7 @@ async def _handle_db_or_schedule_text(update: Update, context: ContextTypes.DEFA
     if await handle_position_text(update, context):
         return
     from schoolai.skills.cuotas.handler import handle_cuota_names_text
+
     user_id = update.effective_user.id
     if await handle_cuota_names_text(update, user_id):
         return
@@ -137,11 +191,12 @@ async def _handle_db_or_schedule_text(update: Update, context: ContextTypes.DEFA
 
 
 async def _post_init(app) -> None:
-    from schoolai.skills.utils.courses import load_course_map
+    from importlib.metadata import entry_points as _eps
+
     from schoolai.bot.mode import is_jornada
     from schoolai.bot.state import init_redis
-    from importlib.metadata import entry_points as _eps
     from schoolai.skills.registry import registry
+    from schoolai.skills.utils.courses import load_course_map
 
     init_redis(settings.redis_url)
     await load_course_map()
@@ -164,18 +219,25 @@ async def _post_init(app) -> None:
 async def _send_jornada_keyboard_to_teachers(bot) -> None:
     """Al arrancar en modo Jornada, envía el teclado persistente a todos los docentes activos."""
     from sqlalchemy import select
+
+    from schoolai.bot.handlers import JORNADA_KEYBOARD
     from schoolai.db.connection import async_session
     from schoolai.db.models.teacher import Teacher
-    from schoolai.bot.handlers import JORNADA_KEYBOARD
 
     try:
         async with async_session() as session:
-            teachers = (await session.execute(
-                select(Teacher.telegram_id).where(
-                    Teacher.is_active.is_(True),
-                    Teacher.telegram_id.isnot(None),
+            teachers = (
+                (
+                    await session.execute(
+                        select(Teacher.telegram_id).where(
+                            Teacher.is_active.is_(True),
+                            Teacher.telegram_id.isnot(None),
+                        ),
+                    )
                 )
-            )).scalars().all()
+                .scalars()
+                .all()
+            )
 
         for telegram_id in teachers:
             try:
@@ -194,18 +256,25 @@ async def _send_jornada_keyboard_to_teachers(bot) -> None:
 async def _remove_keyboard_from_teachers(bot) -> None:
     """Al arrancar en modo Libre, elimina el teclado persistente de jornada."""
     from sqlalchemy import select
+
+    from schoolai.bot.handlers import REMOVE_KEYBOARD
     from schoolai.db.connection import async_session
     from schoolai.db.models.teacher import Teacher
-    from schoolai.bot.handlers import REMOVE_KEYBOARD
 
     try:
         async with async_session() as session:
-            teachers = (await session.execute(
-                select(Teacher.telegram_id).where(
-                    Teacher.is_active.is_(True),
-                    Teacher.telegram_id.isnot(None),
+            teachers = (
+                (
+                    await session.execute(
+                        select(Teacher.telegram_id).where(
+                            Teacher.is_active.is_(True),
+                            Teacher.telegram_id.isnot(None),
+                        ),
+                    )
                 )
-            )).scalars().all()
+                .scalars()
+                .all()
+            )
 
         for telegram_id in teachers:
             try:
@@ -224,18 +293,27 @@ def _setup_logging() -> None:
     log_dir = Path(settings.log_dir)
     log_dir.mkdir(parents=True, exist_ok=True)
     logger.remove()
-    logger.add(sys.stderr, level="INFO", colorize=True,
-               format="<green>{time:HH:mm:ss}</green> | <level>{level:<7}</level> | {message}")
-    logger.add(log_dir / "schoolai_{time:YYYY-MM-DD}.log",
-               level="DEBUG", rotation="00:00", retention="30 days", compression="gz",
-               format="{time:YYYY-MM-DD HH:mm:ss} | {level:<7} | {message}")
+    logger.add(
+        sys.stderr,
+        level="INFO",
+        colorize=True,
+        format="<green>{time:HH:mm:ss}</green> | <level>{level:<7}</level> | {message}",
+    )
+    logger.add(
+        log_dir / "schoolai_{time:YYYY-MM-DD}.log",
+        level="DEBUG",
+        rotation="00:00",
+        retention="30 days",
+        compression="gz",
+        format="{time:YYYY-MM-DD HH:mm:ss} | {level:<7} | {message}",
+    )
 
 
 def run(dev: bool = False) -> None:
     _setup_logging()
 
-    if dev and settings.telegram_bot_token_dev:
-        token = settings.telegram_bot_token_dev
+    if dev and settings.telegram_bot_token_jornada:
+        token = settings.telegram_bot_token_jornada
         set_mode("jornada")
         label = "JORNADA"
     else:
@@ -249,6 +327,7 @@ def run(dev: bool = False) -> None:
         ApplicationBuilder()
         .token(token)
         .request(request)
+        .concurrent_updates(32)   # hasta 32 updates en paralelo — asyncio, no threads
         .post_init(_post_init)
         .build()
     )
@@ -269,6 +348,7 @@ def run(dev: bool = False) -> None:
     app.add_handler(CallbackQueryHandler(handle_schedule_callback, pattern=r"^sch_"))
     app.add_handler(CallbackQueryHandler(handle_attendance_callback, pattern=r"^att_"))
     app.add_handler(CallbackQueryHandler(handle_act_callback, pattern=r"^act_grade:"))
+    app.add_handler(CallbackQueryHandler(handle_act_confirm_callback, pattern=r"^act_confirm:"))
     app.add_handler(CallbackQueryHandler(handle_course_action_callback, pattern=r"^course_action:"))
     app.add_handler(CallbackQueryHandler(handle_wa_notify_callback, pattern=r"^wa_notify:"))
     app.add_handler(CallbackQueryHandler(handle_doc_notify_callback, pattern=r"^doc_notify:"))
@@ -276,10 +356,10 @@ def run(dev: bool = False) -> None:
     app.add_handler(CallbackQueryHandler(handle_cuota_sel_callback, pattern=r"^cuota_sel:"))
     app.add_handler(CallbackQueryHandler(handle_add_grade_callback, pattern=r"^cuota_grade:"))
     app.add_handler(CallbackQueryHandler(handle_cuota_pago_callback, pattern=r"^cuota_pago:"))
-    app.add_handler(CallbackQueryHandler(handle_cuota_add_callback,    pattern=r"^cuota_add:"))
-    app.add_handler(CallbackQueryHandler(handle_cuota_pick_callback,   pattern=r"^cuota_pick:"))
+    app.add_handler(CallbackQueryHandler(handle_cuota_add_callback, pattern=r"^cuota_add:"))
+    app.add_handler(CallbackQueryHandler(handle_cuota_pick_callback, pattern=r"^cuota_pick:"))
     app.add_handler(CallbackQueryHandler(handle_cuota_addall_callback, pattern=r"^cuota_addall:"))
-    app.add_handler(CallbackQueryHandler(handle_cuota_done_callback,   pattern=r"^cuota_done:"))
+    app.add_handler(CallbackQueryHandler(handle_cuota_done_callback, pattern=r"^cuota_done:"))
     app.add_handler(CallbackQueryHandler(handle_position_callback, pattern=r"^pos_"))
 
     # ── Cron ──────────────────────────────────────────────────────────────────
@@ -290,11 +370,15 @@ def run(dev: bool = False) -> None:
     app.add_handler(CommandHandler("jornada", handle_jornada_command))
     app.add_handler(CallbackQueryHandler(handle_jornada_callback, pattern=r"^jor_"))
 
-    # ── Catch-all callbacks (debug) ───────────────────────────────────────────
-    app.add_handler(CallbackQueryHandler(_debug_callback))
+    # ── Catch-all: edit flows + logging de callbacks no manejados ─────────────
+    app.add_handler(CallbackQueryHandler(callback_router.route))
 
     # ── Mensajes de texto ─────────────────────────────────────────────────────
-    app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND & _DbFlowFilter(), _handle_db_or_schedule_text))
+    app.add_handler(
+        MessageHandler(
+            filters.TEXT & ~filters.COMMAND & _DbFlowFilter(), _handle_db_or_schedule_text,
+        ),
+    )
     app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_text))
     app.add_handler(MessageHandler(filters.VOICE | filters.AUDIO, handle_voice))
 

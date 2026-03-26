@@ -5,7 +5,7 @@ from typing import Optional
 
 from fastapi import APIRouter, Depends, Query
 from pydantic import BaseModel
-from sqlalchemy import select, delete
+from sqlalchemy import delete, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from schoolai.api.auth import get_current_user
@@ -26,6 +26,7 @@ class AttendanceSaveIn(BaseModel):
     grade_id: int
     date: date
     records: list[AttendanceRecordIn]
+
 
 router = APIRouter(
     prefix="/attendance",
@@ -77,10 +78,7 @@ async def list_attendance(
     students_by_id: dict[int, Student] = {}
     if student_ids:
         s_stmt = select(Student).where(Student.id.in_(student_ids))
-        students_by_id = {
-            s.id: s
-            for s in (await session.execute(s_stmt)).unique().scalars().all()
-        }
+        students_by_id = {s.id: s for s in (await session.execute(s_stmt)).unique().scalars().all()}
 
     def _to_out(att: Attendance) -> AttendanceOut:
         s = students_by_id.get(att.student_id)  # type: ignore[arg-type]
@@ -101,7 +99,10 @@ async def list_attendance(
     "/",
     response_model=MessageOut,
     summary="Save attendance batch",
-    description="Upsert attendance for a full grade on a given date. Only absent/late/justified are stored.",
+    description=(
+        "Upsert attendance for a full grade on a given date. "
+        "Only absent/late/justified are stored."
+    ),
 )
 async def save_attendance(
     body: AttendanceSaveIn,
@@ -109,15 +110,17 @@ async def save_attendance(
 ):
     # Get all student ids in this grade
     student_ids_in_grade = (
-        await session.execute(select(Student.id).where(Student.grade_id == body.grade_id))
-    ).scalars().all()
+        (await session.execute(select(Student.id).where(Student.grade_id == body.grade_id)))
+        .scalars()
+        .all()
+    )
 
     # Delete existing records for this grade+date
     await session.execute(
         delete(Attendance).where(
             Attendance.student_id.in_(student_ids_in_grade),
             Attendance.date == body.date,
-        )
+        ),
     )
 
     # Insert only non-present records

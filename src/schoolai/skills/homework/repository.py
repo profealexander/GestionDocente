@@ -7,33 +7,65 @@ from schoolai.db.models.grade import Grade
 from schoolai.db.models.homework import Homework
 from schoolai.db.models.subject import Subject
 
-
 _GRADE_ALIASES = {
     # Primero BT
-    "1bt": "PRIMERO BT", "1 bt": "PRIMERO BT", "1bachi": "PRIMERO BT",
-    "1bachillerato": "PRIMERO BT", "1ero bt": "PRIMERO BT", "1ro bt": "PRIMERO BT",
-    "1er bt": "PRIMERO BT", "1° bt": "PRIMERO BT", "1o bt": "PRIMERO BT",
-    "primer bt": "PRIMERO BT", "primero bt": "PRIMERO BT", "primero bachillerato": "PRIMERO BT",
+    "1bt": "PRIMERO BT",
+    "1 bt": "PRIMERO BT",
+    "1bachi": "PRIMERO BT",
+    "1bachillerato": "PRIMERO BT",
+    "1ero bt": "PRIMERO BT",
+    "1ro bt": "PRIMERO BT",
+    "1er bt": "PRIMERO BT",
+    "1° bt": "PRIMERO BT",
+    "1o bt": "PRIMERO BT",
+    "primer bt": "PRIMERO BT",
+    "primero bt": "PRIMERO BT",
+    "primero bachillerato": "PRIMERO BT",
     # Segundo BT
-    "2bt": "SEGUNDO BT", "2 bt": "SEGUNDO BT", "2bachi": "SEGUNDO BT",
-    "2bachillerato": "SEGUNDO BT", "2do bt": "SEGUNDO BT", "2dobt": "SEGUNDO BT",
-    "2° bt": "SEGUNDO BT", "2da bt": "SEGUNDO BT",
-    "segundo bt": "SEGUNDO BT", "segunda bt": "SEGUNDO BT",
-    "segundo bachillerato": "SEGUNDO BT", "segunda bachillerato": "SEGUNDO BT",
+    "2bt": "SEGUNDO BT",
+    "2 bt": "SEGUNDO BT",
+    "2bachi": "SEGUNDO BT",
+    "2bachillerato": "SEGUNDO BT",
+    "2do bt": "SEGUNDO BT",
+    "2dobt": "SEGUNDO BT",
+    "2° bt": "SEGUNDO BT",
+    "2da bt": "SEGUNDO BT",
+    "segundo bt": "SEGUNDO BT",
+    "segunda bt": "SEGUNDO BT",
+    "segundo bachillerato": "SEGUNDO BT",
+    "segunda bachillerato": "SEGUNDO BT",
     # Tercero BT
-    "3bt": "TERCERO BT", "3 bt": "TERCERO BT", "3bachi": "TERCERO BT",
-    "3bachillerato": "TERCERO BT", "3ero bt": "TERCERO BT", "3° bt": "TERCERO BT",
-    "tercero bt": "TERCERO BT", "tercero bachillerato": "TERCERO BT",
+    "3bt": "TERCERO BT",
+    "3 bt": "TERCERO BT",
+    "3bachi": "TERCERO BT",
+    "3bachillerato": "TERCERO BT",
+    "3ero bt": "TERCERO BT",
+    "3° bt": "TERCERO BT",
+    "tercero bt": "TERCERO BT",
+    "tercero bachillerato": "TERCERO BT",
     # EGB
-    "2do egb": "SEGUNDO EGB", "2° egb": "SEGUNDO EGB", "segundo egb": "SEGUNDO EGB",
-    "3ero egb": "TERCERO EGB", "3° egb": "TERCERO EGB", "tercero egb": "TERCERO EGB",
-    "4to egb": "CUARTO EGB", "cuarto egb": "CUARTO EGB",
-    "5to egb": "QUINTO EGB", "quinto egb": "QUINTO EGB",
-    "6to egb": "SEXTO EGB", "sexto egb": "SEXTO EGB",
-    "7mo egb": "SEPTIMO EGB", "séptimo egb": "SEPTIMO EGB", "septimo egb": "SEPTIMO EGB",
-    "8vo egb": "OCTAVO EGB", "octavo egb": "OCTAVO EGB",
-    "9no egb": "NOVENO EGB", "noveno egb": "NOVENO EGB",
-    "10mo egb": "DECIMO EGB", "décimo egb": "DECIMO EGB", "decimo egb": "DECIMO EGB",
+    "2do egb": "SEGUNDO EGB",
+    "2° egb": "SEGUNDO EGB",
+    "segundo egb": "SEGUNDO EGB",
+    "3ero egb": "TERCERO EGB",
+    "3° egb": "TERCERO EGB",
+    "tercero egb": "TERCERO EGB",
+    "4to egb": "CUARTO EGB",
+    "cuarto egb": "CUARTO EGB",
+    "5to egb": "QUINTO EGB",
+    "quinto egb": "QUINTO EGB",
+    "6to egb": "SEXTO EGB",
+    "sexto egb": "SEXTO EGB",
+    "7mo egb": "SEPTIMO EGB",
+    "séptimo egb": "SEPTIMO EGB",
+    "septimo egb": "SEPTIMO EGB",
+    "8vo egb": "OCTAVO EGB",
+    "octavo egb": "OCTAVO EGB",
+    "9no egb": "NOVENO EGB",
+    "noveno egb": "NOVENO EGB",
+    "10mo egb": "DECIMO EGB",
+    "décimo egb": "DECIMO EGB",
+    "decimo egb": "DECIMO EGB",
 }
 
 
@@ -41,7 +73,7 @@ async def find_grade(session: AsyncSession, name: str) -> Grade | None:
     normalized = _GRADE_ALIASES.get(name.lower().strip())
     search = normalized or name.upper()
     result = await session.execute(
-        select(Grade).where(Grade.name.ilike(f"%{search}%")).order_by(Grade.sort_order)
+        select(Grade).where(Grade.name.ilike(f"%{search}%")).order_by(Grade.sort_order),
     )
     return result.scalars().first()
 
@@ -52,13 +84,14 @@ async def find_subject(session: AsyncSession, name: str) -> Subject | None:
         select(Subject)
         .where(func.similarity(func.lower(Subject.name), name.lower()) > 0.15)
         .order_by(func.similarity(func.lower(Subject.name), name.lower()).desc())
-        .limit(1)
+        .limit(1),
     )
     return result.scalars().first()
 
 
 def _get_trimester_num(d: date) -> int:
     from schoolai.skills.query.detector import TRIMESTERS
+
     for num, start, end in TRIMESTERS:
         if start <= d <= end:
             return num
@@ -91,9 +124,13 @@ async def save_homework(
         return existing
 
     # Count existing homework for this grade+trimester+subject
-    count_stmt = select(func.count()).select_from(Homework).where(
-        Homework.grade_id == grade_id,
-        Homework.trimester_num == trimester,
+    count_stmt = (
+        select(func.count())
+        .select_from(Homework)
+        .where(
+            Homework.grade_id == grade_id,
+            Homework.trimester_num == trimester,
+        )
     )
     if subject_id:
         count_stmt = count_stmt.where(Homework.subject_id == subject_id)
@@ -118,6 +155,7 @@ async def save_homework(
 
 async def list_open(session: AsyncSession, grade_id: int | None = None) -> list[Homework]:
     from datetime import date as _date
+
     current_trimester = _get_trimester_num(_date.today())
     stmt = select(Homework).where(
         Homework.is_open.is_(True),
@@ -138,6 +176,7 @@ async def find_homework_by_ref(
     trimester_num: int | None = None,
 ) -> Homework | None:
     from datetime import date as _date
+
     if trimester_num is None:
         trimester_num = _get_trimester_num(_date.today())
     stmt = select(Homework).where(
@@ -158,9 +197,10 @@ async def save_non_completers(
     status: str = "missing",
 ) -> int:
     from schoolai.db.models.homework_submission import HomeworkSubmission
+
     # Delete previous records for this homework (idempotent)
     existing = await session.execute(
-        select(HomeworkSubmission).where(HomeworkSubmission.homework_id == homework_id)
+        select(HomeworkSubmission).where(HomeworkSubmission.homework_id == homework_id),
     )
     for sub in existing.scalars().all():
         await session.delete(sub)
@@ -172,12 +212,27 @@ async def save_non_completers(
     return len(student_ids)
 
 
+async def update_homework(session: AsyncSession, hw_id: int, **kwargs) -> Homework | None:
+    """Actualiza campos de una tarea. kwargs: homework, delivery_date, subject_id, is_open."""
+    hw = await session.get(Homework, hw_id)
+    if not hw:
+        return None
+    for key, value in kwargs.items():
+        setattr(hw, key, value)
+    await session.commit()
+    await session.refresh(hw)
+    return hw
+
+
 async def count_students_in_grade(session: AsyncSession, grade_id: int) -> int:
     from schoolai.db.models.student import Student
+
     result = await session.execute(
-        select(func.count()).select_from(Student).where(
+        select(func.count())
+        .select_from(Student)
+        .where(
             Student.grade_id == grade_id,
             Student.status == "active",
-        )
+        ),
     )
     return result.scalar() or 0

@@ -16,9 +16,9 @@ from dataclasses import dataclass
 class InboundMessage:
     """Mensaje entrante normalizado, independiente del canal."""
 
-    channel: str    # "telegram" | "whatsapp"
-    user_id: int    # ID del docente (telegram_id o teacher.id para WhatsApp-only)
-    chat_id: int    # Telegram: chat_id real; WhatsApp: mismo que user_id
+    channel: str  # "telegram" | "whatsapp"
+    user_id: int  # ID del docente (telegram_id o teacher.id para WhatsApp-only)
+    chat_id: int  # Telegram: chat_id real; WhatsApp: mismo que user_id
     text: str
 
     @property

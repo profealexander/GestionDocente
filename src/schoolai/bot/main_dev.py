@@ -1,4 +1,4 @@
-"""Entrypoint para el bot de pruebas (token dev)."""
+"""Entrypoint para el bot Modo Jornada (TELEGRAM_BOT_TOKEN_JORNADA)."""
 
 from schoolai.bot.main import run
 

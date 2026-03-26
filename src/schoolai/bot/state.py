@@ -7,73 +7,54 @@ Two-layer persistence:
 If Redis is not configured or unavailable the system silently uses RAM only.
 """
 
-import pickle
-import time
 from dataclasses import dataclass, field
 from datetime import date
 from typing import Any, Literal
 
 from loguru import logger
 
-# ── Redis backend (optional) ──────────────────────────────────────────────────
+from schoolai.bot.state_store import (
+    StateStore,
+    cleanup_all_stale,  # re-export
+    clear_all_user_state,  # re-export
+)
+from schoolai.bot.state_store import (
+    init_redis as _ss_init_redis,
+)
 
-try:
-    import redis as _redis_lib
-    _HAS_REDIS = True
-except ImportError:
-    _HAS_REDIS = False
+# Re-export for callers
+__all__ = [
+    "clear_all_user_state",
+    "cleanup_all_stale",
+]
 
-_redis_client: Any = None   # redis.Redis instance or None
-_REDIS_TTL_SHORT = 3600     # 60 min — db/schedule/position/attendance/sel flows
-_REDIS_TTL_JORNADA = 86400  # 24 h  — Modo Jornada session spans the school day
+# ── Redis TTL constants (kept for backward compat) ────────────────────────────
+
+_REDIS_TTL_SHORT = 3600   # 60 min
+_REDIS_TTL_JORNADA = 86400  # 24 h
 
 
 def init_redis(url: str) -> None:
     """Connect to Redis. Called once at bot startup. Safe to call with empty url."""
-    global _redis_client
-    if not _HAS_REDIS or not url:
+    if not url:
         return
     try:
+        import redis as _redis_lib
         client = _redis_lib.Redis.from_url(url, socket_timeout=2, decode_responses=False)
         client.ping()
-        _redis_client = client
+        _ss_init_redis(client)
         logger.info(f"[state] Redis connected: {url}")
+    except ImportError:
+        logger.warning("[state] redis package not installed — using in-memory only")
     except Exception as exc:
         logger.warning(f"[state] Redis unavailable — using in-memory only: {exc}")
 
 
-def _rset(key: str, obj: object, ttl: int) -> None:
-    if _redis_client is None:
-        return
-    try:
-        _redis_client.setex(key, ttl, pickle.dumps(obj))
-    except Exception as exc:
-        logger.debug(f"[state] Redis set failed ({key}): {exc}")
-
-
-def _rget(key: str) -> Any:
-    if _redis_client is None:
-        return None
-    try:
-        raw = _redis_client.get(key)
-        return pickle.loads(raw) if raw else None  # nosec B301 — Redis es interno, solo el bot escribe
-    except Exception as exc:
-        logger.debug(f"[state] Redis get failed ({key}): {exc}")
-        return None
-
-
-def _rdel(key: str) -> None:
-    if _redis_client is None:
-        return
-    try:
-        _redis_client.delete(key)
-    except Exception as exc:
-        logger.debug(f"[state] Redis del failed ({key}): {exc}")
-
-
 # ── DB Skill state ────────────────────────────────────────────────────────────
 
-DbStep = Literal["await_list", "await_grade", "await_section", "await_confirm", "await_link_student"]
+DbStep = Literal[
+    "await_list", "await_grade", "await_section", "await_confirm", "await_link_student",
+]
 
 
 @dataclass
@@ -85,10 +66,22 @@ class DbFlow:
     grade_name: str | None = None
     section: str | None = None
     dedup_results: list | None = None  # list[DedupeResult]
-    saved_person_ids: list[int] = field(default_factory=list)   # IDs creados tras confirmar
+    saved_person_ids: list[int] = field(default_factory=list)  # IDs creados tras confirmar
 
 
-_db_flows: dict[int, DbFlow] = {}
+_db_store: StateStore[DbFlow] = StateStore("db", use_redis=True, ttl=_REDIS_TTL_SHORT)
+
+
+def set_db_flow(user_id: int, flow: DbFlow) -> None:
+    _db_store.set(user_id, flow)
+
+
+def get_db_flow(user_id: int) -> DbFlow | None:
+    return _db_store.get(user_id)
+
+
+def clear_db_flow(user_id: int) -> None:
+    _db_store.clear(user_id)
 
 
 # ── Schedule Skill state ───────────────────────────────────────────────────────
@@ -98,9 +91,15 @@ ScheduleStep = Literal["await_teacher", "await_day", "await_periods", "await_con
 # ── Position Skill state ───────────────────────────────────────────────────────
 
 PositionStep = Literal[
-    "await_teacher", "await_action", "await_type",
-    "await_grade", "await_subnivel", "await_area", "await_cargo_val",
-    "await_detail", "await_confirm_add",
+    "await_teacher",
+    "await_action",
+    "await_type",
+    "await_grade",
+    "await_subnivel",
+    "await_area",
+    "await_cargo_val",
+    "await_detail",
+    "await_confirm_add",
 ]
 
 
@@ -118,28 +117,22 @@ class PositionFlow:
     areas_list: list[str] = field(default_factory=list)
 
 
-_position_flows: dict[int, PositionFlow] = {}
+_position_store: StateStore[PositionFlow] = StateStore(
+    "position", use_redis=True, ttl=_REDIS_TTL_SHORT,
+)
 
 
 def set_position_flow(user_id: int, flow: PositionFlow) -> None:
-    _position_flows[user_id] = flow
-    _touch("position", user_id)
-    _rset(f"pos:{user_id}", flow, _REDIS_TTL_SHORT)
+    _position_store.set(user_id, flow)
 
 
 def get_position_flow(user_id: int) -> PositionFlow | None:
-    if user_id not in _position_flows:
-        obj = _rget(f"pos:{user_id}")
-        if obj is not None:
-            _position_flows[user_id] = obj
-            _touch("position", user_id)
-    return _position_flows.get(user_id)
+    return _position_store.get(user_id)
 
 
 def clear_position_flow(user_id: int) -> None:
-    _position_flows.pop(user_id, None)
-    _expire("position", user_id)
-    _rdel(f"pos:{user_id}")
+    _position_store.clear(user_id)
+
 
 DAY_NAMES = ["Lunes", "Martes", "Miércoles", "Jueves", "Viernes"]
 
@@ -148,65 +141,29 @@ DAY_NAMES = ["Lunes", "Martes", "Miércoles", "Jueves", "Viernes"]
 class ScheduleFlow:
     step: ScheduleStep
     teacher_id: int | None = None
-    day_of_week: int | None = None          # 0-4
-    parsed_periods: list[dict] = field(default_factory=list)   # resolved period dicts
+    day_of_week: int | None = None  # 0-4
+    parsed_periods: list[dict] = field(default_factory=list)  # resolved period dicts
     errors: list[str] = field(default_factory=list)
 
 
-_schedule_flows: dict[int, ScheduleFlow] = {}
+_schedule_store: StateStore[ScheduleFlow] = StateStore(
+    "schedule", use_redis=True, ttl=_REDIS_TTL_SHORT,
+)
 
 
 def set_schedule_flow(user_id: int, flow: ScheduleFlow) -> None:
-    _schedule_flows[user_id] = flow
-    _touch("schedule", user_id)
-    _rset(f"sch:{user_id}", flow, _REDIS_TTL_SHORT)
+    _schedule_store.set(user_id, flow)
 
 
 def get_schedule_flow(user_id: int) -> ScheduleFlow | None:
-    if user_id not in _schedule_flows:
-        obj = _rget(f"sch:{user_id}")
-        if obj is not None:
-            _schedule_flows[user_id] = obj
-            _touch("schedule", user_id)
-    return _schedule_flows.get(user_id)
+    return _schedule_store.get(user_id)
 
 
 def clear_schedule_flow(user_id: int) -> None:
-    _schedule_flows.pop(user_id, None)
-    _expire("schedule", user_id)
-    _rdel(f"sch:{user_id}")
-
-
-def set_db_flow(user_id: int, flow: DbFlow) -> None:
-    _db_flows[user_id] = flow
-    _touch("db", user_id)
-    _rset(f"db:{user_id}", flow, _REDIS_TTL_SHORT)
-
-
-def get_db_flow(user_id: int) -> DbFlow | None:
-    if user_id not in _db_flows:
-        obj = _rget(f"db:{user_id}")
-        if obj is not None:
-            _db_flows[user_id] = obj
-            _touch("db", user_id)
-    return _db_flows.get(user_id)
-
-
-def clear_db_flow(user_id: int) -> None:
-    _db_flows.pop(user_id, None)
-    _expire("db", user_id)
-    _rdel(f"db:{user_id}")
+    _schedule_store.clear(user_id)
 
 
 # ── Unified selection state ───────────────────────────────────────────────────
-#
-# Covers three disambiguation flows:
-#   "att_student"  — pick which student was absent (attendance)
-#   "hw_task"      — pick which homework task (report)
-#   "hw_student"   — pick which student for homework report; may chain to hw_task
-#
-# options: [{label: str, value: str}]   (value is the DB id as string)
-# payload: action-specific dict (see action_handler.py for details)
 
 SelectionAction = Literal["att_student", "hw_task", "hw_student"]
 
@@ -215,33 +172,26 @@ SelectionAction = Literal["att_student", "hw_task", "hw_student"]
 class PendingSelection:
     chat_id: int
     prompt: str
-    options: list[dict]          # [{label: str, value: str}]
+    options: list[dict]  # [{label: str, value: str}]
     action: SelectionAction
-    payload: dict[str, Any]      # depends on action
+    payload: dict[str, Any]  # depends on action
 
 
-_selections: dict[int, PendingSelection] = {}
+_selection_store: StateStore[PendingSelection] = StateStore(
+    "sel", use_redis=True, ttl=_REDIS_TTL_SHORT,
+)
 
 
 def set_selection(user_id: int, pending: PendingSelection) -> None:
-    _selections[user_id] = pending
-    _touch("sel", user_id)
-    _rset(f"sel:{user_id}", pending, _REDIS_TTL_SHORT)
+    _selection_store.set(user_id, pending)
 
 
 def get_selection(user_id: int) -> PendingSelection | None:
-    if user_id not in _selections:
-        obj = _rget(f"sel:{user_id}")
-        if obj is not None:
-            _selections[user_id] = obj
-            _touch("sel", user_id)
-    return _selections.get(user_id)
+    return _selection_store.get(user_id)
 
 
 def clear_selection(user_id: int) -> None:
-    _selections.pop(user_id, None)
-    _expire("sel", user_id)
-    _rdel(f"sel:{user_id}")
+    _selection_store.clear(user_id)
 
 
 # ── Attendance state ──────────────────────────────────────────────────────────
@@ -252,48 +202,32 @@ AttendanceStep = Literal["await_grade", "await_ambiguous"]
 @dataclass
 class PendingAttendance:
     step: AttendanceStep
-    extracted: list[dict]            # [{"name": str, "status": "F"|"AT"|"J"}]
+    extracted: list[dict]  # [{"name": str, "status": "F"|"AT"|"J"}]
     attendance_date: date
     grade_id: int | None = None
     grade_name: str | None = None
-    confirmed: list[dict] = field(default_factory=list)   # [{student_id, status}]
-    ambiguous: list = field(default_factory=list)          # list[MatchResult] pending resolution
+    confirmed: list[dict] = field(default_factory=list)  # [{student_id, status}]
+    ambiguous: list = field(default_factory=list)  # list[MatchResult] pending resolution
 
 
-_attendance: dict[int, PendingAttendance] = {}
+_attendance_store: StateStore[PendingAttendance] = StateStore(
+    "attendance", use_redis=True, ttl=_REDIS_TTL_SHORT,
+)
 
 
 def set_attendance(user_id: int, state: PendingAttendance) -> None:
-    _attendance[user_id] = state
-    _touch("attendance", user_id)
-    _rset(f"att:{user_id}", state, _REDIS_TTL_SHORT)
+    _attendance_store.set(user_id, state)
 
 
 def get_attendance(user_id: int) -> PendingAttendance | None:
-    if user_id not in _attendance:
-        obj = _rget(f"att:{user_id}")
-        if obj is not None:
-            _attendance[user_id] = obj
-            _touch("attendance", user_id)
-    return _attendance.get(user_id)
+    return _attendance_store.get(user_id)
 
 
 def clear_attendance(user_id: int) -> None:
-    _attendance.pop(user_id, None)
-    _expire("attendance", user_id)
-    _rdel(f"att:{user_id}")
+    _attendance_store.clear(user_id)
 
 
 # ── Modo Jornada state ────────────────────────────────────────────────────────
-#
-# JornadaSession dura todo el día escolar — NO usa el TTL de 60 min.
-# Se limpia al completar la jornada, pausar indefinidamente o a medianoche.
-#
-# status:
-#   "waiting" — jornada iniciada, esperando confirmación de llegada al aula
-#   "active"  — docente en clase, contexto grade+subject activo
-#   "paused"  — docente pausó la jornada (receso, etc.)
-#   "done"    — todos los períodos completados
 
 JornadaStatus = Literal["waiting", "active", "paused", "done"]
 
@@ -303,8 +237,10 @@ class JornadaSession:
     teacher_id: int
     chat_id: int
     day_of_week: int
-    periods: list[dict]           # [{period_num, start_time, end_time, grade_id, grade_name, subject_id, subject_name}]
-    current_index: int = 0        # índice activo en periods (0-based)
+    periods: list[
+        dict
+    ]  # [{period_num, start_time, end_time, grade_id, grade_name, subject_id, subject_name}]
+    current_index: int = 0  # índice activo en periods (0-based)
     status: JornadaStatus = "waiting"
     # Contexto activo — se llena al confirmar llegada
     grade_id: int | None = None
@@ -326,30 +262,26 @@ class JornadaSession:
         self.grade_id = self.grade_name = self.subject_id = self.subject_name = None
 
 
-_jornada: dict[int, JornadaSession] = {}  # user_id → session
+_jornada_store: StateStore[JornadaSession] = StateStore(
+    "jornada", use_redis=True, ttl=_REDIS_TTL_JORNADA,
+)
 
 
 def set_jornada(user_id: int, session: JornadaSession) -> None:
-    _jornada[user_id] = session
-    _rset(f"jor:{user_id}", session, _REDIS_TTL_JORNADA)
+    _jornada_store.set(user_id, session)
 
 
 def get_jornada(user_id: int) -> JornadaSession | None:
-    if user_id not in _jornada:
-        obj = _rget(f"jor:{user_id}")
-        if obj is not None:
-            _jornada[user_id] = obj
-    return _jornada.get(user_id)
+    return _jornada_store.get(user_id)
 
 
 def clear_jornada(user_id: int) -> None:
-    _jornada.pop(user_id, None)
-    _rdel(f"jor:{user_id}")
+    _jornada_store.clear(user_id)
 
 
 def get_jornada_context(user_id: int) -> tuple[int | None, str | None, int | None, str | None]:
     """Returns (grade_id, grade_name, subject_id, subject_name) if jornada active, else Nones."""
-    s = _jornada.get(user_id)
+    s = _jornada_store.get(user_id)
     if s and s.status == "active":
         return s.grade_id, s.grade_name, s.subject_id, s.subject_name
     return None, None, None, None
@@ -358,17 +290,14 @@ def get_jornada_context(user_id: int) -> tuple[int | None, str | None, int | Non
 def clear_jornada_all_stale() -> int:
     """Limpia sesiones de jornada del día anterior."""
     today = date.today().weekday()  # 0-4
-    stale = [uid for uid, s in _jornada.items() if s.day_of_week != today]
+    stale = [uid for uid, s in _jornada_store._data.items() if s.day_of_week != today]
     for uid in stale:
-        _jornada.pop(uid, None)
+        _jornada_store._data.pop(uid, None)
+        _jornada_store._timestamps.pop(uid, None)
     return len(stale)
 
 
-# ── Pending course context (course-only message awaiting intent) ──────────────
-#
-# When a teacher sends just a course name (e.g. "primero bt"), the bot shows
-# a menu of actions. Once the teacher picks one, a PendingCourseContext is
-# stored so the next message has the course pre-filled.
+# ── Pending course context ────────────────────────────────────────────────────
 
 
 @dataclass
@@ -376,40 +305,27 @@ class PendingCourseContext:
     course_abbrev: str
     grade_id: int
     grade_name: str
-    pending_intent: str   # "homework" | "attendance" | "homework_report"
+    pending_intent: str  # "homework" | "attendance" | "homework_report"
 
 
-_course_contexts: dict[int, PendingCourseContext] = {}
+_course_store: StateStore[PendingCourseContext] = StateStore(
+    "course", use_redis=True, ttl=_REDIS_TTL_SHORT,
+)
 
 
 def set_course_context(user_id: int, ctx: PendingCourseContext) -> None:
-    _course_contexts[user_id] = ctx
-    _touch("course", user_id)
-    _rset(f"course:{user_id}", ctx, _REDIS_TTL_SHORT)
+    _course_store.set(user_id, ctx)
 
 
 def get_course_context(user_id: int) -> PendingCourseContext | None:
-    if user_id not in _course_contexts:
-        obj = _rget(f"course:{user_id}")
-        if obj is not None:
-            _course_contexts[user_id] = obj
-            _touch("course", user_id)
-    return _course_contexts.get(user_id)
+    return _course_store.get(user_id)
 
 
 def clear_course_context(user_id: int) -> None:
-    _course_contexts.pop(user_id, None)
-    _expire("course", user_id)
-    _rdel(f"course:{user_id}")
+    _course_store.clear(user_id)
 
 
 # ── WhatsApp notification state ───────────────────────────────────────────────
-#
-# PendingWhatsAppNotification: tarea + alumnos que no cumplieron.
-#   Creado cuando el docente presiona [📱 Notificar].
-#
-# PendingWhatsAppSetup: flujo para completar phone/apikey de un representante
-#   cuando faltan datos. Al terminar, reintenta el envío pendiente.
 
 WhatsAppSetupStep = Literal["await_rep_name", "await_phone"]
 
@@ -421,7 +337,7 @@ class PendingWhatsAppNotification:
     hw_seq: int
     subject: str
     grade_name: str
-    delivery_date: str       # "dd/mm/YYYY" or ""
+    delivery_date: str  # "dd/mm/YYYY" or ""
     student_ids: list[int]
     student_names: list[str]
 
@@ -429,57 +345,154 @@ class PendingWhatsAppNotification:
 @dataclass
 class PendingWhatsAppSetup:
     step: WhatsAppSetupStep
-    guardian_id: int       # 0 si aún no se ha creado (step await_rep_name)
+    guardian_id: int  # 0 si aún no se ha creado (step await_rep_name)
     guardian_name: str
     student_name: str
-    student_id: int = 0    # para vincular al crear representante nuevo
+    student_id: int = 0  # para vincular al crear representante nuevo
     phone: str = ""
 
 
-_wa_notifications: dict[int, PendingWhatsAppNotification] = {}
-_wa_setups: dict[int, PendingWhatsAppSetup] = {}
+_wa_notification_store: StateStore[PendingWhatsAppNotification] = StateStore(
+    "wan", use_redis=True, ttl=_REDIS_TTL_SHORT,
+)
+_wa_setup_store: StateStore[PendingWhatsAppSetup] = StateStore(
+    "was", use_redis=True, ttl=_REDIS_TTL_SHORT,
+)
 
 
 def set_wa_notification(user_id: int, n: PendingWhatsAppNotification) -> None:
-    _wa_notifications[user_id] = n
-    _rset(f"wan:{user_id}", n, _REDIS_TTL_SHORT)
+    _wa_notification_store.set(user_id, n)
 
 
 def get_wa_notification(user_id: int) -> PendingWhatsAppNotification | None:
-    if user_id not in _wa_notifications:
-        obj = _rget(f"wan:{user_id}")
-        if obj is not None:
-            _wa_notifications[user_id] = obj
-    return _wa_notifications.get(user_id)
+    return _wa_notification_store.get(user_id)
 
 
 def clear_wa_notification(user_id: int) -> None:
-    _wa_notifications.pop(user_id, None)
-    _rdel(f"wan:{user_id}")
+    _wa_notification_store.clear(user_id)
 
 
 def set_wa_setup(user_id: int, s: PendingWhatsAppSetup) -> None:
-    _wa_setups[user_id] = s
-    _touch("wa_setup", user_id)
-    _rset(f"was:{user_id}", s, _REDIS_TTL_SHORT)
+    _wa_setup_store.set(user_id, s)
 
 
 def get_wa_setup(user_id: int) -> PendingWhatsAppSetup | None:
-    if user_id not in _wa_setups:
-        obj = _rget(f"was:{user_id}")
-        if obj is not None:
-            _wa_setups[user_id] = obj
-            _touch("wa_setup", user_id)
-    return _wa_setups.get(user_id)
+    return _wa_setup_store.get(user_id)
 
 
 def clear_wa_setup(user_id: int) -> None:
-    _wa_setups.pop(user_id, None)
-    _expire("wa_setup", user_id)
-    _rdel(f"was:{user_id}")
+    _wa_setup_store.clear(user_id)
+
+
+# ── Pending cuota participante ────────────────────────────────────────────────
+
+
+@dataclass
+class PendingCuotaParticipante:
+    actividad_id: int
+    actividad_nombre: str
+
+
+_cuota_participante_store: StateStore[PendingCuotaParticipante] = StateStore(
+    "cuota_part", ttl=_REDIS_TTL_SHORT,
+)
+
+
+def set_cuota_participante(user_id: int, state: PendingCuotaParticipante) -> None:
+    _cuota_participante_store.set(user_id, state)
+
+
+def get_cuota_participante(user_id: int) -> PendingCuotaParticipante | None:
+    return _cuota_participante_store.get(user_id)
+
+
+def clear_cuota_participante(user_id: int) -> None:
+    _cuota_participante_store.clear(user_id)
+
+
+# ── Pending cuota nombre ──────────────────────────────────────────────────────
+
+
+@dataclass
+class PendingCuotaNombre:
+    monto: float | None  # monto ya conocido, puede ser None si tampoco lo tiene
+    course: str | None
+
+
+_cuota_nombre_store: StateStore[PendingCuotaNombre] = StateStore(
+    "cuota_nombre", ttl=_REDIS_TTL_SHORT,
+)
+
+
+def set_cuota_nombre(user_id: int, state: PendingCuotaNombre) -> None:
+    _cuota_nombre_store.set(user_id, state)
+
+
+def get_cuota_nombre(user_id: int) -> PendingCuotaNombre | None:
+    return _cuota_nombre_store.get(user_id)
+
+
+def clear_cuota_nombre(user_id: int) -> None:
+    _cuota_nombre_store.clear(user_id)
+
+
+# ── Pending homework edit field ───────────────────────────────────────────────
+
+
+@dataclass
+class PendingHwEditField:
+    hw_id: int
+    hw_seq: int
+    grade_name: str
+    field: str  # "descripcion" | "fecha" | "materia"
+
+
+_hw_edit_store: StateStore[PendingHwEditField] = StateStore(
+    "hw_edit", ttl=_REDIS_TTL_SHORT,
+)
+
+
+def set_hw_edit_field(user_id: int, state: PendingHwEditField) -> None:
+    _hw_edit_store.set(user_id, state)
+
+
+def get_hw_edit_field(user_id: int) -> PendingHwEditField | None:
+    return _hw_edit_store.get(user_id)
+
+
+def clear_hw_edit_field(user_id: int) -> None:
+    _hw_edit_store.clear(user_id)
+
+
+# ── Pending cuota edit field ──────────────────────────────────────────────────
+
+
+@dataclass
+class PendingCuotaEditField:
+    actividad_id: int
+    actividad_nombre: str
+    field: str  # "nombre" | "monto" | "descripcion"
+
+
+_cuota_edit_store: StateStore[PendingCuotaEditField] = StateStore(
+    "cuota_edit", ttl=_REDIS_TTL_SHORT,
+)
+
+
+def set_cuota_edit_field(user_id: int, state: PendingCuotaEditField) -> None:
+    _cuota_edit_store.set(user_id, state)
+
+
+def get_cuota_edit_field(user_id: int) -> PendingCuotaEditField | None:
+    return _cuota_edit_store.get(user_id)
+
+
+def clear_cuota_edit_field(user_id: int) -> None:
+    _cuota_edit_store.clear(user_id)
 
 
 # ── Cuota create state ────────────────────────────────────────────────────────
+
 
 @dataclass
 class PendingCuotaCreate:
@@ -491,90 +504,68 @@ class PendingCuotaCreate:
     student_list: list[dict]  # [{"idx": int, "student_id": int, "name": str}]
 
 
-_cuota_creates: dict[int, PendingCuotaCreate] = {}
-
-# ── Pending pago (cuota_pago callback) ────────────────────────────────────────
-
-_pending_pagos: dict[int, Any] = {}
-
-
-def set_pending_pago(user_id: int, data: Any) -> None:
-    _pending_pagos[user_id] = data
-    _touch("pago", user_id)
-
-
-def get_pending_pago(user_id: int) -> Any | None:
-    return _pending_pagos.get(user_id)
-
-
-def pop_pending_pago(user_id: int) -> Any | None:
-    _expire("pago", user_id)
-    return _pending_pagos.pop(user_id, None)
+_cuota_create_store: StateStore[PendingCuotaCreate] = StateStore(
+    "cuota", use_redis=True, ttl=_REDIS_TTL_SHORT,
+)
 
 
 def set_cuota_create(user_id: int, state: PendingCuotaCreate) -> None:
-    _cuota_creates[user_id] = state
-    _touch("cuota", user_id)
-    _rset(f"cuota:{user_id}", state, _REDIS_TTL_SHORT)
+    _cuota_create_store.set(user_id, state)
 
 
 def get_cuota_create(user_id: int) -> PendingCuotaCreate | None:
-    if user_id not in _cuota_creates:
-        obj = _rget(f"cuota:{user_id}")
-        if obj is not None:
-            _cuota_creates[user_id] = obj
-            _touch("cuota", user_id)
-    return _cuota_creates.get(user_id)
+    return _cuota_create_store.get(user_id)
 
 
 def clear_cuota_create(user_id: int) -> None:
-    _cuota_creates.pop(user_id, None)
-    _expire("cuota", user_id)
-    _rdel(f"cuota:{user_id}")
+    _cuota_create_store.clear(user_id)
 
 
-# ── TTL cleanup ───────────────────────────────────────────────────────────────
+# ── Pending pago ──────────────────────────────────────────────────────────────
 
-_timestamps: dict[str, dict[int, float]] = {
-    "db": {},
-    "attendance": {},
-    "sel": {},
-    "schedule": {},
-    "position": {},
-    "course": {},
-    "wa_setup": {},
-    "cuota": {},
-    "pago": {},
-}
-_TTL = 3600  # 60 minutos
+_pending_pago_store: StateStore[Any] = StateStore("pago", ttl=_REDIS_TTL_SHORT)
 
 
-def _touch(store: str, user_id: int) -> None:
-    _timestamps[store][user_id] = time.monotonic()
+def set_pending_pago(user_id: int, data: Any) -> None:
+    _pending_pago_store.set(user_id, data)
 
 
-def _expire(store: str, user_id: int) -> None:
-    _timestamps[store].pop(user_id, None)
+def get_pending_pago(user_id: int) -> Any | None:
+    return _pending_pago_store.get(user_id)
 
+
+def pop_pending_pago(user_id: int) -> Any | None:
+    return _pending_pago_store.pop(user_id)
+
+
+# ── Pending confirmation state ────────────────────────────────────────────────
+
+
+@dataclass
+class PendingConfirm:
+    chat_id: int
+    intent: str  # "attendance" | "homework"
+    summary: str  # texto legible para mostrar en la confirmación
+    data: Any  # AttendanceExtract | HomeworkExtract
+
+
+_confirm_store: StateStore[PendingConfirm] = StateStore("confirm", ttl=_REDIS_TTL_SHORT)
+
+
+def set_pending_confirm(user_id: int, pc: PendingConfirm) -> None:
+    _confirm_store.set(user_id, pc)
+
+
+def pop_pending_confirm(user_id: int) -> PendingConfirm | None:
+    return _confirm_store.pop(user_id)
+
+
+def clear_pending_confirm(user_id: int) -> None:
+    _confirm_store.clear(user_id)
+
+
+# ── Legacy cleanup_stale (backward compat for callers) ────────────────────────
 
 def cleanup_stale() -> int:
-    """Elimina estados expirados. Retorna cantidad eliminada."""
-    now = time.monotonic()
-    removed = 0
-    for store, data_dict in [
-        ("db", _db_flows),
-        ("attendance", _attendance),
-        ("sel", _selections),
-        ("schedule", _schedule_flows),
-        ("position", _position_flows),
-        ("course", _course_contexts),
-        ("wa_setup", _wa_setups),
-        ("cuota", _cuota_creates),
-        ("pago", _pending_pagos),
-    ]:
-        expired = [uid for uid, ts in _timestamps[store].items() if now - ts > _TTL]
-        for uid in expired:
-            data_dict.pop(uid, None)
-            _timestamps[store].pop(uid, None)
-            removed += 1
-    return removed
+    """Backward compat wrapper — delegates to cleanup_all_stale()."""
+    return cleanup_all_stale()

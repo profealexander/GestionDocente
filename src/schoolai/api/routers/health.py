@@ -14,6 +14,7 @@ async def health():
     # ── Database ──────────────────────────────────────────────────────────────
     try:
         from schoolai.db.connection import async_session
+
         async with async_session() as session:
             await session.execute(text("SELECT 1"))
         status["db"] = "ok"
@@ -23,6 +24,7 @@ async def health():
     # ── Redis ─────────────────────────────────────────────────────────────────
     try:
         from schoolai.bot.state import _redis_client
+
         if _redis_client is None:
             status["redis"] = "not configured"
         else:

@@ -39,14 +39,20 @@ cp .env.example .env
 | `TELEGRAM_BOT_TOKEN` | Token del bot de Telegram (modo libre) | ✅ |
 | `TELEGRAM_ALLOWED_USERS` | IDs de Telegram separados por coma (ej. `123456,789012`) | ✅ |
 | `GROQ_API_KEY` | API key de Groq — LLM fallback + transcripción de voz | ✅ |
-| `TELEGRAM_BOT_TOKEN_DEV` | Token del bot de Telegram (modo jornada) | — |
+| `TELEGRAM_BOT_TOKEN_JORNADA` | Token del bot Modo Jornada | — |
+| `TELEGRAM_BOT_TOKEN_AGENTE` | Token del bot Agente IA (GLM-4.7-Flash) | — |
+| `ZAI_API_KEY` | API key Z.AI global — OrchestratorSkill (GLM-4.7-Flash) | — |
 | `JWT_SECRET_KEY` | Clave secreta JWT (32+ caracteres) | ✅ para API |
 | `API_SECRET` | Clave compartida con la PWA para obtener tokens | ✅ para API |
 | `JWT_EXPIRE_HOURS` | Duración del token JWT en horas (default: `24`) | — |
+| `GREEN_API_INSTANCE` | ID de instancia Green API para WhatsApp entrante | — |
+| `GREEN_API_TOKEN` | Token de instancia Green API | — |
 | `REDIS_URL` | URL de Redis (ej. `redis://localhost:6379/0`) — recomendado en producción | — |
 | `ADMIN_TELEGRAM_ID` | Tu ID de Telegram para recibir alertas de error | — |
-| `LLM_EXTRACTOR` | Modelo Groq para fallback de extracción (default: `groq/llama-3.1-8b-instant`) | — |
-| `LLM_CHAT` | Modelo Groq para chat IA (default: `groq/llama-3.3-70b-versatile`) | — |
+| `SUPERVISED_MODE` | `true` → pide confirmación antes de toda escritura en DB (default: `false`) | — |
+| `LLM_EXTRACTOR` | Modelo extractor (default: `groq/llama-3.1-8b-instant`) | — |
+| `LLM_CHAT` | Modelo chat IA (default: `groq/llama-3.3-70b-versatile`) | — |
+| `LLM_ORCHESTRATOR` | Modelo orquestador (default: `zai/glm-4.7-flash`) | — |
 | `API_HOST` | Host del servidor API (default: `0.0.0.0`) | — |
 | `API_PORT` | Puerto del servidor API (default: `8000`) | — |
 | `LOG_DIR` | Directorio de logs (default: `logs`) | — |
@@ -75,14 +81,25 @@ Los grados (15 niveles) y materias se cargan con las migraciones.
 ## Ejecución
 
 ```bash
-# Bot modo libre (producción)
+# Bot Modo Libre
 uv run schoolai-bot
 
-# Bot modo jornada (desarrollo/segundo token)
-uv run schoolai-dev
+# Bot Modo Jornada
+uv run schoolai-bot-jornada
+
+# Bot Agente IA (GLM-4.7-Flash, sin pipeline regex)
+uv run schoolai-bot-agente
 
 # API REST
 uv run schoolai-api
+```
+
+Con recarga automática durante desarrollo:
+
+```bash
+./dev-bot.sh           # Modo Libre
+./dev-bot-jornada.sh   # Modo Jornada
+./dev-bot-agente.sh    # Bot Agente
 ```
 
 La API queda disponible en `http://localhost:8000`.
@@ -95,7 +112,7 @@ Documentación interactiva: `http://localhost:8000/docs`
 ```
 schoolai/
 ├── .env                        # Variables de entorno (no subir a git)
-├── pyproject.toml              # Dependencias y scripts
+├── pyproject.toml              # Dependencias y entry points de skills/canales
 ├── alembic/                    # Migraciones de base de datos
 │   └── versions/               # Archivos de migración secuenciales
 ├── docs/
@@ -103,12 +120,25 @@ schoolai/
 │   └── user-guide.md           # Guía de uso para docentes
 └── src/schoolai/
     ├── config.py               # Configuración (pydantic-settings)
-    ├── bot/                    # Bot de Telegram
-    │   ├── main.py             # Arranque y registro de handlers/callbacks
-    │   ├── handlers.py         # Entrada de mensajes → _dispatch()
-    │   ├── action_handler.py   # Procesamiento de intenciones → DB
-    │   ├── state.py            # Estado de sesión RAM+Redis con TTL
-    │   ├── jornada_handler.py  # Modo Jornada: flujo hora a hora
+    ├── bot/                    # Bots de Telegram (tres entrypoints)
+    │   ├── main.py             # Modo Libre/Jornada — pipeline completo
+    │   ├── main_dev.py         # Entrypoint Modo Jornada (thin wrapper)
+    │   ├── main_agente.py      # Bot Agente — directo a OrchestratorSkill
+    │   ├── handlers.py         # Entrada de mensajes → _dispatch() + text_interceptors
+    │   ├── action_handler.py   # Procesamiento de intenciones → DB + confirmación
+    │   ├── state.py            # Estado de sesión RAM+Redis con TTL (todos los flows)
+    │   ├── state_store.py      # StateStore genérico base
+    │   ├── callback_router.py  # Router central de callbacks
+    │   ├── text_interceptors.py # Chain de interceptores de texto por prioridad
+    │   ├── edit_flow.py        # EditFlow genérico (list→pick→edit/toggle)
+    │   ├── sop.py              # SOPEngine: tabla de transiciones (status, trigger)→handler
+    │   ├── jornada_handler.py  # Modo Jornada: SOP Engine + notificación matutina
+    │   ├── cron_service.py     # CronService: jobs persistentes en cron.json
+    │   ├── cron_handler.py     # Comando /cron para administrar horarios
+    │   ├── channels/           # Sistema de canales abstraído
+    │   │   ├── base.py         # BaseChannel ABC + InboundMessage
+    │   │   ├── telegram.py     # TelegramChannel
+    │   │   └── whatsapp.py     # WhatsAppChannel + WhatsAppUpdate adapter
     │   ├── attendance_handler.py
     │   ├── schedule_handler.py
     │   ├── position_handler.py
@@ -122,24 +152,26 @@ schoolai/
     │   ├── auth.py             # JWT HS256
     │   ├── schemas.py
     │   └── routers/            # auth, grades, subjects, students,
-    │                           # homework, attendance, cuotas
+    │                           # homework, attendance, cuotas,
+    │                           # whatsapp_webhook (POST /webhook/whatsapp)
     ├── db/                     # Capa de base de datos
     │   ├── connection.py       # Sesión async SQLAlchemy
-    │   └── models/             # ORM: grade, student, teacher, homework,
-    │                           # attendance, subject, cuota, notification…
+    │   └── models/             # ORM: grade, student, teacher (+whatsapp_phone),
+    │                           # homework, attendance, subject, cuota…
     └── skills/                 # Sistema de skills
         ├── registry.py         # SkillRegistry: detect() + detect_all()
         ├── planner.py          # Divide mensajes multi-intent por skill
-        ├── base.py             # BaseSkill: matches() keywords + regex
-        ├── attendance/         # Skill + tools + matcher fuzzy
-        ├── homework/           # Skill + tools + detector + repository
+        ├── base.py             # BaseSkill: priority + matches() keywords + regex
+        ├── attendance/         # Skill (via_llm) + tools + matcher fuzzy
+        ├── homework/           # Skill (via_llm) + tools + detector + repository + handler_edit
         ├── query/              # Skill + tools
-        ├── cuotas/             # Skill + tools + handlers + service + exporter
+        ├── cuotas/             # Skill + tools + handlers (create/pago/query/edit) + service
+        ├── orchestrator/       # OrchestratorSkill + agent ReAct loop + 8 tools (GLM-4.7-Flash)
         ├── ia/                 # ChatSkill con streaming (Groq 70B)
-        ├── llm/                # Cliente unificado + tool_caller compartido
+        ├── llm/                # Cliente unificado + tool_caller + providers (groq/zai)
         ├── documents/          # Generación de documentos PDF
-        ├── whatsapp/           # Integración Green API
-        └── utils/              # normalize, extract_rules, schema, keyboards
+        ├── whatsapp/           # Integración Green API (saliente)
+        └── utils/              # normalize, extract_rules, schema (via_llm), keyboards
 ```
 
 ---
@@ -152,9 +184,11 @@ Ver [`docs/user-guide.md`](docs/user-guide.md) para la guía completa.
 |---|---|
 | `/start` | Saludo inicial |
 | `/ayuda` | Muestra la ayuda del bot |
-| `/cancelar` | Cancela el flujo actual |
+| `/cancelar` | Cancela el flujo actual (incluyendo confirmaciones pendientes) |
 | `/db` | Accede al panel de base de datos |
 | `/jornada` | Inicia el modo jornada manual |
+| `/cron` | Lista jobs cron con sus horarios |
+| `/cron morning_notify 07:30` | Cambia la hora del aviso matutino (solo admin) |
 
 ---
 
@@ -175,6 +209,7 @@ Ver documentación interactiva en `/docs` (Swagger UI) o `/redoc`.
 | POST | `/cuotas/actividades/` | Crea una actividad |
 | POST | `/cuotas/actividades/{id}/participantes` | Agrega participantes |
 | POST | `/cuotas/actividades/{id}/pagos` | Registra un pago |
+| POST | `/webhook/whatsapp` | Webhook Green API — mensajes entrantes WhatsApp |
 
 ---
 

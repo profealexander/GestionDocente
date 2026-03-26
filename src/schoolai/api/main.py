@@ -5,7 +5,17 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.openapi.docs import get_redoc_html, get_swagger_ui_html
 from fastapi.openapi.utils import get_openapi
 
-from schoolai.api.routers import attendance, auth, cuotas, grades, health, homework, students, subjects, whatsapp_webhook
+from schoolai.api.routers import (
+    attendance,
+    auth,
+    cuotas,
+    grades,
+    health,
+    homework,
+    students,
+    subjects,
+    whatsapp_webhook,
+)
 
 # ── App ───────────────────────────────────────────────────────────────────────
 
@@ -42,7 +52,7 @@ app = FastAPI(
 
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],   # en producción reemplazar con el dominio de la PWA
+    allow_origins=["*"],  # en producción reemplazar con el dominio de la PWA
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
@@ -62,6 +72,7 @@ app.include_router(whatsapp_webhook.router)
 
 
 # ── Custom docs ───────────────────────────────────────────────────────────────
+
 
 @app.get("/docs", include_in_schema=False, tags=["Documentation"])
 async def swagger_ui():
@@ -98,6 +109,7 @@ async def root():
 
 # ── Custom OpenAPI schema ─────────────────────────────────────────────────────
 
+
 def custom_openapi():
     if app.openapi_schema:
         return app.openapi_schema
@@ -108,16 +120,14 @@ def custom_openapi():
         contact=app.contact,
         routes=app.routes,
     )
-    schema["info"]["x-logo"] = {
-        "url": "https://fastapi.tiangolo.com/img/logo-margin/logo-teal.png"
-    }
+    schema["info"]["x-logo"] = {"url": "https://fastapi.tiangolo.com/img/logo-margin/logo-teal.png"}
     schema.setdefault("components", {})["securitySchemes"] = {
         "BearerAuth": {
             "type": "http",
             "scheme": "bearer",
             "bearerFormat": "JWT",
             "description": "JWT obtenido en POST /auth/token",
-        }
+        },
     }
     app.openapi_schema = schema
     return schema

@@ -18,14 +18,14 @@ class _StudentEntry(NamedTuple):
     student: object
     display: str
     short: str
-    norm_short: str   # pre-normalizado para fuzzy matching — evita re-normalizar en cada check
+    norm_short: str  # pre-normalizado para fuzzy matching — evita re-normalizar en cada check
 
 
 @dataclass
 class MatchResult:
     raw_name: str
-    status: str                          # 'F' | 'AT' | 'J'
-    matched_id: int | None = None        # student.id if resolved
+    status: str  # 'F' | 'AT' | 'J'
+    matched_id: int | None = None  # student.id if resolved
     matched_name: str | None = None
     candidates: list[dict] = field(default_factory=list)  # [{id, name}] if ambiguous
 
@@ -58,9 +58,9 @@ async def match_names(
 
     # Build lookup structures
     by_id: dict[int, _StudentEntry] = {}  # student.id → _StudentEntry
-    by_first: dict[str, list[int]] = {}   # norm first_name → [student_ids]
-    by_last: dict[str, list[int]] = {}    # norm last_name → [student_ids]
-    by_full: dict[str, int] = {}          # norm name variant → student_id
+    by_first: dict[str, list[int]] = {}  # norm first_name → [student_ids]
+    by_last: dict[str, list[int]] = {}  # norm last_name → [student_ids]
+    by_full: dict[str, int] = {}  # norm name variant → student_id
 
     for s in students:
         if not s.person:
@@ -73,7 +73,9 @@ async def match_names(
             full_long = short
 
         display = p.full_name()
-        by_id[s.id] = _StudentEntry(student=s, display=display, short=short, norm_short=_norm(short))
+        by_id[s.id] = _StudentEntry(
+            student=s, display=display, short=short, norm_short=_norm(short),
+        )
         by_full[_norm(short)] = s.id
         by_full[_norm(full_long)] = s.id
         # Variantes con apellido primero: "Recalde David", "Recalde Montenegro David Leodan"
@@ -128,7 +130,9 @@ def _match_one(
             if candidate_key in by_full:
                 sid = by_full[candidate_key]
                 display = by_id[sid].display
-                return MatchResult(raw_name=raw, status=status, matched_id=sid, matched_name=display)
+                return MatchResult(
+                    raw_name=raw, status=status, matched_id=sid, matched_name=display,
+                )
 
     # Try first name only (exact)
     norm_first = _norm(parts[0])
@@ -136,10 +140,14 @@ def _match_one(
 
     if len(ids) == 1:
         sid = ids[0]
-        return MatchResult(raw_name=raw, status=status, matched_id=sid, matched_name=by_id[sid].display)
+        return MatchResult(
+            raw_name=raw, status=status, matched_id=sid, matched_name=by_id[sid].display,
+        )
 
     if len(ids) > 1:
-        candidates = [{"id": sid, "name": by_id[sid].display, "short": by_id[sid].short} for sid in ids]
+        candidates = [
+            {"id": sid, "name": by_id[sid].display, "short": by_id[sid].short} for sid in ids
+        ]
         return MatchResult(raw_name=raw, status=status, candidates=candidates)
 
     # Try last name only (exact)
@@ -147,10 +155,14 @@ def _match_one(
 
     if len(ids) == 1:
         sid = ids[0]
-        return MatchResult(raw_name=raw, status=status, matched_id=sid, matched_name=by_id[sid].display)
+        return MatchResult(
+            raw_name=raw, status=status, matched_id=sid, matched_name=by_id[sid].display,
+        )
 
     if len(ids) > 1:
-        candidates = [{"id": sid, "name": by_id[sid].display, "short": by_id[sid].short} for sid in ids]
+        candidates = [
+            {"id": sid, "name": by_id[sid].display, "short": by_id[sid].short} for sid in ids
+        ]
         return MatchResult(raw_name=raw, status=status, candidates=candidates)
 
     # Fuzzy match — compare against pre-normalized short name (first + last)
@@ -159,7 +171,10 @@ def _match_one(
     fuzzy_hits: list[tuple[float, int]] = []
     for sid, entry in by_id.items():
         sm = SequenceMatcher(None, norm_raw, entry.norm_short)
-        if sm.real_quick_ratio() >= SIMILARITY_THRESHOLD and sm.quick_ratio() >= SIMILARITY_THRESHOLD:
+        if (
+            sm.real_quick_ratio() >= SIMILARITY_THRESHOLD
+            and sm.quick_ratio() >= SIMILARITY_THRESHOLD
+        ):
             score = sm.ratio()
             if score >= SIMILARITY_THRESHOLD:
                 fuzzy_hits.append((score, sid))
@@ -168,10 +183,15 @@ def _match_one(
 
     if len(fuzzy_hits) == 1:
         sid = fuzzy_hits[0][1]
-        return MatchResult(raw_name=raw, status=status, matched_id=sid, matched_name=by_id[sid].display)
+        return MatchResult(
+            raw_name=raw, status=status, matched_id=sid, matched_name=by_id[sid].display,
+        )
 
     if len(fuzzy_hits) > 1:
-        candidates = [{"id": sid, "name": by_id[sid].display, "short": by_id[sid].short} for _, sid in fuzzy_hits]
+        candidates = [
+            {"id": sid, "name": by_id[sid].display, "short": by_id[sid].short}
+            for _, sid in fuzzy_hits
+        ]
         return MatchResult(raw_name=raw, status=status, candidates=candidates)
 
     return MatchResult(raw_name=raw, status=status)

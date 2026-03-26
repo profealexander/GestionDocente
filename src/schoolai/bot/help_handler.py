@@ -4,10 +4,12 @@ from telegram import InlineKeyboardButton, InlineKeyboardMarkup, Update
 from telegram.constants import ParseMode
 from telegram.ext import ContextTypes
 
+from schoolai.bot.callback_router import callback_router
+
 SKILLS = [
-    ("📋 Registrar tarea",   "help:homework"),
-    ("👥 Pasar asistencia",  "help:attendance"),
-    ("🔍 Consultar datos",   "help:query"),
+    ("📋 Registrar tarea", "help:homework"),
+    ("👥 Pasar asistencia", "help:attendance"),
+    ("🔍 Consultar datos", "help:query"),
     ("👤 Registrar personas", "help:db"),
 ]
 
@@ -68,6 +70,17 @@ async def handle_help_command(update: Update, context: ContextTypes.DEFAULT_TYPE
     )
 
 
+@callback_router.register("help:back")
+async def handle_help_back(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    query = update.callback_query
+    await query.answer()
+    await query.edit_message_text(
+        "¿En qué puedo ayudarte?",
+        reply_markup=_skills_keyboard(),
+    )
+
+
+@callback_router.register("help:")
 async def handle_help_callback(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     query = update.callback_query
     await query.answer()
@@ -77,16 +90,7 @@ async def handle_help_callback(update: Update, context: ContextTypes.DEFAULT_TYP
     await query.edit_message_text(
         text,
         parse_mode=ParseMode.MARKDOWN,
-        reply_markup=InlineKeyboardMarkup([
-            [InlineKeyboardButton("« Volver", callback_data="help:back")]
-        ]),
-    )
-
-
-async def handle_help_back(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
-    query = update.callback_query
-    await query.answer()
-    await query.edit_message_text(
-        "¿En qué puedo ayudarte?",
-        reply_markup=_skills_keyboard(),
+        reply_markup=InlineKeyboardMarkup(
+            [[InlineKeyboardButton("« Volver", callback_data="help:back")]],
+        ),
     )

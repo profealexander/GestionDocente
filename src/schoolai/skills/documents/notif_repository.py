@@ -1,8 +1,10 @@
 """Lógica de numeración y persistencia de notificaciones."""
+
 from __future__ import annotations
 
 from datetime import date
-from sqlalchemy import select, func
+
+from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from schoolai.db.models.notification import Notification
@@ -13,7 +15,7 @@ from schoolai.db.models.teacher import Teacher
 
 def _iniciales(first_name: str, last_name: str) -> str:
     f = (first_name[0] if first_name else "X").upper()
-    ln = (last_name[0] if last_name  else "X").upper()
+    ln = (last_name[0] if last_name else "X").upper()
     return f + ln
 
 
@@ -51,20 +53,28 @@ async def register_notification(
     anio = date.today().year
 
     # Bloqueo optimista: leer conteos dentro de la transacción activa
-    teacher_seq: int = (await session.execute(
-        select(func.count()).select_from(Notification).where(
-            Notification.teacher_id == teacher_id,
-            Notification.anio == anio,
+    teacher_seq: int = (
+        await session.execute(
+            select(func.count())
+            .select_from(Notification)
+            .where(
+                Notification.teacher_id == teacher_id,
+                Notification.anio == anio,
+            ),
         )
-    )).scalar() + 1
+    ).scalar() + 1
 
-    student_seq: int = (await session.execute(
-        select(func.count()).select_from(Notification).where(
-            Notification.teacher_id == teacher_id,
-            Notification.student_id == student_id,
-            Notification.anio == anio,
+    student_seq: int = (
+        await session.execute(
+            select(func.count())
+            .select_from(Notification)
+            .where(
+                Notification.teacher_id == teacher_id,
+                Notification.student_id == student_id,
+                Notification.anio == anio,
+            ),
         )
-    )).scalar() + 1
+    ).scalar() + 1
 
     teacher_ini = await _get_teacher_iniciales(teacher_id, session)
     student_ini = await _get_student_iniciales(student_id, session)
@@ -72,7 +82,9 @@ async def register_notification(
     # NOT-2026-EE-007-CE-03-160326
     fecha = date.today()
     fecha_str = f"{fecha.day:02d}{fecha.month:02d}{str(fecha.year)[2:]}"
-    num_doc = f"NOT-{anio}-{teacher_ini}-{teacher_seq:03d}-{student_ini}-{student_seq:02d}-{fecha_str}"
+    num_doc = (
+        f"NOT-{anio}-{teacher_ini}-{teacher_seq:03d}-{student_ini}-{student_seq:02d}-{fecha_str}"
+    )
 
     notif = Notification(
         teacher_id=teacher_id,

@@ -1,7 +1,10 @@
 """Modelo para seguimiento de cumplimiento de tareas."""
+
 from datetime import datetime
+
 from sqlalchemy import DateTime, ForeignKey, Integer, String, func
 from sqlalchemy.orm import Mapped, mapped_column, relationship
+
 from schoolai.db.connection import Base
 
 

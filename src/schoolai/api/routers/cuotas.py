@@ -27,6 +27,7 @@ router = APIRouter(
 
 # ── Schemas ───────────────────────────────────────────────────────────────────
 
+
 class ActividadCreate(BaseModel):
     nombre: str
     monto: float
@@ -63,7 +64,7 @@ class PagoOut(BaseModel):
 class ParticipanteOut(BaseModel):
     id: int
     student_id: int
-    student_name: str       # apellidos + nombres
+    student_name: str  # apellidos + nombres
     total_pagado: float
     is_complete: bool
     pagos: list[PagoOut]
@@ -105,8 +106,9 @@ class PagoOut2(BaseModel):
 
 # ── Helpers ───────────────────────────────────────────────────────────────────
 
+
 def _student_display(student) -> str:
-    last  = getattr(student, "last_name",  "") or ""
+    last = getattr(student, "last_name", "") or ""
     first = getattr(student, "first_name", "") or ""
     return f"{last.title()} {first.title()}".strip()
 
@@ -131,8 +133,8 @@ def _to_participante(p) -> ParticipanteOut:
 
 
 def _to_detalle(actividad, participantes) -> ActividadDetalle:
-    recaudado  = sum(float(p.total_pagado or 0) for p in participantes)
-    completos  = sum(1 for p in participantes if p.is_complete)
+    recaudado = sum(float(p.total_pagado or 0) for p in participantes)
+    completos = sum(1 for p in participantes if p.is_complete)
     pendientes = len(participantes) - completos
     return ActividadDetalle(
         id=actividad.id,
@@ -150,6 +152,7 @@ def _to_detalle(actividad, participantes) -> ActividadDetalle:
 
 # ── Endpoints ─────────────────────────────────────────────────────────────────
 
+
 @router.get(
     "/",
     response_model=list[ActividadOut],
@@ -164,8 +167,12 @@ async def list_actividades(
     actividades = await get_actividades(session, teacher_id=teacher_id, only_active=only_active)
     return [
         ActividadOut(
-            id=a.id, nombre=a.nombre, monto=float(a.monto),
-            descripcion=a.descripcion, is_active=a.is_active, created_at=a.created_at,
+            id=a.id,
+            nombre=a.nombre,
+            monto=float(a.monto),
+            descripcion=a.descripcion,
+            is_active=a.is_active,
+            created_at=a.created_at,
         )
         for a in actividades
     ]
@@ -191,8 +198,11 @@ async def create_actividad_endpoint(
         descripcion=body.descripcion,
     )
     return ActividadOut(
-        id=actividad.id, nombre=actividad.nombre, monto=float(actividad.monto),
-        descripcion=actividad.descripcion, is_active=actividad.is_active,
+        id=actividad.id,
+        nombre=actividad.nombre,
+        monto=float(actividad.monto),
+        descripcion=actividad.descripcion,
+        is_active=actividad.is_active,
         created_at=actividad.created_at,
     )
 
@@ -222,7 +232,9 @@ async def add_grade_participantes(
     body: AddParticipantesBody,
     session: AsyncSession = Depends(get_session),
 ):
-    actividad = await session.get(__import__("schoolai.db.models.cuota", fromlist=["Actividad"]).Actividad, actividad_id)
+    actividad = await session.get(
+        __import__("schoolai.db.models.cuota", fromlist=["Actividad"]).Actividad, actividad_id,
+    )
     if not actividad:
         raise HTTPException(status_code=404, detail="Actividad no encontrada")
 
@@ -246,6 +258,7 @@ async def create_pago(
     session: AsyncSession = Depends(get_session),
 ):
     from schoolai.db.models.cuota import Actividad
+
     actividad = await session.get(Actividad, actividad_id)
     if not actividad:
         raise HTTPException(status_code=404, detail="Actividad no encontrada")
@@ -274,7 +287,7 @@ async def create_pago(
         200: {
             "content": {"application/vnd.openxmlformats-officedocument.spreadsheetml.sheet": {}},
             "description": "Archivo Excel con el estado de pagos",
-        }
+        },
     },
 )
 async def export_actividad(

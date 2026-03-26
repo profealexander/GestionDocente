@@ -6,11 +6,12 @@ Flow:
 """
 
 from loguru import logger
-from sqlalchemy import select, func, or_
+from sqlalchemy import func, or_, select
 from telegram import InlineKeyboardButton, InlineKeyboardMarkup, Update
 from telegram.constants import ParseMode
 from telegram.ext import ContextTypes
 
+from schoolai.bot.callback_router import callback_router
 from schoolai.bot.state import DbFlow, clear_db_flow, get_db_flow, set_db_flow
 from schoolai.db.connection import async_session
 from schoolai.db.models.grade import Grade
@@ -39,6 +40,7 @@ SECTIONS = ["A", "B", "C", "D", "E"]
 
 # ── Entry point: /db command ──────────────────────────────────────────────────
 
+
 async def handle_db_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     clear_db_flow(update.effective_user.id)
     await update.message.reply_text(
@@ -49,6 +51,8 @@ async def handle_db_command(update: Update, context: ContextTypes.DEFAULT_TYPE) 
 
 # ── Callback query dispatcher ─────────────────────────────────────────────────
 
+
+@callback_router.register("db_")
 async def handle_db_callback(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     query = update.callback_query
     await query.answer()
@@ -58,12 +62,14 @@ async def handle_db_callback(update: Update, context: ContextTypes.DEFAULT_TYPE)
 
     if data == "db_role:horario":
         from schoolai.bot.schedule_handler import start_schedule_flow
+
         await query.edit_message_reply_markup(reply_markup=None)
         await start_schedule_flow(update, context)
         return
 
     if data == "db_role:cargos":
         from schoolai.bot.position_handler import start_position_flow
+
         await query.edit_message_reply_markup(reply_markup=None)
         await start_position_flow(update, context)
         return
@@ -95,6 +101,7 @@ async def handle_db_callback(update: Update, context: ContextTypes.DEFAULT_TYPE)
 
 
 # ── Step handlers ─────────────────────────────────────────────────────────────
+
 
 async def _on_role(query, user_id: int, role: str) -> None:
     set_db_flow(user_id, DbFlow(step="await_list", role=role))
@@ -178,6 +185,7 @@ async def _on_confirm(query, user_id: int) -> None:
 
 # ── Text message while DB flow is active ─────────────────────────────────────
 
+
 async def handle_db_text(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     user_id = update.effective_user.id
     flow = get_db_flow(user_id)
@@ -195,7 +203,7 @@ async def handle_db_text(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
     parsed = parse_list(update.message.text)
     if not parsed:
         await update.message.reply_text(
-            "No encontré ningún nombre en el mensaje. Envía un nombre por línea."
+            "No encontré ningún nombre en el mensaje. Envía un nombre por línea.",
         )
         return
 
@@ -205,7 +213,9 @@ async def handle_db_text(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
         flow.step = "await_grade"
         set_db_flow(user_id, flow)
         async with async_session() as session:
-            grades = (await session.execute(select(Grade).order_by(Grade.sort_order))).scalars().all()
+            grades = (
+                (await session.execute(select(Grade).order_by(Grade.sort_order))).scalars().all()
+            )
         await update.message.reply_text(
             f"Encontré *{len(parsed)} nombres*.\n\n¿A qué curso pertenecen?",
             parse_mode=ParseMode.MARKDOWN,
@@ -220,6 +230,7 @@ async def handle_db_text(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
 
 
 # ── Preview ───────────────────────────────────────────────────────────────────
+
 
 async def _dedup_and_preview(reply_fn, user_id: int, flow: DbFlow) -> None:
     """Run deduplication and show preview. reply_fn is an async callable (edit_text or similar)."""
@@ -239,7 +250,7 @@ async def _dedup_and_preview(reply_fn, user_id: int, flow: DbFlow) -> None:
     header += f"✅ Nuevas: {new_count}  ⚠️ Revisar: {warn_count}\n\n"
 
     # Split preview into chunks of 30 to avoid Telegram message limit
-    chunks = [preview_lines[i:i+30] for i in range(0, len(preview_lines), 30)]
+    chunks = [preview_lines[i : i + 30] for i in range(0, len(preview_lines), 30)]
     body = "\n".join(chunks[0])
     if len(chunks) > 1:
         body += f"\n_... y {sum(len(c) for c in chunks[1:])} más_"
@@ -253,32 +264,35 @@ async def _dedup_and_preview(reply_fn, user_id: int, flow: DbFlow) -> None:
 
 # ── Keyboards ─────────────────────────────────────────────────────────────────
 
+
 def _role_keyboard() -> InlineKeyboardMarkup:
     buttons = [
-        [InlineKeyboardButton(label, callback_data=f"db_role:{value}")]
-        for label, value in ROLES
+        [InlineKeyboardButton(label, callback_data=f"db_role:{value}")] for label, value in ROLES
     ]
-    buttons.append([InlineKeyboardButton("📅 Horario",       callback_data="db_role:horario")])
+    buttons.append([InlineKeyboardButton("📅 Horario", callback_data="db_role:horario")])
     buttons.append([InlineKeyboardButton("📋 Cargos docente", callback_data="db_role:cargos")])
     return InlineKeyboardMarkup(buttons)
 
 
 def _section_keyboard() -> InlineKeyboardMarkup:
-    return InlineKeyboardMarkup([
-        [InlineKeyboardButton(s, callback_data=f"db_section:{s}") for s in SECTIONS]
-    ])
+    return InlineKeyboardMarkup(
+        [[InlineKeyboardButton(s, callback_data=f"db_section:{s}") for s in SECTIONS]],
+    )
 
 
 def _confirm_keyboard() -> InlineKeyboardMarkup:
-    return InlineKeyboardMarkup([
+    return InlineKeyboardMarkup(
         [
-            InlineKeyboardButton("✅ Confirmar", callback_data="db_confirm"),
-            InlineKeyboardButton("❌ Cancelar", callback_data="db_cancel"),
-        ]
-    ])
+            [
+                InlineKeyboardButton("✅ Confirmar", callback_data="db_confirm"),
+                InlineKeyboardButton("❌ Cancelar", callback_data="db_cancel"),
+            ],
+        ],
+    )
 
 
 # ── Vinculación representante ↔ estudiante ────────────────────────────────────
+
 
 async def _on_link_student_search(update: Update, user_id: int, flow: DbFlow) -> None:
     """Busca el estudiante por nombre y muestra opciones para vincular."""
@@ -287,22 +301,31 @@ async def _on_link_student_search(update: Update, user_id: int, flow: DbFlow) ->
 
     async with async_session() as session:
         full_name = func.lower(Person.first_name + " " + Person.last_name)
-        students = (await session.execute(
-            select(Student)
-            .join(Student.person)
-            .where(
-                Student.status == "active",
-                or_(
-                    full_name.contains(norm),
-                    func.lower(Person.last_name + " " + Person.first_name).contains(norm),
-                ),
+        students = (
+            (
+                await session.execute(
+                    select(Student)
+                    .join(Student.person)
+                    .where(
+                        Student.status == "active",
+                        or_(
+                            full_name.contains(norm),
+                            func.lower(Person.last_name + " " + Person.first_name).contains(norm),
+                        ),
+                    ),
+                )
             )
-        )).unique().scalars().all()
+            .unique()
+            .scalars()
+            .all()
+        )
 
     # Final Python-side filter for normalized accents / special chars
     matches = [
-        s for s in students
-        if s.person and (
+        s
+        for s in students
+        if s.person
+        and (
             norm in normalize(f"{s.person.first_name} {s.person.last_name}")
             or normalize(f"{s.person.first_name} {s.person.last_name}") in norm
         )
@@ -318,15 +341,17 @@ async def _on_link_student_search(update: Update, user_id: int, flow: DbFlow) ->
 
     if len(matches) > 8:
         await update.message.reply_text(
-            f"Encontré {len(matches)} coincidencias, sé más específico."
+            f"Encontré {len(matches)} coincidencias, sé más específico.",
         )
         return
 
     buttons = [
-        [InlineKeyboardButton(
-            f"{s.person.first_name} {s.person.last_name} — {s.grade.name}",
-            callback_data=f"db_link:{s.id}",
-        )]
+        [
+            InlineKeyboardButton(
+                f"{s.person.first_name} {s.person.last_name} — {s.grade.name}",
+                callback_data=f"db_link:{s.id}",
+            ),
+        ]
         for s in matches
     ]
     buttons.append([InlineKeyboardButton("❌ Saltar", callback_data="db_link:skip")])
@@ -354,7 +379,11 @@ async def _on_link_confirm(query, user_id: int, student_id: int) -> None:
             make_primary=True,
         )
         student = await session.get(Student, student_id)
-        name = f"{student.person.first_name} {student.person.last_name}" if student and student.person else str(student_id)
+        name = (
+            f"{student.person.first_name} {student.person.last_name}"
+            if student and student.person
+            else str(student_id)
+        )
 
     clear_db_flow(user_id)
     await query.edit_message_text(

@@ -18,23 +18,27 @@ class Settings(BaseSettings):
     def fix_database_url(cls, v: str) -> str:
         """Railway provee postgres:// — asyncpg requiere postgresql+asyncpg://"""
         if v.startswith("postgres://"):
-            v = "postgresql+asyncpg://" + v[len("postgres://"):]
+            v = "postgresql+asyncpg://" + v[len("postgres://") :]
         elif v.startswith("postgresql://"):
-            v = "postgresql+asyncpg://" + v[len("postgresql://"):]
+            v = "postgresql+asyncpg://" + v[len("postgresql://") :]
         return v
 
     # Telegram
     telegram_bot_token: str
-    telegram_bot_token_dev: str = ""  # segundo token para pruebas (Modo Jornada dev)
-    telegram_allowed_users: str = ""  # comma-separated user IDs
+    telegram_bot_token_jornada: str = ""  # segundo token — Modo Jornada
+    telegram_bot_token_agente: str = "" # tercer token — Bot Agente (GLM directo)
+    telegram_allowed_users: str = ""    # comma-separated user IDs
 
     # ── LLM model per skill (format: "provider/model") ────────────────────────
-    llm_extractor: str = "groq/llama-3.1-8b-instant"   # extractor JSON — rápido
-    llm_chat:      str = "groq/llama-3.3-70b-versatile" # asistente IA
-    llm_router:    str = "groq/llama-3.1-8b-instant"   # clasificador de mensajes
+    llm_extractor: str = "groq/llama-3.1-8b-instant"  # extractor JSON — rápido
+    llm_chat: str = "groq/llama-3.3-70b-versatile"  # asistente IA
+    llm_router: str = "groq/llama-3.1-8b-instant"  # clasificador de mensajes
+    llm_orchestrator: str = "zai/glm-4.7-flash"  # orquestador multi-tool (GLM-4.7-Flash)
 
     # ── API keys ───────────────────────────────────────────────────────────────
-    groq_api_key: str = ""  # Groq — transcripción Whisper + LLM extractor/chat
+    groq_api_key: str = ""  # Groq — transcripción Whisper + LLM extractor/chat (otras skills)
+    zhipu_api_key: str = ""  # ZhipuAI China endpoint (legacy)
+    zai_api_key: str = ""  # Z.AI global endpoint — GLM-4.7-Flash orquestador
 
     # FastAPI
     api_host: str = "0.0.0.0"  # nosec B104 — intencional, uvicorn escucha en todas las interfaces
@@ -43,29 +47,34 @@ class Settings(BaseSettings):
 
     @property
     def effective_api_port(self) -> int:
-        return self.port if self.port else self.api_port
+        return self.port or self.api_port
+
     debug: bool = False
 
     # Redis (opcional — si no se configura, el estado vive sólo en RAM)
-    redis_url: str = ""   # e.g. "redis://localhost:6379/0"
+    redis_url: str = ""  # e.g. "redis://localhost:6379/0"
 
     # JWT / API auth
-    jwt_secret_key: str = ""    # REQUIRED en producción — clave para firmar tokens
+    jwt_secret_key: str = ""  # REQUIRED en producción — clave para firmar tokens
     jwt_expire_hours: int = 24  # tiempo de vida del token
-    api_secret: str = ""        # clave compartida que el cliente usa para obtener un JWT
+    api_secret: str = ""  # clave compartida que el cliente usa para obtener un JWT
 
     # WhatsApp — Green API
-    green_api_instance: str = ""   # idInstance, e.g. "1101234567"
-    green_api_token:    str = ""   # apiTokenInstance
+    green_api_instance: str = ""  # idInstance, e.g. "1101234567"
+    green_api_token: str = ""  # apiTokenInstance
 
     # Logging
     log_dir: str = "logs"
     admin_telegram_id: int | None = None
+
+    # Autonomía: si True, el bot pide confirmación antes de toda escritura en DB
+    supervised_mode: bool = False
 
     @property
     def allowed_user_ids(self) -> list[int]:
         if not self.telegram_allowed_users:
             return []
         return [int(uid.strip()) for uid in self.telegram_allowed_users.split(",") if uid.strip()]
+
 
 settings = Settings()

@@ -26,7 +26,7 @@ class BaseSkill(ABC):
     """
 
     intent: str
-    priority: int = 50   # orden de registro — menor número = mayor prioridad
+    priority: int = 50  # orden de registro — menor número = mayor prioridad
     keywords: frozenset[str] = frozenset()
     patterns: list[re.Pattern] = []
 

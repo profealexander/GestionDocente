@@ -1,4 +1,5 @@
 """Keyboards de Telegram reutilizables."""
+
 from telegram import InlineKeyboardButton, InlineKeyboardMarkup
 
 

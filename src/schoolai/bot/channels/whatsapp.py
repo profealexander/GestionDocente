@@ -29,14 +29,14 @@ from schoolai.skills.whatsapp.sender import send_whatsapp, send_whatsapp_pdf
 # ── Conversión de formato HTML → WhatsApp markdown ────────────────────────────
 
 _CONVERSIONS: list[tuple[re.Pattern, str]] = [
-    (re.compile(r"<b>(.*?)</b>",   re.DOTALL), r"*\1*"),
+    (re.compile(r"<b>(.*?)</b>", re.DOTALL), r"*\1*"),
     (re.compile(r"<strong>(.*?)</strong>", re.DOTALL), r"*\1*"),
-    (re.compile(r"<i>(.*?)</i>",   re.DOTALL), r"_\1_"),
+    (re.compile(r"<i>(.*?)</i>", re.DOTALL), r"_\1_"),
     (re.compile(r"<em>(.*?)</em>", re.DOTALL), r"_\1_"),
     (re.compile(r"<code>(.*?)</code>", re.DOTALL), r"`\1`"),
-    (re.compile(r"<pre>(.*?)</pre>",   re.DOTALL), r"```\1```"),
-    (re.compile(r"<br\s*/?>"),     "\n"),
-    (re.compile(r"<[^>]+>"),       ""),   # elimina cualquier otra etiqueta
+    (re.compile(r"<pre>(.*?)</pre>", re.DOTALL), r"```\1```"),
+    (re.compile(r"<br\s*/?>"), "\n"),
+    (re.compile(r"<[^>]+>"), ""),  # elimina cualquier otra etiqueta
 ]
 
 
@@ -62,6 +62,7 @@ def _keyboard_to_text(markup) -> str:
 
 
 # ── Adapter: duck-typea telegram.Message ──────────────────────────────────────
+
 
 class _WhatsAppMessage:
     """Duck-typea telegram.Message para que skills existentes funcionen sin cambios."""
@@ -129,6 +130,7 @@ class WhatsAppUpdate:
 
 
 # ── Canal WhatsApp (BaseChannel) ──────────────────────────────────────────────
+
 
 class WhatsAppChannel(BaseChannel):
     """Canal WhatsApp usando Green API."""

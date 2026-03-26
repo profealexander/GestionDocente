@@ -30,6 +30,7 @@ class TelegramChannel(BaseChannel):
         caption: str = "",
     ) -> None:
         from io import BytesIO
+
         await self._bot.send_document(
             chat_id=chat_id,
             document=BytesIO(data),

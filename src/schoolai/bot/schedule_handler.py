@@ -15,6 +15,14 @@ from telegram import InlineKeyboardButton, InlineKeyboardMarkup, Update
 from telegram.constants import ParseMode
 from telegram.ext import ContextTypes
 
+from schoolai.bot.callback_router import callback_router
+from schoolai.bot.state import (
+    DAY_NAMES,
+    ScheduleFlow,
+    clear_schedule_flow,
+    get_schedule_flow,
+    set_schedule_flow,
+)
 from schoolai.db.connection import async_session
 from schoolai.skills.db.schedule_parser import parse_schedule_text
 from schoolai.skills.db.schedule_service import (
@@ -23,18 +31,11 @@ from schoolai.skills.db.schedule_service import (
     get_teacher_by_telegram,
     save_schedule_periods,
 )
-from schoolai.skills.utils.courses import course_abbrev_map
 from schoolai.skills.homework.repository import find_subject
-from schoolai.bot.state import (
-    DAY_NAMES,
-    ScheduleFlow,
-    clear_schedule_flow,
-    get_schedule_flow,
-    set_schedule_flow,
-)
-
+from schoolai.skills.utils.courses import course_abbrev_map
 
 # ── Entry point (called from db_handler) ──────────────────────────────────────
+
 
 async def start_schedule_flow(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     user_id = update.effective_user.id
@@ -59,7 +60,7 @@ async def start_schedule_flow(update: Update, context: ContextTypes.DEFAULT_TYPE
 
         if not docentes:
             await update.effective_message.reply_text(
-                "No hay docentes registrados. Primero regístralos con /db → Docente."
+                "No hay docentes registrados. Primero regístralos con /db → Docente.",
             )
             return
 
@@ -67,10 +68,12 @@ async def start_schedule_flow(update: Update, context: ContextTypes.DEFAULT_TYPE
         set_schedule_flow(user_id, flow)
 
         buttons = [
-            [InlineKeyboardButton(
-                f"{p.last_name} {p.first_name}",
-                callback_data=f"sch_teacher:{p.id}",
-            )]
+            [
+                InlineKeyboardButton(
+                    f"{p.last_name} {p.first_name}",
+                    callback_data=f"sch_teacher:{p.id}",
+                ),
+            ]
             for p in docentes
         ]
         await update.effective_message.reply_text(
@@ -82,6 +85,8 @@ async def start_schedule_flow(update: Update, context: ContextTypes.DEFAULT_TYPE
 
 # ── Callback dispatcher ───────────────────────────────────────────────────────
 
+
+@callback_router.register("sch_")
 async def handle_schedule_callback(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     query = update.callback_query
     await query.answer()
@@ -100,6 +105,7 @@ async def handle_schedule_callback(update: Update, context: ContextTypes.DEFAULT
 
 
 # ── Step handlers ─────────────────────────────────────────────────────────────
+
 
 async def _on_teacher(query, user_id: int, person_id: int) -> None:
     telegram_id = user_id
@@ -148,8 +154,7 @@ async def handle_schedule_text(update: Update, context: ContextTypes.DEFAULT_TYP
 
     if not parse_result.periods:
         await update.message.reply_text(
-            "No pude interpretar ningún período. Usa el formato:\n"
-            "`07:00-08:30 3BT Matemáticas`",
+            "No pude interpretar ningún período. Usa el formato:\n`07:00-08:30 3BT Matemáticas`",
             parse_mode=ParseMode.MARKDOWN,
         )
         return True
@@ -160,33 +165,40 @@ async def handle_schedule_text(update: Update, context: ContextTypes.DEFAULT_TYP
 
     async with async_session() as session:
         # Batch: buscar todas las materias en paralelo
-        subjects = await asyncio.gather(*[
-            find_subject(session, p.subject_raw) for p in parse_result.periods
-        ])
+        subjects = await asyncio.gather(
+            *[find_subject(session, p.subject_raw) for p in parse_result.periods],
+        )
 
         for i, (p, subject) in enumerate(zip(parse_result.periods, subjects), 1):
             grade_id = course_abbrev_map.get(p.course_abbrev)
             if not grade_id:
-                unresolved.append(f"{p.start_time}-{p.end_time} {p.course_abbrev} (curso no encontrado)")
+                unresolved.append(
+                    f"{p.start_time}-{p.end_time} {p.course_abbrev} (curso no encontrado)",
+                )
                 continue
 
             if not subject:
-                unresolved.append(f"{p.start_time}-{p.end_time} {p.course_abbrev} {p.subject_raw} (materia no encontrada)")
+                unresolved.append(
+                    f"{p.start_time}-{p.end_time} {p.course_abbrev} "
+                    f"{p.subject_raw} (materia no encontrada)",
+                )
                 continue
 
-            resolved.append({
-                "period_num":  i,
-                "start_time":  p.start_time,
-                "end_time":    p.end_time,
-                "grade_id":    grade_id,
-                "grade_name":  p.course_abbrev.upper(),
-                "subject_id":  subject.id,
-                "subject_name": subject.name,
-            })
+            resolved.append(
+                {
+                    "period_num": i,
+                    "start_time": p.start_time,
+                    "end_time": p.end_time,
+                    "grade_id": grade_id,
+                    "grade_name": p.course_abbrev.upper(),
+                    "subject_id": subject.id,
+                    "subject_name": subject.name,
+                },
+            )
 
     if not resolved:
         await update.message.reply_text(
-            "No pude resolver ningún período. Verifica los cursos y materias."
+            "No pude resolver ningún período. Verifica los cursos y materias.",
         )
         return True
 
@@ -197,8 +209,10 @@ async def handle_schedule_text(update: Update, context: ContextTypes.DEFAULT_TYP
 
     day_name = DAY_NAMES[flow.day_of_week]
     lines = [f"📅 *Vista previa — {day_name}*\n"]
-    for p in resolved:
-        lines.append(f"  {p['start_time']}–{p['end_time']}  {p['grade_name']}  {p['subject_name']}")
+    lines.extend(
+        f"  {p['start_time']}–{p['end_time']}  {p['grade_name']}  {p['subject_name']}"
+        for p in resolved
+    )
 
     if unresolved:
         lines.append("\n⚠️ *No reconocidos:*")
@@ -240,12 +254,18 @@ async def _on_confirm(query, user_id: int) -> None:
 
 # ── Keyboards (cacheados — son estáticos) ─────────────────────────────────────
 
-_DAY_KEYBOARD = InlineKeyboardMarkup([
-    [InlineKeyboardButton(name, callback_data=f"sch_day:{i}")]
-    for i, name in enumerate(DAY_NAMES)
-])
+_DAY_KEYBOARD = InlineKeyboardMarkup(
+    [
+        [InlineKeyboardButton(name, callback_data=f"sch_day:{i}")]
+        for i, name in enumerate(DAY_NAMES)
+    ],
+)
 
-_CONFIRM_KEYBOARD = InlineKeyboardMarkup([[
-    InlineKeyboardButton("✅ Confirmar", callback_data="sch_confirm"),
-    InlineKeyboardButton("❌ Cancelar",  callback_data="sch_cancel"),
-]])
+_CONFIRM_KEYBOARD = InlineKeyboardMarkup(
+    [
+        [
+            InlineKeyboardButton("✅ Confirmar", callback_data="sch_confirm"),
+            InlineKeyboardButton("❌ Cancelar", callback_data="sch_cancel"),
+        ],
+    ],
+)

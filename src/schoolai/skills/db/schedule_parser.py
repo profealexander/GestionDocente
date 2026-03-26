@@ -9,26 +9,47 @@ Expected format (one period per line):
 import re
 from dataclasses import dataclass
 
-
 # Maps course abbreviations/aliases → canonical abbrev used in course_abbrev_map
 _COURSE_ALIASES: dict[str, str] = {
     # bachillerato
-    "1bt": "1bt", "1bachi": "1bt", "primero bt": "1bt", "1°bt": "1bt",
-    "2bt": "2bt", "2bachi": "2bt", "segundo bt": "2bt", "2°bt": "2bt",
-    "3bt": "3bt", "3bachi": "3bt", "tercero bt": "3bt", "3°bt": "3bt",
+    "1bt": "1bt",
+    "1bachi": "1bt",
+    "primero bt": "1bt",
+    "1°bt": "1bt",
+    "2bt": "2bt",
+    "2bachi": "2bt",
+    "segundo bt": "2bt",
+    "2°bt": "2bt",
+    "3bt": "3bt",
+    "3bachi": "3bt",
+    "tercero bt": "3bt",
+    "3°bt": "3bt",
     # egb
-    "2egb": "2egb", "segundo egb": "2egb", "2°egb": "2egb",
-    "3egb": "3egb", "tercero egb": "3egb",
-    "4egb": "4egb", "cuarto egb": "4egb",
-    "5egb": "5egb", "quinto egb": "5egb",
-    "6egb": "6egb", "sexto egb": "6egb",
-    "7egb": "7egb", "septimo egb": "7egb",
-    "8egb": "8egb", "octavo egb": "8egb",
-    "9egb": "9egb", "noveno egb": "9egb",
-    "10egb": "10egb", "decimo egb": "10egb",
-    "prep": "prep", "preparatoria": "prep",
-    "i1": "i1", "inicial 1": "i1",
-    "i2": "i2", "inicial 2": "i2",
+    "2egb": "2egb",
+    "segundo egb": "2egb",
+    "2°egb": "2egb",
+    "3egb": "3egb",
+    "tercero egb": "3egb",
+    "4egb": "4egb",
+    "cuarto egb": "4egb",
+    "5egb": "5egb",
+    "quinto egb": "5egb",
+    "6egb": "6egb",
+    "sexto egb": "6egb",
+    "7egb": "7egb",
+    "septimo egb": "7egb",
+    "8egb": "8egb",
+    "octavo egb": "8egb",
+    "9egb": "9egb",
+    "noveno egb": "9egb",
+    "10egb": "10egb",
+    "decimo egb": "10egb",
+    "prep": "prep",
+    "preparatoria": "prep",
+    "i1": "i1",
+    "inicial 1": "i1",
+    "i2": "i2",
+    "inicial 2": "i2",
 }
 
 _TIME_RE = re.compile(r"^(\d{1,2}:\d{2})-(\d{1,2}:\d{2})\s+(.+)$")
@@ -42,8 +63,8 @@ _COURSE_RE = re.compile(
 class ParsedPeriod:
     start_time: str
     end_time: str
-    course_abbrev: str   # e.g. "3bt"
-    subject_raw: str     # e.g. "Matemáticas"
+    course_abbrev: str  # e.g. "3bt"
+    subject_raw: str  # e.g. "Matemáticas"
 
 
 @dataclass
@@ -90,12 +111,14 @@ def parse_schedule_text(text: str) -> ScheduleParseResult:
             errors.append(line)
             continue
 
-        periods.append(ParsedPeriod(
-            start_time=start,
-            end_time=end,
-            course_abbrev=course_abbrev,
-            subject_raw=subject_raw,
-        ))
+        periods.append(
+            ParsedPeriod(
+                start_time=start,
+                end_time=end,
+                course_abbrev=course_abbrev,
+                subject_raw=subject_raw,
+            ),
+        )
 
     return ScheduleParseResult(periods=periods, errors=errors)
 

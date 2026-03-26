@@ -44,22 +44,25 @@ dev = [
 ]
 
 [project.entry-points."schoolai.skills"]
-attendance  = "schoolai.skills.attendance.skill:AttendanceSkill"
-hw_report   = "schoolai.skills.homework.skill:HWReportSkill"
-homework    = "schoolai.skills.homework.skill:HomeworkSkill"
-query       = "schoolai.skills.query.skill:QuerySkill"
-cuotas      = "schoolai.skills.cuotas.skill:CuotaSkill"
-chat        = "schoolai.skills.ia.skill:ChatSkill"
+attendance   = "schoolai.skills.attendance.skill:AttendanceSkill"
+hw_edit      = "schoolai.skills.homework.skill:HWEditSkill"
+hw_report    = "schoolai.skills.homework.skill:HWReportSkill"
+homework     = "schoolai.skills.homework.skill:HomeworkSkill"
+query        = "schoolai.skills.query.skill:QuerySkill"
+cuotas       = "schoolai.skills.cuotas.skill:CuotaSkill"
+orchestrator = "schoolai.skills.orchestrator.skill:OrchestratorSkill"
+chat         = "schoolai.skills.ia.skill:ChatSkill"
 
 [project.entry-points."schoolai.channels"]
 telegram  = "schoolai.bot.channels.telegram:TelegramChannel"
 whatsapp  = "schoolai.bot.channels.whatsapp:WhatsAppChannel"
 
 [project.scripts]
-schoolai-bot     = "schoolai.bot.main:run"
-schoolai-bot-dev = "schoolai.bot.main_dev:run_dev"
-schoolai-dev     = "schoolai.bot.dev:run"
-schoolai-api     = "schoolai.api.runner:run"
+schoolai-bot         = "schoolai.bot.main:run"
+schoolai-bot-jornada = "schoolai.bot.main_dev:run_dev"
+schoolai-bot-agente  = "schoolai.bot.main_agente:run_agente"
+schoolai-dev        = "schoolai.bot.dev:run"
+schoolai-api        = "schoolai.api.runner:run"
 
 [build-system]
 requires = ["hatchling"]
