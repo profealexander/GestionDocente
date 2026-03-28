@@ -63,6 +63,9 @@ _PATTERNS: dict[str, list[str]] = {
         r"\btotal\s+de\s+(estudiantes?|alumnos?|cursos?)\b",# total de estudiantes
         r"\breporte\s+(general|estadístic|completo|total)", # reporte general/estadístico
     ],
+    # Nota: mis_cursos / mi_horario NO necesitan patrón aquí —
+    # si no hay match → _FlatAgent, que ya tiene esas tools.
+    # Se dejan sin dominio para evitar conflicto con multi-intent paralelo.
 }
 
 # Compilación única al importar — búsqueda O(n·k) sin overhead de compilación

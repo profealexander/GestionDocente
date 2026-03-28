@@ -227,12 +227,19 @@ class SkillAgentBase:
                 }
             )
 
-    async def run(self, text: str, prior_messages: list[dict] | None = None) -> str:
+    async def run(
+        self,
+        text: str,
+        prior_messages: list[dict] | None = None,
+        teacher_id: int | None = None,
+    ) -> str:
         """Ejecuta el loop ReAct y retorna la respuesta final.
 
         Args:
             text:           mensaje del docente (ya envuelto con anti-injection si aplica)
             prior_messages: historial previo de la sesión (pares user/assistant planos)
+            teacher_id:     Telegram ID del docente — inyectado en el system prompt para
+                            que el LLM lo pase a las tools mis_cursos / mi_horario.
 
         Returns:
             Texto final para enviar al usuario (sin HTML interno de tools).
@@ -247,8 +254,16 @@ class SkillAgentBase:
             providers_chain = base_chain
         tool_defs = [t.to_tool_dict() for t in self.tools]
 
+        system_prompt = self.get_system_prompt()
+        if teacher_id:
+            system_prompt += (
+                f"\n\nCurrent teacher Telegram ID: {teacher_id}. "
+                "When calling 'mis_cursos' or 'mi_horario', always pass "
+                f"telegram_id={teacher_id} exactly."
+            )
+
         messages: list[dict] = (
-            [{"role": "system", "content": self.get_system_prompt()}]
+            [{"role": "system", "content": system_prompt}]
             + (prior_messages or [])
             + [{"role": "user", "content": text}]
         )

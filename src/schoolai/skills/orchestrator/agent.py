@@ -105,18 +105,20 @@ async def run(user_id: int, text: str) -> str:
     if len(agents) == 0:
         # Fallback: ningún patrón hizo match → agente plano con todos los tools
         logger.debug(f"[orchestrator] user={user_id} → flat_agent")
-        reply = await _flat_agent.run(safe_text, prior_messages)
+        reply = await _flat_agent.run(safe_text, prior_messages, teacher_id=user_id)
 
     elif len(agents) == 1:
         # Match único → skill agent especializado
         logger.debug(f"[orchestrator] user={user_id} → {agents[0].name}")
-        reply = await agents[0].run(safe_text, prior_messages)
+        reply = await agents[0].run(safe_text, prior_messages, teacher_id=user_id)
 
     else:
         # Multi-intent → ejecución paralela de N skill agents
         names = [a.name for a in agents]
         logger.info(f"[orchestrator] user={user_id} → multi-intent {names}")
-        replies = await asyncio.gather(*[a.run(safe_text, prior_messages) for a in agents])
+        replies = await asyncio.gather(
+            *[a.run(safe_text, prior_messages, teacher_id=user_id) for a in agents]
+        )
         reply = "\n\n".join(r for r in replies if r)
 
     if reply:

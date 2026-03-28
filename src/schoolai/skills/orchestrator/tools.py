@@ -421,6 +421,103 @@ async def _registrar_pago(
     return "\n".join(lines)
 
 
+# ── Contexto del docente ──────────────────────────────────────────────────────
+
+
+async def _mis_cursos(telegram_id: int) -> str:
+    """Devuelve los cursos y materias asignados al docente actual."""
+    from collections import defaultdict
+
+    from sqlalchemy import select
+
+    from schoolai.db.connection import async_session
+    from schoolai.db.models.teacher import Schedule, Teacher
+
+    async with async_session() as session:
+        teacher = (
+            await session.execute(select(Teacher).where(Teacher.telegram_id == telegram_id))
+        ).scalar_one_or_none()
+        if not teacher:
+            return "No se encontró tu perfil de docente en el sistema."
+
+        schedules = (
+            await session.execute(
+                select(Schedule).where(
+                    Schedule.teacher_id == teacher.id,
+                    Schedule.is_active.is_(True),
+                )
+            )
+        ).scalars().all()
+
+    if not schedules:
+        return "No tienes cursos asignados en el horario."
+
+    by_grade: dict[str, set[str]] = defaultdict(set)
+    for s in schedules:
+        by_grade[s.grade.name].add(s.subject.name)
+
+    person = teacher.person
+    name = f"{person.first_name} {person.last_name}"
+    lines = [f"Cursos y materias de {name}:"]
+    for grade in sorted(by_grade):
+        subjects = ", ".join(sorted(by_grade[grade]))
+        lines.append(f"  <b>{grade}</b>: {subjects}")
+    return "\n".join(lines)
+
+
+_DAYS_ES = {
+    "lunes": 0, "martes": 1, "miércoles": 2, "miercoles": 2,
+    "jueves": 3, "viernes": 4,
+    "monday": 0, "tuesday": 1, "wednesday": 2, "thursday": 3, "friday": 4,
+}
+_DAYS_NAME = ["Lunes", "Martes", "Miércoles", "Jueves", "Viernes"]
+
+
+async def _mi_horario(telegram_id: int, dia: str | None = None) -> str:
+    """Devuelve el horario semanal del docente, opcionalmente filtrado por día."""
+    from sqlalchemy import select
+
+    from schoolai.db.connection import async_session
+    from schoolai.db.models.teacher import Schedule, Teacher
+
+    async with async_session() as session:
+        teacher = (
+            await session.execute(select(Teacher).where(Teacher.telegram_id == telegram_id))
+        ).scalar_one_or_none()
+        if not teacher:
+            return "No se encontró tu perfil de docente en el sistema."
+
+        stmt = select(Schedule).where(
+            Schedule.teacher_id == teacher.id,
+            Schedule.is_active.is_(True),
+        ).order_by(Schedule.day_of_week, Schedule.period_num)
+
+        if dia:
+            day_num = _DAYS_ES.get(dia.lower().strip())
+            if day_num is not None:
+                stmt = stmt.where(Schedule.day_of_week == day_num)
+
+        schedules = (await session.execute(stmt)).scalars().all()
+
+    if not schedules:
+        suffix = f" el {dia}" if dia else ""
+        return f"No tienes clases registradas{suffix}."
+
+    from collections import defaultdict
+    by_day: dict[int, list[str]] = defaultdict(list)
+    for s in schedules:
+        by_day[s.day_of_week].append(
+            f"    P{s.period_num} {s.start_time}-{s.end_time}: "
+            f"<b>{s.grade.name}</b> — {s.subject.name}"
+        )
+
+    lines = ["Tu horario:"]
+    for day_num in sorted(by_day):
+        lines.append(f"  <b>{_DAYS_NAME[day_num]}</b>")
+        lines.extend(by_day[day_num])
+    return "\n".join(lines)
+
+
 # ── Python REPL ───────────────────────────────────────────────────────────────
 
 
@@ -644,6 +741,51 @@ TOOLS: list[ToolDef] = [
             "required": ["nombres", "monto", "actividad", "curso"],
         },
         fn=_registrar_pago,
+    ),
+    ToolDef(
+        name="mis_cursos",
+        description=(
+            "Returns the current teacher's assigned courses and subjects. "
+            "Call this when the teacher asks about their own courses, subjects, or grades. "
+            "Pass the teacher's Telegram ID exactly as given in the system prompt."
+        ),
+        parameters={
+            "type": "object",
+            "properties": {
+                "telegram_id": {
+                    "type": "integer",
+                    "description": "The teacher's Telegram ID from the system prompt.",
+                },
+            },
+            "required": ["telegram_id"],
+        },
+        fn=_mis_cursos,
+    ),
+    ToolDef(
+        name="mi_horario",
+        description=(
+            "Returns the current teacher's weekly schedule, optionally filtered by day. "
+            "Call this when the teacher asks about their schedule or timetable. "
+            "Pass the teacher's Telegram ID exactly as given in the system prompt."
+        ),
+        parameters={
+            "type": "object",
+            "properties": {
+                "telegram_id": {
+                    "type": "integer",
+                    "description": "The teacher's Telegram ID from the system prompt.",
+                },
+                "dia": {
+                    "type": "string",
+                    "description": (
+                        "Day filter in Spanish or English: lunes, martes, miércoles, "
+                        "jueves, viernes. Omit for full week."
+                    ),
+                },
+            },
+            "required": ["telegram_id"],
+        },
+        fn=_mi_horario,
     ),
     ToolDef(
         name="python_repl",
