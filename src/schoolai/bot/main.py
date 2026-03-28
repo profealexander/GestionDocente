@@ -20,6 +20,7 @@ from telegram.ext import (
 )
 from telegram.request import HTTPXRequest
 
+import schoolai.skills.attendance.handler_edit  # noqa: F401 — triggers auto-register
 import schoolai.skills.cuotas.handler_edit  # noqa: F401 — triggers auto-register
 import schoolai.skills.homework.handler_edit  # noqa: F401 — triggers auto-register
 from schoolai.bot.action_handler import (
@@ -311,6 +312,9 @@ def _setup_logging() -> None:
 
 def run(dev: bool = False) -> None:
     _setup_logging()
+
+    from schoolai.bot.singleton import singleton_guard
+    singleton_guard("jornada" if dev and settings.telegram_bot_token_jornada else "libre")
 
     if dev and settings.telegram_bot_token_jornada:
         token = settings.telegram_bot_token_jornada

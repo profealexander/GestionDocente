@@ -10,7 +10,7 @@ Uso desde handler.py:
     result = await run_tool("create_actividad", nombre="Paseo", monto=50.0)
 
 Uso desde LLM fallback (Fase 2):
-    groq_tools = [t.to_groq() for t in TOOLS]
+    groq_tools = [t.to_tool_dict() for t in TOOLS]
 """
 
 from __future__ import annotations
@@ -25,11 +25,11 @@ from typing import Any, Callable
 class ToolDef:
     name: str
     description: str
-    parameters: dict[str, Any]  # JSON Schema — listo para Groq
+    parameters: dict[str, Any]  # JSON Schema — OpenAI-compatible tool format
     fn: Callable  # función async Python
 
-    def to_groq(self) -> dict:
-        """Convierte al formato OpenAI/Groq tool definition."""
+    def to_tool_dict(self) -> dict:
+        """Convierte al formato tool definition OpenAI-compatible (Groq, Z.AI, OpenAI, etc.)."""
         return {
             "type": "function",
             "function": {
@@ -134,18 +134,18 @@ async def _export_actividad(actividad_id: int) -> tuple | None:
 TOOLS: list[ToolDef] = [
     ToolDef(
         name="create_actividad",
-        description="Crea una nueva actividad o cuota escolar con nombre y monto.",
+        description="Creates a new school activity or fee (cuota) with a name and amount.",
         parameters={
             "type": "object",
             "properties": {
                 "nombre": {
                     "type": "string",
-                    "description": "Nombre de la actividad, ej: Paseo de Grado",
+                    "description": "Activity name, e.g.: Paseo de Grado",
                 },
-                "monto": {"type": "number", "description": "Monto total en dólares, ej: 50"},
+                "monto": {"type": "number", "description": "Total amount in dollars, e.g.: 50"},
                 "course": {
                     "type": "string",
-                    "description": "Abreviatura del curso, ej: 3bt. Opcional.",
+                    "description": "Course abbreviation to auto-enroll students, e.g.: 3bt. Optional.",
                 },
             },
             "required": ["nombre", "monto"],
@@ -154,7 +154,7 @@ TOOLS: list[ToolDef] = [
     ),
     ToolDef(
         name="list_actividades",
-        description="Lista todas las actividades activas del docente.",
+        description="Lists all active activities for the teacher.",
         parameters={
             "type": "object",
             "properties": {},
@@ -164,13 +164,13 @@ TOOLS: list[ToolDef] = [
     ),
     ToolDef(
         name="get_estado_actividad",
-        description="Consulta el estado de pagos de una actividad por nombre.",
+        description="Queries the payment status of an activity by name.",
         parameters={
             "type": "object",
             "properties": {
                 "nombre": {
                     "type": "string",
-                    "description": "Nombre o parte del nombre de la actividad",
+                    "description": "Full or partial activity name",
                 },
             },
             "required": ["nombre"],
@@ -179,18 +179,18 @@ TOOLS: list[ToolDef] = [
     ),
     ToolDef(
         name="register_pago",
-        description="Registra el pago de uno o varios estudiantes para una actividad.",
+        description="Records a payment from one or more students for an activity.",
         parameters={
             "type": "object",
             "properties": {
                 "nombres": {
                     "type": "array",
                     "items": {"type": "string"},
-                    "description": "Apellidos o nombres de los estudiantes",
+                    "description": "Last names or first names of the students who paid",
                 },
-                "monto": {"type": "number", "description": "Monto pagado en dólares"},
-                "actividad": {"type": "string", "description": "Nombre de la actividad"},
-                "course": {"type": "string", "description": "Abreviatura del curso. Opcional."},
+                "monto": {"type": "number", "description": "Amount paid in dollars"},
+                "actividad": {"type": "string", "description": "Activity name"},
+                "course": {"type": "string", "description": "Course abbreviation. Optional."},
             },
             "required": ["nombres", "monto"],
         },
@@ -198,11 +198,11 @@ TOOLS: list[ToolDef] = [
     ),
     ToolDef(
         name="export_reporte",
-        description="Genera y envía un reporte Excel de pagos de una actividad.",
+        description="Generates and sends an Excel payment report for an activity.",
         parameters={
             "type": "object",
             "properties": {
-                "nombre": {"type": "string", "description": "Nombre de la actividad a exportar"},
+                "nombre": {"type": "string", "description": "Activity name to export"},
             },
             "required": [],
         },
@@ -210,15 +210,12 @@ TOOLS: list[ToolDef] = [
     ),
     ToolDef(
         name="add_students_from_course",
-        description=(
-            "Agrega todos los alumnos activos de un curso "
-            "como participantes de una actividad."
-        ),
+        description="Enrolls all active students from a course as participants in an activity.",
         parameters={
             "type": "object",
             "properties": {
-                "actividad_id": {"type": "integer", "description": "ID de la actividad"},
-                "course": {"type": "string", "description": "Abreviatura del curso, ej: 3bt"},
+                "actividad_id": {"type": "integer", "description": "Activity ID"},
+                "course": {"type": "string", "description": "Course abbreviation, e.g.: 3bt"},
             },
             "required": ["actividad_id", "course"],
         },
@@ -285,8 +282,8 @@ async def llm_fallback(text: str):
         text,
         TOOLS,
         system_prompt=(
-            "Eres asistente escolar. Analiza el mensaje del docente y llama "
-            "la herramienta más apropiada. Solo responde con una tool call."
+            "You are a school assistant. Analyze the teacher's message and call "
+            "the most appropriate tool. Respond only with a tool call."
         ),
     )
     if result is None:

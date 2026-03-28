@@ -152,6 +152,9 @@ def _setup_logging() -> None:
 def run_agente() -> None:
     _setup_logging()
 
+    from schoolai.bot.singleton import singleton_guard
+    singleton_guard("agente")
+
     token = settings.telegram_bot_token_agente
     if not token:
         logger.error("[agente] TELEGRAM_BOT_TOKEN_AGENTE no configurado en .env")

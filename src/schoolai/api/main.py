@@ -16,6 +16,7 @@ from schoolai.api.routers import (
     subjects,
     whatsapp_webhook,
 )
+from schoolai.config import settings as _settings
 
 # ── App ───────────────────────────────────────────────────────────────────────
 
@@ -50,10 +51,14 @@ app = FastAPI(
 
 # ── CORS ──────────────────────────────────────────────────────────────────────
 
+_origins = [o.strip() for o in _settings.cors_origins.split(",") if o.strip()] or ["*"]
+# allow_credentials=True is only valid when origins are explicit (not "*")
+_allow_credentials = "*" not in _origins
+
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],  # en producción reemplazar con el dominio de la PWA
-    allow_credentials=True,
+    allow_origins=_origins,
+    allow_credentials=_allow_credentials,
     allow_methods=["*"],
     allow_headers=["*"],
 )

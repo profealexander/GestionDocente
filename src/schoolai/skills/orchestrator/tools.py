@@ -150,11 +150,16 @@ async def _crear_tarea(
     materias: list[str] | None = None,
     fecha_entrega: str | None = None,
 ) -> str:
-    """Registra una nueva tarea o actividad para un curso."""
+    """Registra una nueva tarea para un curso.
+
+    Si se especifican múltiples materias, crea un registro independiente por cada
+    una (una tarea por materia). Cada registro tiene su propio sequence_num dentro
+    de su materia, permitiendo referenciarla individualmente.
+    """
     from schoolai.db.connection import async_session
     from schoolai.skills.homework.repository import find_grade, find_subject, save_homework
 
-    materias = materias or []
+    materias = [m for m in (materias or []) if m]
     delivery = _parse_date(fecha_entrega) if fecha_entrega else None
 
     async with async_session() as session:
@@ -162,28 +167,41 @@ async def _crear_tarea(
         if not grade:
             return f"Curso '{curso}' no encontrado."
 
-        if materias:
-            subject = await find_subject(session, materias[0])
+        date_str = delivery.strftime("%d/%m/%Y") if delivery else "sin fecha"
+
+        if len(materias) <= 1:
+            # Sin materia o una sola — un registro
+            subject_id, subject_name = None, None
+            if materias:
+                subject = await find_subject(session, materias[0])
+                subject_id = subject.id if subject else None
+                subject_name = subject.name if subject else materias[0]
+
+            hw = await save_homework(
+                session, homework=descripcion, grade_id=grade.id,
+                subject_id=subject_id, delivery_date=delivery,
+            )
+            subject_str = f" | {subject_name}" if subject_name else ""
+            return (
+                f"Tarea #{hw.sequence_num} registrada — {grade.name}{subject_str} — {date_str}"
+                f"\n  {descripcion}"
+            )
+
+        # Múltiples materias — un registro por materia
+        lines = [f"Tareas registradas — {grade.name} — {date_str}:"]
+        for materia_name in materias:
+            subject = await find_subject(session, materia_name)
             subject_id = subject.id if subject else None
-            subject_name = subject.name if subject else materias[0]
-        else:
-            subject_id = None
-            subject_name = None
+            subject_display = subject.name if subject else materia_name
 
-        hw = await save_homework(
-            session,
-            homework=descripcion,
-            grade_id=grade.id,
-            subject_id=subject_id,
-            delivery_date=delivery,
-        )
+            hw = await save_homework(
+                session, homework=descripcion, grade_id=grade.id,
+                subject_id=subject_id, delivery_date=delivery,
+            )
+            lines.append(f"  #{hw.sequence_num} {subject_display}")
 
-    date_str = hw.delivery_date.strftime("%d/%m/%Y") if hw.delivery_date else "sin fecha"
-    subject_str = f" | {subject_name}" if subject_name else ""
-    return (
-        f"Tarea #{hw.sequence_num} registrada — {grade.name}{subject_str} — {date_str}"
-        f"\n  {descripcion}"
-    )
+        lines.append(f"  Descripcion: {descripcion}")
+        return "\n".join(lines)
 
 
 async def _consultar_tareas(
@@ -216,6 +234,63 @@ async def _consultar_tareas(
     if not_found:
         text += f"\nCursos no encontrados: {', '.join(not_found)}"
     return text
+
+
+async def _eliminar_tarea(numero: int, curso: str) -> str:
+    """Elimina una tarea por número de secuencia y curso. Las submissions se eliminan en cascada."""
+    from schoolai.db.connection import async_session
+    from schoolai.skills.homework.repository import (
+        delete_homework,
+        find_grade,
+        find_homework_by_ref,
+    )
+
+    async with async_session() as session:
+        grade = await find_grade(session, curso)
+        if not grade:
+            return f"Curso '{curso}' no encontrado."
+
+        hw = await find_homework_by_ref(session, numero, grade.id, any_trimester=True)
+        if not hw:
+            return f"Tarea #{numero} no encontrada en {grade.name}."
+
+        desc = hw.homework
+        seq = hw.sequence_num
+        await delete_homework(session, hw.id)
+
+    return f"Tarea #{seq} eliminada — {grade.name}: {desc[:80]}"
+
+
+async def _listar_cursos(level: str | None = None) -> str:
+    """Lista los cursos disponibles, opcionalmente filtrado por nivel educativo."""
+    from sqlalchemy import select
+
+    from schoolai.db.connection import async_session
+    from schoolai.db.models.grade import Grade
+
+    level_aliases = {
+        "basica": "egb",
+        "básica": "egb",
+        "general": "egb",
+        "educacion": "egb",
+        "educación": "egb",
+    }
+
+    async with async_session() as session:
+        stmt = select(Grade).order_by(Grade.sort_order)
+        grades = (await session.execute(stmt)).scalars().all()
+
+    if level:
+        db_level = level_aliases.get(level.lower(), level.lower())
+        grades = [g for g in grades if (g.level or "").lower() == db_level]
+
+    if not grades:
+        suffix = f" de nivel '{level}'" if level else ""
+        return f"No se encontraron cursos{suffix}."
+
+    lines = [f"Cursos disponibles{f' ({level})' if level else ''}:"]
+    lines.extend(f"  {g.name}" for g in grades)
+    return "\n".join(lines)
 
 
 async def _listar_actividades() -> str:
@@ -353,8 +428,8 @@ TOOLS: list[ToolDef] = [
     ToolDef(
         name="registrar_asistencia",
         description=(
-            "Registra faltas, atrasos o justificados de estudiantes en un curso. "
-            "Usa status='all_present' si todos asistieron."
+            "Records absences, tardiness, or justified absences for students in a course. "
+            "Use status='all_present' if all students attended."
         ),
         parameters={
             "type": "object",
@@ -362,22 +437,22 @@ TOOLS: list[ToolDef] = [
                 "nombres": {
                     "type": "array",
                     "items": {"type": "string"},
-                    "description": "Apellidos o nombres de los estudiantes ausentes/atrasados",
+                    "description": "Last names or first names of the absent/late students",
                 },
                 "curso": {
                     "type": "string",
-                    "description": "Abreviatura del curso, ej: 3bt, 8egb, prep",
+                    "description": "Course abbreviation, e.g.: 3bt, 8egb, prep",
                 },
                 "fecha": {
                     "type": "string",
-                    "description": "today, yesterday, o YYYY-MM-DD. Default: today",
+                    "description": "today, yesterday, or YYYY-MM-DD. Default: today",
                 },
                 "status": {
                     "type": "string",
                     "enum": ["absent", "late", "justified", "all_present"],
                     "description": (
-                        "absent=falta, late=atraso, "
-                        "justified=justificado, all_present=todos presentes"
+                        "absent=missed class, late=tardy, "
+                        "justified=excused absence, all_present=everyone attended"
                     ),
                 },
             },
@@ -387,14 +462,14 @@ TOOLS: list[ToolDef] = [
     ),
     ToolDef(
         name="consultar_asistencia",
-        description="Consulta el registro de asistencia de uno o varios cursos.",
+        description="Queries the attendance record for one or more courses.",
         parameters={
             "type": "object",
             "properties": {
                 "cursos": {
                     "type": "array",
                     "items": {"type": "string"},
-                    "description": "Abreviaturas de cursos, ej: ['3bt', '8egb']",
+                    "description": "Course abbreviations, e.g.: ['3bt', '8egb']",
                 },
                 "periodo": {
                     "type": "string",
@@ -407,23 +482,27 @@ TOOLS: list[ToolDef] = [
     ),
     ToolDef(
         name="crear_tarea",
-        description="Registra una nueva tarea, deber o actividad para un curso.",
+        description="Records a new homework assignment, task, or activity for a course.",
         parameters={
             "type": "object",
             "properties": {
                 "descripcion": {
                     "type": "string",
-                    "description": "Descripción completa de la tarea",
+                    "description": "Full description of the homework or assignment",
                 },
-                "curso": {"type": "string", "description": "Abreviatura del curso, ej: 3bt"},
+                "curso": {"type": "string", "description": "Course abbreviation, e.g.: 3bt"},
                 "materias": {
                     "type": "array",
                     "items": {"type": "string"},
-                    "description": "Lista de materias. Opcional.",
+                    "description": (
+                        "List of subjects. If the teacher names several subjects separated "
+                        "by '/' or ',', split them into individual items. "
+                        "Use the full subject name as the teacher wrote it. Optional."
+                    ),
                 },
                 "fecha_entrega": {
                     "type": "string",
-                    "description": "Fecha YYYY-MM-DD. Opcional.",
+                    "description": "Due date YYYY-MM-DD. Optional.",
                 },
             },
             "required": ["descripcion", "curso"],
@@ -432,14 +511,14 @@ TOOLS: list[ToolDef] = [
     ),
     ToolDef(
         name="consultar_tareas",
-        description="Consulta las tareas registradas de uno o varios cursos.",
+        description="Queries the recorded homework assignments for one or more courses.",
         parameters={
             "type": "object",
             "properties": {
                 "cursos": {
                     "type": "array",
                     "items": {"type": "string"},
-                    "description": "Abreviaturas de cursos",
+                    "description": "Course abbreviations",
                 },
                 "periodo": {
                     "type": "string",
@@ -451,8 +530,54 @@ TOOLS: list[ToolDef] = [
         fn=_consultar_tareas,
     ),
     ToolDef(
+        name="eliminar_tarea",
+        description=(
+            "Permanently deletes a homework assignment by its sequence number and course. "
+            "Only call this after the teacher has explicitly confirmed the deletion."
+        ),
+        parameters={
+            "type": "object",
+            "properties": {
+                "numero": {
+                    "type": "integer",
+                    "description": "Homework sequence number shown in the list, e.g.: 2",
+                },
+                "curso": {
+                    "type": "string",
+                    "description": "Course abbreviation, e.g.: 1bt",
+                },
+            },
+            "required": ["numero", "curso"],
+        },
+        fn=_eliminar_tarea,
+    ),
+    ToolDef(
+        name="listar_cursos",
+        description=(
+            "Lists all available courses with their abbreviations. "
+            "Call this tool BEFORE consultar_asistencia or consultar_tareas when the teacher "
+            "mentions a generic level (bachillerato, egb, básica, inicial) without giving "
+            "the exact course code."
+        ),
+        parameters={
+            "type": "object",
+            "properties": {
+                "level": {
+                    "type": "string",
+                    "enum": ["bachillerato", "egb", "inicial"],
+                    "description": (
+                        "Education level to filter: 'bachillerato', 'egb' (basic), 'inicial'. "
+                        "Omit to list all courses."
+                    ),
+                },
+            },
+            "required": [],
+        },
+        fn=_listar_cursos,
+    ),
+    ToolDef(
         name="listar_actividades",
-        description="Lista todas las actividades/cuotas escolares activas.",
+        description="Lists all active school activities and fees (cuotas).",
         parameters={
             "type": "object",
             "properties": {},
@@ -462,16 +587,16 @@ TOOLS: list[ToolDef] = [
     ),
     ToolDef(
         name="crear_actividad",
-        description="Crea una nueva actividad o cuota escolar con nombre y monto.",
+        description="Creates a new school activity or fee with a name and amount.",
         parameters={
             "type": "object",
             "properties": {
-                "nombre": {"type": "string", "description": "Nombre de la actividad"},
-                "monto": {"type": "number", "description": "Monto en dólares"},
+                "nombre": {"type": "string", "description": "Activity name"},
+                "monto": {"type": "number", "description": "Amount in dollars"},
                 "curso": {
                     "type": "string",
                     "description": (
-                        "Abreviatura del curso para agregar participantes. Opcional."
+                        "Course abbreviation to auto-enroll students as participants. Optional."
                     ),
                 },
             },
@@ -481,11 +606,11 @@ TOOLS: list[ToolDef] = [
     ),
     ToolDef(
         name="estado_actividad",
-        description="Consulta el estado de pagos de una actividad por nombre.",
+        description="Queries the payment status of an activity by name.",
         parameters={
             "type": "object",
             "properties": {
-                "nombre": {"type": "string", "description": "Nombre de la actividad"},
+                "nombre": {"type": "string", "description": "Activity name"},
             },
             "required": ["nombre"],
         },
@@ -493,18 +618,18 @@ TOOLS: list[ToolDef] = [
     ),
     ToolDef(
         name="registrar_pago",
-        description="Registra el pago de uno o varios estudiantes para una actividad.",
+        description="Records a payment from one or more students for an activity.",
         parameters={
             "type": "object",
             "properties": {
                 "nombres": {
                     "type": "array",
                     "items": {"type": "string"},
-                    "description": "Apellidos de los estudiantes que pagan",
+                    "description": "Last names of the students who paid",
                 },
-                "monto": {"type": "number", "description": "Monto pagado en dólares"},
-                "actividad": {"type": "string", "description": "Nombre de la actividad"},
-                "curso": {"type": "string", "description": "Abreviatura del curso"},
+                "monto": {"type": "number", "description": "Amount paid in dollars"},
+                "actividad": {"type": "string", "description": "Activity name"},
+                "curso": {"type": "string", "description": "Course abbreviation"},
             },
             "required": ["nombres", "monto", "actividad", "curso"],
         },

@@ -174,16 +174,26 @@ async def find_homework_by_ref(
     grade_id: int,
     subject_id: int | None = None,
     trimester_num: int | None = None,
+    any_trimester: bool = False,
 ) -> Homework | None:
+    """Busca una tarea por número de secuencia y curso.
+
+    Args:
+        any_trimester: si True, ignora el filtro de trimestre. Usar en
+                       operaciones de edición/borrado donde el docente referencia
+                       la tarea por el número que vio en la lista (que puede
+                       pertenecer a cualquier trimestre).
+    """
     from datetime import date as _date
 
-    if trimester_num is None:
-        trimester_num = _get_trimester_num(_date.today())
     stmt = select(Homework).where(
         Homework.grade_id == grade_id,
         Homework.sequence_num == sequence_num,
-        Homework.trimester_num == trimester_num,
     )
+    if not any_trimester:
+        if trimester_num is None:
+            trimester_num = _get_trimester_num(_date.today())
+        stmt = stmt.where(Homework.trimester_num == trimester_num)
     if subject_id:
         stmt = stmt.where(Homework.subject_id == subject_id)
     result = await session.execute(stmt)
@@ -222,6 +232,16 @@ async def update_homework(session: AsyncSession, hw_id: int, **kwargs) -> Homewo
     await session.commit()
     await session.refresh(hw)
     return hw
+
+
+async def delete_homework(session: AsyncSession, hw_id: int) -> bool:
+    """Elimina una tarea por ID. Las submissions se eliminan en cascada."""
+    hw = await session.get(Homework, hw_id)
+    if not hw:
+        return False
+    await session.delete(hw)
+    await session.commit()
+    return True
 
 
 async def count_students_in_grade(session: AsyncSession, grade_id: int) -> int:

@@ -23,21 +23,21 @@ def _system_prompt() -> str:
 TOOLS: list[ToolDef] = [
     ToolDef(
         name="query_attendance",
-        description="Consulta el registro de asistencia de uno o varios cursos en un período.",
+        description="Queries the attendance record for one or more courses in a given period.",
         parameters={
             "type": "object",
             "properties": {
                 "cursos": {
                     "type": "array",
                     "items": {"type": "string"},
-                    "description": "Abreviaturas de cursos, ej: ['3bt', '8egb']",
+                    "description": "Course abbreviations, e.g.: ['3bt', '8egb']",
                 },
                 "period": {
                     "type": "string",
                     "description": (
                         "today, yesterday, week, last_week, month, trimester_1/2/3, "
-                        "o nombre del día en español: lunes, martes, miercoles, jueves, viernes "
-                        "(resuelve al día más reciente pasado de esa semana)"
+                        "or Spanish day name: lunes, martes, miercoles, jueves, viernes "
+                        "(resolves to the most recent past occurrence of that weekday)"
                     ),
                 },
             },
@@ -47,23 +47,23 @@ TOOLS: list[ToolDef] = [
     ),
     ToolDef(
         name="query_homework",
-        description="Consulta las tareas registradas de uno o varios cursos.",
+        description="Queries the recorded homework assignments for one or more courses.",
         parameters={
             "type": "object",
             "properties": {
                 "cursos": {
                     "type": "array",
                     "items": {"type": "string"},
-                    "description": "Abreviaturas de cursos",
+                    "description": "Course abbreviations, e.g.: ['3bt', '2bt']",
                 },
                 "period": {
                     "type": "string",
                     "description": (
                         "today, yesterday, week, last_week, month, "
-                        "o nombre del día: lunes, martes, miercoles, jueves, viernes"
+                        "or Spanish day name: lunes, martes, miercoles, jueves, viernes"
                     ),
                 },
-                "materia": {"type": "string", "description": "Filtrar por materia. Opcional."},
+                "materia": {"type": "string", "description": "Filter by subject name. Optional."},
             },
             "required": ["cursos"],
         },

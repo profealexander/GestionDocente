@@ -44,7 +44,8 @@ dev = [
 ]
 
 [project.entry-points."schoolai.skills"]
-attendance   = "schoolai.skills.attendance.skill:AttendanceSkill"
+attendance      = "schoolai.skills.attendance.skill:AttendanceSkill"
+attendance_edit = "schoolai.skills.attendance.skill:AttendanceEditSkill"
 hw_edit      = "schoolai.skills.homework.skill:HWEditSkill"
 hw_report    = "schoolai.skills.homework.skill:HWReportSkill"
 homework     = "schoolai.skills.homework.skill:HomeworkSkill"

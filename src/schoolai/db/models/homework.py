@@ -1,6 +1,6 @@
 from datetime import datetime
 
-from sqlalchemy import Boolean, DateTime, ForeignKey, Integer, Text, func
+from sqlalchemy import Boolean, DateTime, ForeignKey, Index, Integer, Text, func
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from schoolai.db.connection import Base
@@ -8,6 +8,12 @@ from schoolai.db.connection import Base
 
 class Homework(Base):
     __tablename__ = "homework"
+    __table_args__ = (
+        # Speeds up list_open, save_homework dedup, and consultar_tareas
+        Index("ix_homework_grade_trimester", "grade_id", "trimester_num"),
+        # Speeds up per-subject queries
+        Index("ix_homework_subject", "subject_id"),
+    )
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
     homework: Mapped[str] = mapped_column(Text, nullable=False)

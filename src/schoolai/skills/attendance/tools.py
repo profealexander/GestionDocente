@@ -5,14 +5,14 @@ from __future__ import annotations
 from schoolai.skills.cuotas.tools import ToolDef  # reutiliza la misma clase
 
 _SYSTEM_PROMPT = (
-    "Eres asistente escolar. El docente registra inasistencias o consulta asistencia. "
-    "Analiza el mensaje y llama la herramienta correcta. Solo responde con una tool call."
+    "You are a school assistant. The teacher is recording absences or querying attendance. "
+    "Analyze the message and call the correct tool. Respond only with a tool call."
 )
 
 TOOLS: list[ToolDef] = [
     ToolDef(
         name="mark_attendance",
-        description="Registra inasistencias, atrasos o justificados de estudiantes en un curso.",
+        description="Records absences, tardiness, or justified absences for students in a course.",
         parameters={
             "type": "object",
             "properties": {
@@ -20,24 +20,24 @@ TOOLS: list[ToolDef] = [
                     "type": "array",
                     "items": {"type": "string"},
                     "description": (
-                        "Apellidos o nombres de los estudiantes. "
-                        "Lista vacía si todos asistieron."
+                        "Last names or first names of the students. "
+                        "Empty list if all students attended."
                     ),
                 },
                 "curso": {
                     "type": "string",
-                    "description": "Abreviatura del curso, ej: 3bt, 8egb, prep",
+                    "description": "Course abbreviation, e.g.: 3bt, 8egb, prep",
                 },
                 "fecha": {
                     "type": "string",
-                    "description": "today, yesterday, o YYYY-MM-DD. Default: today",
+                    "description": "today, yesterday, or YYYY-MM-DD. Default: today",
                 },
                 "status": {
                     "type": "string",
                     "enum": ["absent", "late", "justified", "all_present"],
                     "description": (
-                        "absent=falta, late=atraso, "
-                        "justified=justificado, all_present=todos presentes"
+                        "absent=missed class, late=tardy, "
+                        "justified=excused absence, all_present=everyone attended"
                     ),
                 },
             },
@@ -47,14 +47,14 @@ TOOLS: list[ToolDef] = [
     ),
     ToolDef(
         name="query_attendance",
-        description="Consulta el registro de asistencia de uno o varios cursos.",
+        description="Queries the attendance record for one or more courses.",
         parameters={
             "type": "object",
             "properties": {
                 "cursos": {
                     "type": "array",
                     "items": {"type": "string"},
-                    "description": "Abreviaturas de cursos",
+                    "description": "Course abbreviations, e.g.: ['3bt', '8egb']",
                 },
                 "period": {
                     "type": "string",

@@ -167,19 +167,29 @@ async def bulk_import(
     body: BulkImportPayload,
     session: AsyncSession = Depends(get_session),
 ):
+    from fastapi import HTTPException
+    from sqlalchemy.exc import IntegrityError
+
     created = 0
-    for entry in body.students:
-        parsed = _parse_name(entry.full_name)
-        sc = StudentCreate(
-            first_name=parsed["first_name"],
-            last_name=parsed["last_name"],
-            second_last_name=parsed.get("second_last_name") or "",
-            grade_id=entry.grade_id,
-            section=entry.section,
-        )
-        await _create_student(session, sc)
-        created += 1
-    await session.commit()
+    try:
+        for entry in body.students:
+            parsed = _parse_name(entry.full_name)
+            sc = StudentCreate(
+                first_name=parsed["first_name"],
+                last_name=parsed["last_name"],
+                second_last_name=parsed.get("second_last_name") or "",
+                grade_id=entry.grade_id,
+                section=entry.section,
+            )
+            await _create_student(session, sc)
+            created += 1
+        await session.commit()
+    except IntegrityError as e:
+        await session.rollback()
+        raise HTTPException(
+            status_code=409,
+            detail=f"{created} importados antes del error. Verifica duplicados: {e.orig}",
+        ) from e
     return MessageOut(message=f"{created} estudiantes importados correctamente.")
 
 

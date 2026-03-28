@@ -72,3 +72,35 @@ class AttendanceSkill(BaseSkill):
             )
             return
         await handle_extraction(update, user_id, result)
+
+
+class AttendanceEditSkill(BaseSkill):
+    """Detecta: edición/corrección de registros de asistencia existentes."""
+
+    intent = "attendance_edit"
+    priority = 8  # antes que AttendanceSkill (10) para interceptar ediciones
+
+    keywords: frozenset[str] = frozenset()
+
+    patterns: list[re.Pattern] = [
+        re.compile(
+            r"\b(editar|modificar|corregir|actualizar)\b.{0,30}\basistencia\b",
+            re.IGNORECASE,
+        ),
+        re.compile(
+            r"\basistencia\b.{0,30}\b(editar|modificar|corregir)\b",
+            re.IGNORECASE,
+        ),
+        re.compile(
+            r"\b(corregir|cambiar)\b.{0,20}\b(falta|atraso|justificado)\b",
+            re.IGNORECASE,
+        ),
+    ]
+
+    async def handle(self, update, user_id: int, text: str) -> None:
+        from schoolai.skills.attendance.handler_edit import handle_att_edit
+        from schoolai.skills.homework.detector import extract_course, extract_date
+
+        course = extract_course(text)
+        att_date = extract_date(text)
+        await handle_att_edit(update, user_id, course, att_date)

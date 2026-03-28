@@ -34,6 +34,7 @@ class Settings(BaseSettings):
     llm_chat: str = "groq/llama-3.3-70b-versatile"  # asistente IA
     llm_router: str = "groq/llama-3.1-8b-instant"  # clasificador de mensajes
     llm_orchestrator: str = "zai/glm-4.7-flash"  # orquestador multi-tool (GLM-4.7-Flash)
+    llm_orchestrator_fallback: str = "groq/llama-3.3-70b-versatile"  # fallback si el primario falla — separar múltiples con coma
 
     # ── API keys ───────────────────────────────────────────────────────────────
     groq_api_key: str = ""  # Groq — transcripción Whisper + LLM extractor/chat (otras skills)
@@ -44,6 +45,9 @@ class Settings(BaseSettings):
     api_host: str = "0.0.0.0"  # nosec B104 — intencional, uvicorn escucha en todas las interfaces
     api_port: int = 8000
     port: int = 0  # Railway inyecta PORT — si está presente, tiene prioridad sobre api_port
+    # CORS — en producción establecer con el dominio exacto de la PWA, e.g.:
+    # CORS_ORIGINS=https://schoolai-web.pages.dev
+    cors_origins: str = "*"  # "*" para desarrollo; dominio exacto en producción
 
     @property
     def effective_api_port(self) -> int:

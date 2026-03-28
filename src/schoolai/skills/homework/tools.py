@@ -5,33 +5,33 @@ from __future__ import annotations
 from schoolai.skills.cuotas.tools import ToolDef
 
 _SYSTEM_PROMPT = (
-    "Eres asistente escolar. El docente registra tareas o reporta estudiantes que no entregaron. "
-    "Analiza el mensaje y llama la herramienta correcta. Solo responde con una tool call."
+    "You are a school assistant. The teacher is registering homework or reporting students who did not submit. "
+    "Analyze the message and call the correct tool. Respond only with a tool call."
 )
 
 TOOLS: list[ToolDef] = [
     ToolDef(
         name="create_homework",
-        description="Registra una nueva tarea, deber, actividad o evaluación para un curso.",
+        description="Records a new homework assignment, activity, or evaluation for a course.",
         parameters={
             "type": "object",
             "properties": {
                 "descripcion": {
                     "type": "string",
-                    "description": "Descripción completa de la tarea",
+                    "description": "Full description of the homework or assignment",
                 },
-                "curso": {"type": "string", "description": "Abreviatura del curso, ej: 3bt"},
+                "curso": {"type": "string", "description": "Course abbreviation, e.g.: 3bt"},
                 "materias": {
                     "type": "array",
                     "items": {"type": "string"},
                     "description": (
-                        "Lista de materias. Si la tarea es para varias materias, "
-                        "incluir todas. Ej: ['Filosofía', 'Gestión Contable']"
+                        "List of subjects. Include all if the assignment spans multiple subjects. "
+                        "E.g.: ['Philosophy', 'Accounting']"
                     ),
                 },
                 "fecha_entrega": {
                     "type": "string",
-                    "description": "Fecha de entrega YYYY-MM-DD o nombre día. Opcional.",
+                    "description": "Due date YYYY-MM-DD or day name. Optional.",
                 },
             },
             "required": ["descripcion", "curso"],
@@ -40,22 +40,22 @@ TOOLS: list[ToolDef] = [
     ),
     ToolDef(
         name="report_missing",
-        description="Reporta estudiantes que no entregaron o no cumplieron con una tarea.",
+        description="Reports students who did not submit or did not complete an assignment.",
         parameters={
             "type": "object",
             "properties": {
                 "nombres": {
                     "type": "array",
                     "items": {"type": "string"},
-                    "description": "Apellidos de los que no cumplieron",
+                    "description": "Last names of students who did not comply",
                 },
-                "curso": {"type": "string", "description": "Abreviatura del curso"},
-                "tarea_ref": {"type": "integer", "description": "Número de tarea, ej: 3"},
-                "materia": {"type": "string", "description": "Materia. Opcional."},
+                "curso": {"type": "string", "description": "Course abbreviation"},
+                "tarea_ref": {"type": "integer", "description": "Homework number, e.g.: 3"},
+                "materia": {"type": "string", "description": "Subject name. Optional."},
                 "status": {
                     "type": "string",
                     "enum": ["missing", "late", "partial"],
-                    "description": "Tipo de incumplimiento",
+                    "description": "missing=not submitted, late=submitted late, partial=incomplete",
                 },
             },
             "required": ["nombres", "curso"],
