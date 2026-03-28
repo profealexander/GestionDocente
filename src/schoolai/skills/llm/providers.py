@@ -45,4 +45,9 @@ PROVIDERS: dict[str, dict] = {
         "base_url": "https://api.groq.com/openai/v1/",
         "key": "groq_api_key",
     },
+    # Google Gemini — OpenAI-compatible endpoint (requiere GOOGLE_API_KEY)
+    "google": {
+        "base_url": "https://generativelanguage.googleapis.com/v1beta/openai/",
+        "key": "google_api_key",
+    },
 }

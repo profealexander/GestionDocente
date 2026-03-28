@@ -40,8 +40,9 @@ cp .env.example .env
 | `TELEGRAM_ALLOWED_USERS` | IDs de Telegram separados por coma (ej. `123456,789012`) | ✅ |
 | `GROQ_API_KEY` | API key de Groq — LLM fallback + transcripción de voz | ✅ |
 | `TELEGRAM_BOT_TOKEN_JORNADA` | Token del bot Modo Jornada | — |
-| `TELEGRAM_BOT_TOKEN_AGENTE` | Token del bot Agente IA (GLM-4.7-Flash) | — |
-| `ZAI_API_KEY` | API key Z.AI global — OrchestratorSkill (GLM-4.7-Flash) | — |
+| `TELEGRAM_BOT_TOKEN_AGENTE` | Token del bot Agente IA (Gemini + GLM) | — |
+| `GOOGLE_API_KEY` | API key Google AI Studio — OrchestratorSkill primario (Gemini 2.5 Flash-Lite) | — |
+| `ZAI_API_KEY` | API key Z.AI global — ReplAgent (GLM-4.7-Flash) + fallback orquestador | — |
 | `JWT_SECRET_KEY` | Clave secreta JWT (32+ caracteres) | ✅ para API |
 | `API_SECRET` | Clave compartida con la PWA para obtener tokens | ✅ para API |
 | `JWT_EXPIRE_HOURS` | Duración del token JWT en horas (default: `24`) | — |
@@ -52,7 +53,8 @@ cp .env.example .env
 | `SUPERVISED_MODE` | `true` → pide confirmación antes de toda escritura en DB (default: `false`) | — |
 | `LLM_EXTRACTOR` | Modelo extractor (default: `groq/llama-3.1-8b-instant`) | — |
 | `LLM_CHAT` | Modelo chat IA (default: `groq/llama-3.3-70b-versatile`) | — |
-| `LLM_ORCHESTRATOR` | Modelo orquestador (default: `zai/glm-4.7-flash`) | — |
+| `LLM_ORCHESTRATOR` | Modelo orquestador primario (default: `google/gemini-2.5-flash-lite`) | — |
+| `LLM_ORCHESTRATOR_FALLBACK` | Fallback automático, coma-separado (default: `google/gemini-2.5-flash,zai/glm-4.7-flash,groq/llama-3.3-70b-versatile`) | — |
 | `API_HOST` | Host del servidor API (default: `0.0.0.0`) | — |
 | `API_PORT` | Puerto del servidor API (default: `8000`) | — |
 | `LOG_DIR` | Directorio de logs (default: `logs`) | — |
@@ -87,7 +89,7 @@ uv run schoolai-bot
 # Bot Modo Jornada
 uv run schoolai-bot-jornada
 
-# Bot Agente IA (GLM-4.7-Flash, sin pipeline regex)
+# Bot Agente IA (Gemini 2.5 Flash-Lite + GLM-4.7-Flash REPL, sin pipeline regex)
 uv run schoolai-bot-agente
 
 # API REST
@@ -166,7 +168,7 @@ schoolai/
         ├── homework/           # Skill (via_llm) + tools + detector + repository + handler_edit
         ├── query/              # Skill + tools
         ├── cuotas/             # Skill + tools + handlers (create/pago/query/edit) + service
-        ├── orchestrator/       # OrchestratorSkill + agent ReAct loop + 8 tools (GLM-4.7-Flash)
+        ├── orchestrator/       # OrchestratorSkill + agent ReAct loop + 11 tools + ReplAgent (Gemini/GLM dual)
         ├── ia/                 # ChatSkill con streaming (Groq 70B)
         ├── llm/                # Cliente unificado + tool_caller + providers (groq/zai)
         ├── documents/          # Generación de documentos PDF

@@ -54,6 +54,15 @@ _PATTERNS: dict[str, list[str]] = {
         r"\bcobro[s]?\b",
         r"\bdeuda[s]?\b",
     ],
+    "repl": [
+        r"\bpromedio\b",                                    # promedio de faltas/notas
+        r"\bestadístic",                                    # estadísticas
+        r"\branking\b",                                     # ranking de asistencia
+        r"\banaliz",                                        # analizar, análisis
+        r"\bcuántos?\s+(estudiantes?|alumnos?|cursos?)\b",  # cuántos estudiantes hay
+        r"\btotal\s+de\s+(estudiantes?|alumnos?|cursos?)\b",# total de estudiantes
+        r"\breporte\s+(general|estadístic|completo|total)", # reporte general/estadístico
+    ],
 }
 
 # Compilación única al importar — búsqueda O(n·k) sin overhead de compilación
@@ -74,11 +83,13 @@ def _get_agents() -> dict[str, SkillAgentBase]:
         from schoolai.skills.orchestrator.skill_agents.attendance import AttendanceAgent
         from schoolai.skills.orchestrator.skill_agents.cuotas import CuotasAgent
         from schoolai.skills.orchestrator.skill_agents.homework import HomeworkAgent
+        from schoolai.skills.orchestrator.skill_agents.repl import ReplAgent
 
         _agents_cache = {
             "attendance": AttendanceAgent(),
             "homework": HomeworkAgent(),
             "cuotas": CuotasAgent(),
+            "repl": ReplAgent(),
         }
     return _agents_cache
 

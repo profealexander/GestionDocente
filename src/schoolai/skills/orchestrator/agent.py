@@ -68,7 +68,9 @@ class _FlatAgent(SkillAgentBase):
     @property
     def tools(self):
         from schoolai.skills.orchestrator.tools import TOOLS
-        return TOOLS
+        # python_repl se excluye aquí: Gemini genera código incorrecto (default_api.query).
+        # Las queries analíticas van a ReplAgent (GLM) via router.
+        return [t for t in TOOLS if t.name != "python_repl"]
 
     async def _execute_tool(self, name: str, args: dict) -> str:
         from schoolai.skills.orchestrator.tools import execute_tool

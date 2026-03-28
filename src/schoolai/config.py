@@ -33,13 +33,14 @@ class Settings(BaseSettings):
     llm_extractor: str = "groq/llama-3.1-8b-instant"  # extractor JSON — rápido
     llm_chat: str = "groq/llama-3.3-70b-versatile"  # asistente IA
     llm_router: str = "groq/llama-3.1-8b-instant"  # clasificador de mensajes
-    llm_orchestrator: str = "zai/glm-4.7-flash"  # orquestador multi-tool (GLM-4.7-Flash)
-    llm_orchestrator_fallback: str = "groq/llama-3.3-70b-versatile"  # fallback si el primario falla — separar múltiples con coma
+    llm_orchestrator: str = "google/gemini-2.5-flash-lite"  # orquestador multi-tool — más rápido y 1,000 RPD gratis
+    llm_orchestrator_fallback: str = "google/gemini-2.5-flash,zai/glm-4.7-flash,groq/llama-3.3-70b-versatile"  # cadena: 2.5-flash (250 RPD gratis) → GLM → Groq
 
     # ── API keys ───────────────────────────────────────────────────────────────
     groq_api_key: str = ""  # Groq — transcripción Whisper + LLM extractor/chat (otras skills)
     zhipu_api_key: str = ""  # ZhipuAI China endpoint (legacy)
     zai_api_key: str = ""  # Z.AI global endpoint — GLM-4.7-Flash orquestador
+    google_api_key: str = ""  # Google AI Studio — Gemini models
 
     # FastAPI
     api_host: str = "0.0.0.0"  # nosec B104 — intencional, uvicorn escucha en todas las interfaces

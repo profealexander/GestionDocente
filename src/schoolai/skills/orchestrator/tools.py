@@ -421,6 +421,16 @@ async def _registrar_pago(
     return "\n".join(lines)
 
 
+# ── Python REPL ───────────────────────────────────────────────────────────────
+
+
+async def _python_repl(code: str) -> str:
+    """Ejecuta código Python restringido con acceso de solo lectura a la DB."""
+    from schoolai.skills.orchestrator.repl import run_repl
+
+    return await run_repl(code)
+
+
 # ── Registry ──────────────────────────────────────────────────────────────────
 
 
@@ -634,6 +644,49 @@ TOOLS: list[ToolDef] = [
             "required": ["nombres", "monto", "actividad", "curso"],
         },
         fn=_registrar_pago,
+    ),
+    ToolDef(
+        name="python_repl",
+        description=(
+            "Executes Python code with read-only PostgreSQL access. "
+            "Use for custom queries not covered by other tools.\n"
+            "\n"
+            "ONLY these are available inside the code:\n"
+            "  await query(sql, params={}) → list[dict]   # runs SELECT/WITH\n"
+            "  today  → date    now → datetime    print(...) → output\n"
+            "  Imports allowed: datetime, math, collections, re, json, decimal\n"
+            "DO NOT use default_api, os, sys, open, or any other tool name.\n"
+            "\n"
+            "DB schema (PostgreSQL — status values are strings with quotes in SQL):\n"
+            "  people(id, first_name, last_name, second_last_name)\n"
+            "  students(id, person_id, grade_id, section, status)  -- status='active'|'inactive'\n"
+            "  grades(id, name, level, sort_order)\n"
+            "  subjects(id, name, area)\n"
+            "  attendance(id, student_id, date DATE, status)  -- status='F' 'AT' 'J'\n"
+            "  homework(id, grade_id, subject_id, trimester_num, sequence_num, homework TEXT, is_open BOOL)\n"
+            "  actividades(id, nombre, monto, is_active)\n"
+            "  actividad_participantes(id, actividad_id, student_id, total_pagado, is_complete)\n"
+            "\n"
+            "SQL RULES (PostgreSQL):\n"
+            "  - Dates: use >= and < operators, NOT LIKE. Ex: date >= '2026-03-01' AND date < '2026-04-01'\n"
+            "  - String values always in single quotes: status = 'F', status = 'active'\n"
+            "  - Always print results; do not just assign them.\n"
+            "\n"
+            "EXAMPLE:\n"
+            "  rows = await query(\"SELECT COUNT(*) as n FROM students WHERE status = 'active'\")\n"
+            "  print(rows[0]['n'])"
+        ),
+        parameters={
+            "type": "object",
+            "properties": {
+                "code": {
+                    "type": "string",
+                    "description": "Python code. Use await query(sql) and print() for output.",
+                },
+            },
+            "required": ["code"],
+        },
+        fn=_python_repl,
     ),
 ]
 

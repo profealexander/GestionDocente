@@ -164,10 +164,12 @@ class SkillAgentBase:
       - Definir `name` y `system_prompt_template`
       - Sobreescribir `tools` property con las tools del dominio
       - Opcionalmente sobreescribir `_execute_tool` para lookup personalizado
+      - Establecer `llm_override` para forzar un modelo específico como primario
     """
 
     name: str = "base"
     system_prompt_template: str = ""
+    llm_override: str | None = None  # si se establece, se usa como modelo primario
 
     @property
     def tools(self) -> list:
@@ -237,7 +239,12 @@ class SkillAgentBase:
         """
         from schoolai.config import settings
 
-        providers_chain = _build_providers_chain(settings)
+        base_chain = _build_providers_chain(settings)
+        if self.llm_override:
+            # Override es primario; el resto de la cadena queda como fallback
+            providers_chain = [self.llm_override] + [p for p in base_chain if p != self.llm_override]
+        else:
+            providers_chain = base_chain
         tool_defs = [t.to_tool_dict() for t in self.tools]
 
         messages: list[dict] = (
@@ -265,8 +272,19 @@ class SkillAgentBase:
 
             if not msg.tool_calls:
                 reply = (msg.content or "").strip()
-                logger.info(f"[{self.name}] respuesta final en iter={iteration}")
-                return reply or "Sin respuesta del LLM."
+                if reply:
+                    logger.info(f"[{self.name}] respuesta final en iter={iteration}")
+                    return reply
+                # Gemini a veces devuelve content=None tras un tool call.
+                # Pedimos resumen explícito sin tools.
+                logger.debug(f"[{self.name}] content vacío en iter={iteration}, solicitando resumen")
+                messages.append({"role": "assistant", "content": ""})
+                messages.append({"role": "user", "content": "Resume el resultado anterior en español, de forma breve."})
+                try:
+                    summary_resp = await _llm_call_with_failover(messages, [], providers_chain)
+                    return (summary_resp.choices[0].message.content or "").strip() or "Operación completada."
+                except Exception as e:  # noqa: BLE001
+                    return f"Operación completada. Error al generar resumen: {e}"
 
             await self._execute_round(msg, messages)
 
