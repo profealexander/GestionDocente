@@ -1,11 +1,11 @@
-"""Herramientas unificadas para OrchestratorSkill.
+"""Unified tools for OrchestratorSkill.
 
-Cada tool es una función async que:
-  - maneja su propia sesión DB
-  - retorna texto plano para consumo del LLM (no HTML)
-  - está disponible para GLM-4.7-Flash via tool calling
+Each tool is an async function that:
+  - manages its own DB session
+  - returns plain text for LLM consumption (no HTML)
+  - is available via tool calling (OpenAI-compatible format)
 
-Inspirado en el patrón NanoBot (HKUDS/nanobot): tools autocontenidas.
+Inspired by the NanoBot pattern (HKUDS/nanobot): self-contained tools.
 """
 
 from __future__ import annotations
@@ -21,28 +21,28 @@ from schoolai.skills.cuotas.tools import ToolDef
 
 
 def _strip_tags(text: str) -> str:
-    """Elimina etiquetas HTML para que el LLM reciba texto limpio."""
+    """Remove HTML tags so the LLM receives clean text."""
     return re.sub(r"<[^>]+>", "", text)
 
 
-def _parse_date(fecha: str) -> date:
+def _parse_date(value: str) -> date:
     today = date.today()  # noqa: DTZ011
-    if fecha in ("today", "hoy"):
+    if value in ("today", "hoy"):
         return today
-    if fecha in ("yesterday", "ayer"):
+    if value in ("yesterday", "ayer"):
         return today - timedelta(days=1)
     try:
-        return date.fromisoformat(fecha)
+        return date.fromisoformat(value)
     except ValueError:
         return today
 
 
-def _period_to_dates(periodo: str, qtype: str):
-    """Convierte string de periodo a QueryIntent."""
+def _period_to_dates(period: str, qtype: str):
+    """Convert a period string to a QueryIntent."""
     from schoolai.skills.query.detector import QueryIntent, get_current_trimester
 
     today = date.today()  # noqa: DTZ011
-    p = periodo.lower().strip()
+    p = period.lower().strip()
 
     if p in ("today", "hoy"):
         return QueryIntent(qtype, "day", today, today)
@@ -60,21 +60,21 @@ def _period_to_dates(periodo: str, qtype: str):
         else:
             end = start.replace(month=start.month + 1, day=1) - timedelta(days=1)
         return QueryIntent(qtype, "month", start, end)
-    # Default: trimestre actual
+    # Default: current trimester
     num, start, end = get_current_trimester()
     return QueryIntent(qtype, "trimester", start, end, trimester_num=num)
 
 
-# ── Implementaciones ──────────────────────────────────────────────────────────
+# ── Implementations ───────────────────────────────────────────────────────────
 
 
-async def _registrar_asistencia(
-    nombres: list[str],
-    curso: str,
-    fecha: str = "today",
+async def _record_attendance(
+    names: list[str],
+    course: str,
+    date: str = "today",
     status: str = "absent",
 ) -> str:
-    """Registra asistencia (faltas/atrasos/justificados) en un curso."""
+    """Records absences, tardiness or justified absences for students in a course."""
     from schoolai.db.connection import async_session
     from schoolai.skills.attendance.matcher import match_names
     from schoolai.skills.attendance.service import save_absences
@@ -82,18 +82,18 @@ async def _registrar_asistencia(
 
     status_map = {"absent": "F", "late": "AT", "justified": "J"}
 
-    if status == "all_present" or not nombres:
-        return f"Todos presentes en {curso} — {_parse_date(fecha).strftime('%d/%m/%Y')}"
+    if status == "all_present" or not names:
+        return f"Todos presentes en {course} — {_parse_date(date).strftime('%d/%m/%Y')}"
 
     db_status = status_map.get(status, "F")
-    att_date = _parse_date(fecha)
+    att_date = _parse_date(date)
 
     async with async_session() as session:
-        grade = await find_grade(session, curso)
+        grade = await find_grade(session, course)
         if not grade:
-            return f"Curso '{curso}' no encontrado."
+            return f"Curso '{course}' no encontrado."
 
-        extracted = [{"name": n, "status": db_status} for n in nombres]
+        extracted = [{"name": n, "status": db_status} for n in names]
         matches = await match_names(extracted, grade.id, session)
 
         resolved = [m for m in matches if m.resolved]
@@ -101,7 +101,7 @@ async def _registrar_asistencia(
         ambiguous = [m for m in matches if m.ambiguous]
 
         if not resolved:
-            return f"No se encontraron estudiantes: {', '.join(nombres)}"
+            return f"No se encontraron estudiantes: {', '.join(names)}"
 
         student_ids = [m.matched_id for m in resolved]
         statuses = {m.matched_id: m.status for m in resolved}
@@ -119,24 +119,24 @@ async def _registrar_asistencia(
     return "\n".join(lines)
 
 
-async def _consultar_asistencia(
-    cursos: list[str],
-    periodo: str = "today",
+async def _query_attendance(
+    courses: list[str],
+    period: str = "today",
 ) -> str:
-    """Consulta el registro de asistencia de uno o varios cursos."""
+    """Queries the attendance record for one or more courses."""
     from schoolai.db.connection import async_session
     from schoolai.skills.homework.repository import find_grade
     from schoolai.skills.query.formatter import format_attendance
     from schoolai.skills.query.resolver import resolve_attendance
 
-    intent = _period_to_dates(periodo, "attendance")
+    intent = _period_to_dates(period, "attendance")
     results = []
 
     async with async_session() as session:
-        for curso in cursos:
-            grade = await find_grade(session, curso)
+        for course in courses:
+            grade = await find_grade(session, course)
             if not grade:
-                results.append(f"Curso '{curso}' no encontrado.")
+                results.append(f"Curso '{course}' no encontrado.")
                 continue
             data = await resolve_attendance(intent, grade.id, session)
             results.append(_strip_tags(format_attendance(data)))
@@ -144,85 +144,82 @@ async def _consultar_asistencia(
     return "\n\n".join(results) if results else "Sin datos."
 
 
-async def _crear_tarea(
-    descripcion: str,
-    curso: str,
-    materias: list[str] | None = None,
-    fecha_entrega: str | None = None,
+async def _create_assignment(
+    description: str,
+    course: str,
+    subjects: list[str] | None = None,
+    due_date: str | None = None,
 ) -> str:
-    """Registra una nueva tarea para un curso.
+    """Records a new homework assignment for a course.
 
-    Si se especifican múltiples materias, crea un registro independiente por cada
-    una (una tarea por materia). Cada registro tiene su propio sequence_num dentro
-    de su materia, permitiendo referenciarla individualmente.
+    If multiple subjects are specified, creates one record per subject,
+    each with its own sequence_num within that subject.
     """
     from schoolai.db.connection import async_session
     from schoolai.skills.homework.repository import find_grade, find_subject, save_homework
 
-    materias = [m for m in (materias or []) if m]
-    delivery = _parse_date(fecha_entrega) if fecha_entrega else None
+    subjects = [s for s in (subjects or []) if s]
+    delivery = _parse_date(due_date) if due_date else None
 
     async with async_session() as session:
-        grade = await find_grade(session, curso)
+        grade = await find_grade(session, course)
         if not grade:
-            return f"Curso '{curso}' no encontrado."
+            return f"Curso '{course}' no encontrado."
 
         date_str = delivery.strftime("%d/%m/%Y") if delivery else "sin fecha"
 
-        if len(materias) <= 1:
-            # Sin materia o una sola — un registro
+        if len(subjects) <= 1:
             subject_id, subject_name = None, None
-            if materias:
-                subject = await find_subject(session, materias[0])
+            if subjects:
+                subject = await find_subject(session, subjects[0])
                 subject_id = subject.id if subject else None
-                subject_name = subject.name if subject else materias[0]
+                subject_name = subject.name if subject else subjects[0]
 
             hw = await save_homework(
-                session, homework=descripcion, grade_id=grade.id,
+                session, homework=description, grade_id=grade.id,
                 subject_id=subject_id, delivery_date=delivery,
             )
             subject_str = f" | {subject_name}" if subject_name else ""
             return (
                 f"Tarea #{hw.sequence_num} registrada — {grade.name}{subject_str} — {date_str}"
-                f"\n  {descripcion}"
+                f"\n  {description}"
             )
 
-        # Múltiples materias — un registro por materia
         lines = [f"Tareas registradas — {grade.name} — {date_str}:"]
-        for materia_name in materias:
-            subject = await find_subject(session, materia_name)
+        for subject_name in subjects:
+            subject = await find_subject(session, subject_name)
             subject_id = subject.id if subject else None
-            subject_display = subject.name if subject else materia_name
+            subject_display = subject.name if subject else subject_name
 
             hw = await save_homework(
-                session, homework=descripcion, grade_id=grade.id,
+                session, homework=description, grade_id=grade.id,
                 subject_id=subject_id, delivery_date=delivery,
             )
             lines.append(f"  #{hw.sequence_num} {subject_display}")
 
-        lines.append(f"  Descripcion: {descripcion}")
+        lines.append(f"  Descripcion: {description}")
         return "\n".join(lines)
 
 
-async def _consultar_tareas(
-    cursos: list[str],
-    periodo: str = "trimestre",
+async def _query_assignments(
+    courses: list[str],
+    period: str = "trimestre",
 ) -> str:
-    """Consulta las tareas registradas de uno o varios cursos."""
+    """Queries recorded homework assignments for one or more courses."""
     from schoolai.db.connection import async_session
     from schoolai.skills.homework.repository import find_grade
     from schoolai.skills.query.formatter import format_homework_multi
     from schoolai.skills.query.resolver import resolve_homework
 
-    intent = _period_to_dates(periodo, "homework")
+    intent = _period_to_dates(period, "homework")
     hw_data = []
     not_found = []
 
     async with async_session() as session:
-        for curso in cursos:
-            grade = await find_grade(session, curso)
+        for course in courses:
+            grade = await find_grade(session, course)
             if not grade:
-                not_found.append(curso)
+                not_found.append(course)
                 continue
             data = await resolve_homework(intent, grade.id, session)
             hw_data.append(data)
@@ -236,8 +233,8 @@ async def _consultar_tareas(
     return text
 
 
-async def _eliminar_tarea(numero: int, curso: str) -> str:
-    """Elimina una tarea por número de secuencia y curso. Las submissions se eliminan en cascada."""
+async def _delete_assignment(number: int, course: str) -> str:
+    """Deletes a homework assignment by sequence number and course. Submissions cascade."""
     from schoolai.db.connection import async_session
     from schoolai.skills.homework.repository import (
         delete_homework,
@@ -246,13 +243,13 @@ async def _eliminar_tarea(numero: int, curso: str) -> str:
     )
 
     async with async_session() as session:
-        grade = await find_grade(session, curso)
+        grade = await find_grade(session, course)
         if not grade:
-            return f"Curso '{curso}' no encontrado."
+            return f"Curso '{course}' no encontrado."
 
-        hw = await find_homework_by_ref(session, numero, grade.id, any_trimester=True)
+        hw = await find_homework_by_ref(session, number, grade.id, any_trimester=True)
         if not hw:
-            return f"Tarea #{numero} no encontrada en {grade.name}."
+            return f"Tarea #{number} no encontrada en {grade.name}."
 
         desc = hw.homework
         seq = hw.sequence_num
@@ -261,8 +258,8 @@ async def _eliminar_tarea(numero: int, curso: str) -> str:
     return f"Tarea #{seq} eliminada — {grade.name}: {desc[:80]}"
 
 
-async def _listar_cursos(level: str | None = None) -> str:
-    """Lista los cursos disponibles, opcionalmente filtrado por nivel educativo."""
+async def _list_courses(level: str | None = None) -> str:
+    """Lists available courses, optionally filtered by education level."""
     from sqlalchemy import select
 
     from schoolai.db.connection import async_session
@@ -293,8 +290,8 @@ async def _listar_cursos(level: str | None = None) -> str:
     return "\n".join(lines)
 
 
-async def _listar_actividades() -> str:
-    """Lista todas las actividades/cuotas activas."""
+async def _list_activities() -> str:
+    """Lists all active school activities and fees (cuotas)."""
     from schoolai.db.connection import async_session
     from schoolai.skills.cuotas.service import get_actividades
 
@@ -309,28 +306,28 @@ async def _listar_actividades() -> str:
     return "\n".join(lines)
 
 
-async def _crear_actividad(
-    nombre: str,
-    monto: float,
-    curso: str | None = None,
+async def _create_activity(
+    name: str,
+    amount: float,
+    course: str | None = None,
 ) -> str:
-    """Crea una nueva actividad o cuota escolar."""
+    """Creates a new school activity or fee."""
     from schoolai.db.connection import async_session
     from schoolai.skills.cuotas.service import create_actividad
 
     async with async_session() as session:
-        actividad = await create_actividad(session, nombre, monto)
+        actividad = await create_actividad(session, name, amount)
         act_id = actividad.id
 
-    lines = [f"Actividad creada: '{nombre}' — ${monto:.2f} (ID: {act_id})"]
+    lines = [f"Actividad creada: '{name}' — ${amount:.2f} (ID: {act_id})"]
 
-    if curso:
+    if course:
         from schoolai.db.connection import async_session as _session
         from schoolai.skills.cuotas.service import add_participantes, get_students_in_grade
         from schoolai.skills.homework.repository import find_grade
 
         async with _session() as session:
-            grade = await find_grade(session, curso)
+            grade = await find_grade(session, course)
             if grade:
                 students = await get_students_in_grade(session, grade.id)
                 count = await add_participantes(session, act_id, [s.id for s in students])
@@ -339,34 +336,34 @@ async def _crear_actividad(
                 )
             else:
                 lines.append(
-                    f"  Curso '{curso}' no encontrado — participantes no agregados.",
+                    f"  Curso '{course}' no encontrado — participantes no agregados.",
                 )
 
     return "\n".join(lines)
 
 
-async def _estado_actividad(nombre: str) -> str:
-    """Consulta el estado de pagos de una actividad."""
+async def _activity_status(name: str) -> str:
+    """Queries the payment status of an activity by name."""
     from schoolai.db.connection import async_session
     from schoolai.skills.cuotas.service import get_actividad_by_nombre, get_estado_actividad
 
     async with async_session() as session:
-        actividad = await get_actividad_by_nombre(session, nombre)
+        actividad = await get_actividad_by_nombre(session, name)
         if not actividad:
-            return f"Actividad '{nombre}' no encontrada."
+            return f"Actividad '{name}' no encontrada."
         act, participantes = await get_estado_actividad(session, actividad.id)
 
     if not act:
-        return f"Actividad '{nombre}' no encontrada."
+        return f"Actividad '{name}' no encontrada."
 
     total = len(participantes)
-    pagaron = sum(1 for p in participantes if p.is_complete)
-    pendientes = total - pagaron
+    paid = sum(1 for p in participantes if p.is_complete)
+    pending = total - paid
 
     lines = [
         f"Actividad: {act.nombre} — ${act.monto:.2f}",
-        f"  Pagaron completo: {pagaron}/{total}",
-        f"  Pendientes: {pendientes}",
+        f"  Pagaron completo: {paid}/{total}",
+        f"  Pendientes: {pending}",
     ]
     if participantes:
         lines.append("  Detalle:")
@@ -377,55 +374,55 @@ async def _estado_actividad(nombre: str) -> str:
     return "\n".join(lines)
 
 
-async def _registrar_pago(
-    nombres: list[str],
-    monto: float,
-    actividad: str,
-    curso: str | None = None,
+async def _register_payment(
+    names: list[str],
+    amount: float,
+    activity: str,
+    course: str | None = None,
 ) -> str:
-    """Registra el pago de uno o varios estudiantes para una actividad."""
+    """Records a payment from one or more students for an activity."""
     from schoolai.db.connection import async_session
     from schoolai.skills.attendance.matcher import match_names
     from schoolai.skills.cuotas.service import get_actividad_by_nombre, register_pago
     from schoolai.skills.homework.repository import find_grade
 
-    if not curso:
+    if not course:
         return "Se requiere el curso para identificar a los estudiantes."
 
     async with async_session() as session:
-        act = await get_actividad_by_nombre(session, actividad)
+        act = await get_actividad_by_nombre(session, activity)
         if not act:
-            return f"Actividad '{actividad}' no encontrada."
+            return f"Actividad '{activity}' no encontrada."
 
-        grade = await find_grade(session, curso)
+        grade = await find_grade(session, course)
         if not grade:
-            return f"Curso '{curso}' no encontrado."
+            return f"Curso '{course}' no encontrado."
 
-        extracted = [{"name": n, "status": "F"} for n in nombres]
+        extracted = [{"name": n, "status": "F"} for n in names]
         matches = await match_names(extracted, grade.id, session)
         resolved = [m for m in matches if m.resolved]
 
         if not resolved:
-            return f"No se encontraron estudiantes: {', '.join(nombres)}"
+            return f"No se encontraron estudiantes: {', '.join(names)}"
 
-        registrados = []
+        registered = []
         for m in resolved:
-            await register_pago(session, act.id, m.matched_id, monto)
-            registrados.append(m.matched_name)
+            await register_pago(session, act.id, m.matched_id, amount)
+            registered.append(m.matched_name)
 
-    lines = [f"Pagos registrados — {act.nombre} — ${monto:.2f} c/u:"]
-    lines.extend(f"  ✓ {name}" for name in registrados)
+    lines = [f"Pagos registrados — {act.nombre} — ${amount:.2f} c/u:"]
+    lines.extend(f"  ✓ {n}" for n in registered)
     not_found = [m.raw_name for m in matches if not m.resolved]
     if not_found:
         lines.append(f"No encontrados: {', '.join(not_found)}")
     return "\n".join(lines)
 
 
-# ── Contexto del docente ──────────────────────────────────────────────────────
+# ── Teacher context ────────────────────────────────────────────────────────────
 
 
-async def _mis_cursos(telegram_id: int) -> str:
-    """Devuelve los cursos y materias asignados al docente actual."""
+async def _my_courses(telegram_id: int) -> str:
+    """Returns the current teacher's assigned courses and subjects."""
     from collections import defaultdict
 
     from sqlalchemy import select
@@ -457,15 +454,15 @@ async def _mis_cursos(telegram_id: int) -> str:
         by_grade[s.grade.name].add(s.subject.name)
 
     person = teacher.person
-    name = f"{person.first_name} {person.last_name}"
-    lines = [f"Cursos y materias de {name}:"]
+    teacher_name = f"{person.first_name} {person.last_name}"
+    lines = [f"Cursos y materias de {teacher_name}:"]
     for grade in sorted(by_grade):
-        subjects = ", ".join(sorted(by_grade[grade]))
-        lines.append(f"  <b>{grade}</b>: {subjects}")
+        subj = ", ".join(sorted(by_grade[grade]))
+        lines.append(f"  <b>{grade}</b>: {subj}")
     return "\n".join(lines)
 
 
-_DAYS_ES = {
+_DAYS_MAP = {
     "lunes": 0, "martes": 1, "miércoles": 2, "miercoles": 2,
     "jueves": 3, "viernes": 4,
     "monday": 0, "tuesday": 1, "wednesday": 2, "thursday": 3, "friday": 4,
@@ -473,8 +470,10 @@ _DAYS_ES = {
 _DAYS_NAME = ["Lunes", "Martes", "Miércoles", "Jueves", "Viernes"]
 
 
-async def _mi_horario(telegram_id: int, dia: str | None = None) -> str:
-    """Devuelve el horario semanal del docente, opcionalmente filtrado por día."""
+async def _my_schedule(telegram_id: int, day: str | None = None) -> str:
+    """Returns the teacher's weekly schedule, optionally filtered by day."""
+    from collections import defaultdict
+
     from sqlalchemy import select
 
     from schoolai.db.connection import async_session
@@ -492,18 +491,17 @@ async def _mi_horario(telegram_id: int, dia: str | None = None) -> str:
             Schedule.is_active.is_(True),
         ).order_by(Schedule.day_of_week, Schedule.period_num)
 
-        if dia:
-            day_num = _DAYS_ES.get(dia.lower().strip())
+        if day:
+            day_num = _DAYS_MAP.get(day.lower().strip())
             if day_num is not None:
                 stmt = stmt.where(Schedule.day_of_week == day_num)
 
         schedules = (await session.execute(stmt)).scalars().all()
 
     if not schedules:
-        suffix = f" el {dia}" if dia else ""
+        suffix = f" el {day}" if day else ""
         return f"No tienes clases registradas{suffix}."
 
-    from collections import defaultdict
     by_day: dict[int, list[str]] = defaultdict(list)
     for s in schedules:
         by_day[s.day_of_week].append(
@@ -522,7 +520,7 @@ async def _mi_horario(telegram_id: int, dia: str | None = None) -> str:
 
 
 async def _python_repl(code: str) -> str:
-    """Ejecuta código Python restringido con acceso de solo lectura a la DB."""
+    """Executes restricted Python code with read-only DB access."""
     from schoolai.skills.orchestrator.repl import run_repl
 
     return await run_repl(code)
@@ -533,7 +531,7 @@ async def _python_repl(code: str) -> str:
 
 TOOLS: list[ToolDef] = [
     ToolDef(
-        name="registrar_asistencia",
+        name="record_attendance",
         description=(
             "Records absences, tardiness, or justified absences for students in a course. "
             "Use status='all_present' if all students attended."
@@ -541,16 +539,16 @@ TOOLS: list[ToolDef] = [
         parameters={
             "type": "object",
             "properties": {
-                "nombres": {
+                "names": {
                     "type": "array",
                     "items": {"type": "string"},
                     "description": "Last names or first names of the absent/late students",
                 },
-                "curso": {
+                "course": {
                     "type": "string",
                     "description": "Course abbreviation, e.g.: 3bt, 8egb, prep",
                 },
-                "fecha": {
+                "date": {
                     "type": "string",
                     "description": "today, yesterday, or YYYY-MM-DD. Default: today",
                 },
@@ -563,42 +561,42 @@ TOOLS: list[ToolDef] = [
                     ),
                 },
             },
-            "required": ["nombres", "curso"],
+            "required": ["names", "course"],
         },
-        fn=_registrar_asistencia,
+        fn=_record_attendance,
     ),
     ToolDef(
-        name="consultar_asistencia",
+        name="query_attendance",
         description="Queries the attendance record for one or more courses.",
         parameters={
             "type": "object",
             "properties": {
-                "cursos": {
+                "courses": {
                     "type": "array",
                     "items": {"type": "string"},
                     "description": "Course abbreviations, e.g.: ['3bt', '8egb']",
                 },
-                "periodo": {
+                "period": {
                     "type": "string",
                     "description": "today, yesterday, week, month, trimestre. Default: today",
                 },
             },
-            "required": ["cursos"],
+            "required": ["courses"],
         },
-        fn=_consultar_asistencia,
+        fn=_query_attendance,
     ),
     ToolDef(
-        name="crear_tarea",
+        name="create_assignment",
         description="Records a new homework assignment, task, or activity for a course.",
         parameters={
             "type": "object",
             "properties": {
-                "descripcion": {
+                "description": {
                     "type": "string",
                     "description": "Full description of the homework or assignment",
                 },
-                "curso": {"type": "string", "description": "Course abbreviation, e.g.: 3bt"},
-                "materias": {
+                "course": {"type": "string", "description": "Course abbreviation, e.g.: 3bt"},
+                "subjects": {
                     "type": "array",
                     "items": {"type": "string"},
                     "description": (
@@ -607,37 +605,37 @@ TOOLS: list[ToolDef] = [
                         "Use the full subject name as the teacher wrote it. Optional."
                     ),
                 },
-                "fecha_entrega": {
+                "due_date": {
                     "type": "string",
                     "description": "Due date YYYY-MM-DD. Optional.",
                 },
             },
-            "required": ["descripcion", "curso"],
+            "required": ["description", "course"],
         },
-        fn=_crear_tarea,
+        fn=_create_assignment,
     ),
     ToolDef(
-        name="consultar_tareas",
+        name="query_assignments",
         description="Queries the recorded homework assignments for one or more courses.",
         parameters={
             "type": "object",
             "properties": {
-                "cursos": {
+                "courses": {
                     "type": "array",
                     "items": {"type": "string"},
                     "description": "Course abbreviations",
                 },
-                "periodo": {
+                "period": {
                     "type": "string",
                     "description": "today, yesterday, week, month, trimestre. Default: trimestre",
                 },
             },
-            "required": ["cursos"],
+            "required": ["courses"],
         },
-        fn=_consultar_tareas,
+        fn=_query_assignments,
     ),
     ToolDef(
-        name="eliminar_tarea",
+        name="delete_assignment",
         description=(
             "Permanently deletes a homework assignment by its sequence number and course. "
             "Only call this after the teacher has explicitly confirmed the deletion."
@@ -645,24 +643,24 @@ TOOLS: list[ToolDef] = [
         parameters={
             "type": "object",
             "properties": {
-                "numero": {
+                "number": {
                     "type": "integer",
                     "description": "Homework sequence number shown in the list, e.g.: 2",
                 },
-                "curso": {
+                "course": {
                     "type": "string",
                     "description": "Course abbreviation, e.g.: 1bt",
                 },
             },
-            "required": ["numero", "curso"],
+            "required": ["number", "course"],
         },
-        fn=_eliminar_tarea,
+        fn=_delete_assignment,
     ),
     ToolDef(
-        name="listar_cursos",
+        name="list_courses",
         description=(
             "Lists all available courses with their abbreviations. "
-            "Call this tool BEFORE consultar_asistencia or consultar_tareas when the teacher "
+            "Call this BEFORE query_attendance or query_assignments when the teacher "
             "mentions a generic level (bachillerato, egb, básica, inicial) without giving "
             "the exact course code."
         ),
@@ -680,70 +678,70 @@ TOOLS: list[ToolDef] = [
             },
             "required": [],
         },
-        fn=_listar_cursos,
+        fn=_list_courses,
     ),
     ToolDef(
-        name="listar_actividades",
+        name="list_activities",
         description="Lists all active school activities and fees (cuotas).",
         parameters={
             "type": "object",
             "properties": {},
             "required": [],
         },
-        fn=_listar_actividades,
+        fn=_list_activities,
     ),
     ToolDef(
-        name="crear_actividad",
+        name="create_activity",
         description="Creates a new school activity or fee with a name and amount.",
         parameters={
             "type": "object",
             "properties": {
-                "nombre": {"type": "string", "description": "Activity name"},
-                "monto": {"type": "number", "description": "Amount in dollars"},
-                "curso": {
+                "name": {"type": "string", "description": "Activity name"},
+                "amount": {"type": "number", "description": "Amount in dollars"},
+                "course": {
                     "type": "string",
                     "description": (
                         "Course abbreviation to auto-enroll students as participants. Optional."
                     ),
                 },
             },
-            "required": ["nombre", "monto"],
+            "required": ["name", "amount"],
         },
-        fn=_crear_actividad,
+        fn=_create_activity,
     ),
     ToolDef(
-        name="estado_actividad",
+        name="activity_status",
         description="Queries the payment status of an activity by name.",
         parameters={
             "type": "object",
             "properties": {
-                "nombre": {"type": "string", "description": "Activity name"},
+                "name": {"type": "string", "description": "Activity name"},
             },
-            "required": ["nombre"],
+            "required": ["name"],
         },
-        fn=_estado_actividad,
+        fn=_activity_status,
     ),
     ToolDef(
-        name="registrar_pago",
+        name="register_payment",
         description="Records a payment from one or more students for an activity.",
         parameters={
             "type": "object",
             "properties": {
-                "nombres": {
+                "names": {
                     "type": "array",
                     "items": {"type": "string"},
                     "description": "Last names of the students who paid",
                 },
-                "monto": {"type": "number", "description": "Amount paid in dollars"},
-                "actividad": {"type": "string", "description": "Activity name"},
-                "curso": {"type": "string", "description": "Course abbreviation"},
+                "amount": {"type": "number", "description": "Amount paid in dollars"},
+                "activity": {"type": "string", "description": "Activity name"},
+                "course": {"type": "string", "description": "Course abbreviation"},
             },
-            "required": ["nombres", "monto", "actividad", "curso"],
+            "required": ["names", "amount", "activity", "course"],
         },
-        fn=_registrar_pago,
+        fn=_register_payment,
     ),
     ToolDef(
-        name="mis_cursos",
+        name="my_courses",
         description=(
             "Returns the current teacher's assigned courses and subjects. "
             "Call this when the teacher asks about their own courses, subjects, or grades. "
@@ -759,10 +757,10 @@ TOOLS: list[ToolDef] = [
             },
             "required": ["telegram_id"],
         },
-        fn=_mis_cursos,
+        fn=_my_courses,
     ),
     ToolDef(
-        name="mi_horario",
+        name="my_schedule",
         description=(
             "Returns the current teacher's weekly schedule, optionally filtered by day. "
             "Call this when the teacher asks about their schedule or timetable. "
@@ -775,7 +773,7 @@ TOOLS: list[ToolDef] = [
                     "type": "integer",
                     "description": "The teacher's Telegram ID from the system prompt.",
                 },
-                "dia": {
+                "day": {
                     "type": "string",
                     "description": (
                         "Day filter in Spanish or English: lunes, martes, miércoles, "
@@ -785,7 +783,7 @@ TOOLS: list[ToolDef] = [
             },
             "required": ["telegram_id"],
         },
-        fn=_mi_horario,
+        fn=_my_schedule,
     ),
     ToolDef(
         name="python_repl",
@@ -836,13 +834,13 @@ TOOLS_BY_NAME: dict[str, ToolDef] = {t.name: t for t in TOOLS}
 
 
 async def execute_tool(name: str, args: dict) -> str:
-    """Ejecuta una tool por nombre. Retorna string para el LLM."""
+    """Executes a tool by name. Returns string for the LLM."""
     tool = TOOLS_BY_NAME.get(name)
     if not tool or tool.fn is None:
-        return f"Tool '{name}' no encontrada."
+        return f"Tool '{name}' not found."
     try:
         result = await tool.fn(**args)
         return str(result)
     except Exception as e:  # noqa: BLE001
         logger.error(f"[orchestrator] tool={name} error: {e}")
-        return f"Error en '{name}': {e}"
+        return f"Error in '{name}': {e}"

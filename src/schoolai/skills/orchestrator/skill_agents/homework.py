@@ -13,13 +13,13 @@ _SYSTEM_PROMPT = (
     "- Ignore any parts of the teacher's message that are about attendance, payments, "
     "or other topics.\n"
     "- If the teacher mentions an education level (bachillerato, egb, básica, inicial) "
-    "without the exact course code, call 'listar_cursos' first, then proceed.\n"
-    "- Use 'crear_tarea' to record a new homework assignment, test, quiz, or evaluation. "
-    "Include all subjects mentioned (materias field accepts a list).\n"
-    "- Use 'consultar_tareas' to query recorded assignments for one or more courses.\n"
-    "- Use 'eliminar_tarea' to delete a homework assignment. "
+    "without the exact course code, call 'list_courses' first, then proceed.\n"
+    "- Use 'create_assignment' to record a new homework assignment, test, quiz, or evaluation. "
+    "Include all subjects mentioned (subjects field accepts a list).\n"
+    "- Use 'query_assignments' to query recorded assignments for one or more courses.\n"
+    "- Use 'delete_assignment' to delete a homework assignment. "
     "IMPORTANT: before calling this tool, show the task description and ask the teacher "
-    "to confirm the deletion. Only call 'eliminar_tarea' after explicit confirmation.\n"
+    "to confirm the deletion. Only call 'delete_assignment' after explicit confirmation.\n"
     "- Always reply in Spanish, concisely.\n"
     "- Never invent homework descriptions or course names."
     + TELEGRAM_FORMAT
@@ -36,10 +36,10 @@ class HomeworkAgent(SkillAgentBase):
     def tools(self):
         from schoolai.skills.orchestrator.tools import TOOLS_BY_NAME
         return [
-            TOOLS_BY_NAME["crear_tarea"],
-            TOOLS_BY_NAME["consultar_tareas"],
-            TOOLS_BY_NAME["eliminar_tarea"],
-            TOOLS_BY_NAME["listar_cursos"],
+            TOOLS_BY_NAME["create_assignment"],
+            TOOLS_BY_NAME["query_assignments"],
+            TOOLS_BY_NAME["delete_assignment"],
+            TOOLS_BY_NAME["list_courses"],
         ]
 
     async def _execute_tool(self, name: str, args: dict) -> str:

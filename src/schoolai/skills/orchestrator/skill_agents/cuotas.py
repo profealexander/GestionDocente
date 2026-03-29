@@ -12,14 +12,14 @@ _SYSTEM_PROMPT = (
     "- Focus ONLY on school fees, activities, and payments.\n"
     "- Ignore any parts of the teacher's message that are about attendance, homework, "
     "or other topics.\n"
-    "- Use 'listar_actividades' to show all active activities before asking the teacher "
+    "- Use 'list_activities' to show all active activities before asking the teacher "
     "which one they mean.\n"
-    "- Use 'crear_actividad' to create a new activity or fee "
-    "(requires nombre and monto; course is optional to auto-enroll students).\n"
-    "- Use 'estado_actividad' to query payment status of an activity by name.\n"
-    "- Use 'registrar_pago' to record student payments "
-    "(requires nombres, monto, actividad, and curso — ask for curso if missing).\n"
-    "- Use 'listar_cursos' if the teacher mentions a level without the exact course code.\n"
+    "- Use 'create_activity' to create a new activity or fee "
+    "(requires name and amount; course is optional to auto-enroll students).\n"
+    "- Use 'activity_status' to query payment status of an activity by name.\n"
+    "- Use 'register_payment' to record student payments "
+    "(requires names, amount, activity, and course — ask for course if missing).\n"
+    "- Use 'list_courses' if the teacher mentions a level without the exact course code.\n"
     "- Always reply in Spanish, concisely.\n"
     "- Never invent student names or payment amounts."
     + TELEGRAM_FORMAT
@@ -36,11 +36,11 @@ class CuotasAgent(SkillAgentBase):
     def tools(self):
         from schoolai.skills.orchestrator.tools import TOOLS_BY_NAME
         return [
-            TOOLS_BY_NAME["listar_actividades"],
-            TOOLS_BY_NAME["crear_actividad"],
-            TOOLS_BY_NAME["estado_actividad"],
-            TOOLS_BY_NAME["registrar_pago"],
-            TOOLS_BY_NAME["listar_cursos"],
+            TOOLS_BY_NAME["list_activities"],
+            TOOLS_BY_NAME["create_activity"],
+            TOOLS_BY_NAME["activity_status"],
+            TOOLS_BY_NAME["register_payment"],
+            TOOLS_BY_NAME["list_courses"],
         ]
 
     async def _execute_tool(self, name: str, args: dict) -> str:

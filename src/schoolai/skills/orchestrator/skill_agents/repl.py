@@ -15,7 +15,7 @@ _SYSTEM_PROMPT = (
     "\n"
     "INSTRUCTIONS:\n"
     "- Answer statistical, aggregate, or analytical questions using 'python_repl'.\n"
-    "- Use 'listar_cursos' first if you need course abbreviations.\n"
+    "- Use 'list_courses' first if you need course abbreviations.\n"
     "- Write correct Python code using 'await query(sql)' to query the PostgreSQL database.\n"
     "- Always call 'print()' with the result so it appears in the output.\n"
     "- DO NOT use 'default_api', 'os', 'sys', 'open', or any identifier other than "
@@ -47,7 +47,7 @@ class ReplAgent(SkillAgentBase):
         from schoolai.skills.orchestrator.tools import TOOLS_BY_NAME
         return [
             TOOLS_BY_NAME["python_repl"],
-            TOOLS_BY_NAME["listar_cursos"],
+            TOOLS_BY_NAME["list_courses"],
         ]
 
     async def _execute_tool(self, name: str, args: dict) -> str:

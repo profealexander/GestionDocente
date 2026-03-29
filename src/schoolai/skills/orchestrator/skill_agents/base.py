@@ -239,7 +239,7 @@ class SkillAgentBase:
             text:           mensaje del docente (ya envuelto con anti-injection si aplica)
             prior_messages: historial previo de la sesión (pares user/assistant planos)
             teacher_id:     Telegram ID del docente — inyectado en el system prompt para
-                            que el LLM lo pase a las tools mis_cursos / mi_horario.
+                            que el LLM lo pase a las tools my_courses / my_schedule.
 
         Returns:
             Texto final para enviar al usuario (sin HTML interno de tools).
@@ -258,7 +258,7 @@ class SkillAgentBase:
         if teacher_id:
             system_prompt += (
                 f"\n\nCurrent teacher Telegram ID: {teacher_id}. "
-                "When calling 'mis_cursos' or 'mi_horario', always pass "
+                "When calling 'my_courses' or 'my_schedule', always pass "
                 f"telegram_id={teacher_id} exactly."
             )
 

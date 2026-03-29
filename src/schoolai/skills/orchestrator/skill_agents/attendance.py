@@ -14,13 +14,13 @@ _SYSTEM_PROMPT = (
     "- Ignore any parts of the teacher's message that are about homework, payments, "
     "or other topics.\n"
     "- If the teacher mentions an education level (bachillerato, egb, básica, inicial) "
-    "without the exact course code, call 'listar_cursos' first, then proceed.\n"
-    "- Use 'registrar_asistencia' with status:\n"
+    "without the exact course code, call 'list_courses' first, then proceed.\n"
+    "- Use 'record_attendance' with status:\n"
     "    absent = missed class\n"
     "    late = tardy\n"
     "    justified = excused absence\n"
-    "    all_present = everyone attended (pass empty nombres list)\n"
-    "- Use 'consultar_asistencia' to query records for one or more courses.\n"
+    "    all_present = everyone attended (pass empty names list)\n"
+    "- Use 'query_attendance' to query records for one or more courses.\n"
     "- Always reply in Spanish, concisely.\n"
     "- Never invent student names or dates."
     + TELEGRAM_FORMAT
@@ -37,9 +37,9 @@ class AttendanceAgent(SkillAgentBase):
     def tools(self):
         from schoolai.skills.orchestrator.tools import TOOLS_BY_NAME
         return [
-            TOOLS_BY_NAME["registrar_asistencia"],
-            TOOLS_BY_NAME["consultar_asistencia"],
-            TOOLS_BY_NAME["listar_cursos"],
+            TOOLS_BY_NAME["record_attendance"],
+            TOOLS_BY_NAME["query_attendance"],
+            TOOLS_BY_NAME["list_courses"],
         ]
 
     async def _execute_tool(self, name: str, args: dict) -> str:
