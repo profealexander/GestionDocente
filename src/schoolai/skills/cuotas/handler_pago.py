@@ -48,7 +48,7 @@ async def _resolve_names(session, nombres: list[str], course: str | None):
 
     from schoolai.db.models.grade import Grade
 
-    grades = (await session.execute(select(Grade).where(Grade.is_active.is_(True)))).scalars().all()
+    grades = (await session.execute(select(Grade).order_by(Grade.sort_order))).scalars().all()
 
     for g in grades:
         results = await match_names(extracted, g.id, session)

@@ -167,7 +167,6 @@ async def bulk_import(
     body: BulkImportPayload,
     session: AsyncSession = Depends(get_session),
 ):
-    from fastapi import HTTPException
     from sqlalchemy.exc import IntegrityError
 
     created = 0

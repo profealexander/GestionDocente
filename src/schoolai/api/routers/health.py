@@ -23,7 +23,7 @@ async def health():
 
     # ── Redis ─────────────────────────────────────────────────────────────────
     try:
-        from schoolai.bot.state import _redis_client
+        from schoolai.bot.state_store import _redis_client
 
         if _redis_client is None:
             status["redis"] = "not configured"

@@ -123,13 +123,16 @@ async def get_participantes(
 
 
 async def get_students_in_grade(session: AsyncSession, grade_id: int) -> list[Student]:
+    from schoolai.db.models.person import Person
+
     stmt = (
         select(Student)
+        .join(Student.person)
         .where(
             Student.grade_id == grade_id,
             Student.status == "active",
         )
-        .order_by(Student.last_name, Student.first_name)
+        .order_by(Person.last_name, Person.first_name)
     )
     return (await session.execute(stmt)).scalars().all()
 

@@ -85,7 +85,7 @@ async def login(body: LoginRequest) -> TokenResponse:
 
     async with async_session() as session:
         result = await session.execute(
-            select(Teacher).where(Teacher.username == body.username, Teacher.is_active == True),  # noqa: E712
+            select(Teacher).where(Teacher.username == body.username, Teacher.is_active.is_(True)),
         )
         teacher = result.scalar_one_or_none()
 

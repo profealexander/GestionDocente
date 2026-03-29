@@ -43,7 +43,7 @@ def singleton_guard(bot_name: str) -> None:
     # Mata la instancia anterior si el PID file existe
     if os.path.exists(pid_file):
         try:
-            with open(pid_file) as f:
+            with open(pid_file, encoding="utf-8") as f:
                 old_pid = int(f.read().strip())
 
             if old_pid != current_pid:
@@ -77,7 +77,7 @@ def singleton_guard(bot_name: str) -> None:
     def _cleanup():
         try:
             if os.path.exists(pid_file):
-                with open(pid_file) as f:
+                with open(pid_file, encoding="utf-8") as f:
                     if f.read().strip() == str(current_pid):
                         os.unlink(pid_file)
         except OSError:
