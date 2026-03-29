@@ -72,6 +72,8 @@ async def get_notificacion_context(
 
     # Estudiante
     student = await session.get(Student, student_id)
+    if not student or not student.person:
+        raise ValueError(f"Student {student_id} no encontrado o sin datos de persona")
     person: Person = student.person
     student_name = f"{person.first_name} {person.last_name}".strip()
 
@@ -102,6 +104,8 @@ async def get_notificacion_context(
 
     # Docente
     teacher = await session.get(Teacher, teacher_id)
+    if not teacher:
+        raise ValueError(f"Teacher {teacher_id} no encontrado")
     teacher_person = await session.get(Person, teacher.person_id)
     docente_nombre = (
         f"{teacher_person.first_name} {teacher_person.last_name}".strip() if teacher_person else ""

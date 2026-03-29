@@ -123,19 +123,16 @@ async def save_homework(
     if existing:
         return existing
 
-    # Count existing homework for this grade+trimester+subject
-    count_stmt = (
-        select(func.count())
-        .select_from(Homework)
+    # Calcular sequence_num con lock para evitar condición de carrera
+    seq_stmt = (
+        select(func.coalesce(func.max(Homework.sequence_num), 0))
         .where(
             Homework.grade_id == grade_id,
             Homework.trimester_num == trimester,
         )
+        .with_for_update()
     )
-    if subject_id:
-        count_stmt = count_stmt.where(Homework.subject_id == subject_id)
-    count_result = await session.execute(count_stmt)
-    seq_num = (count_result.scalar() or 0) + 1
+    seq_num = (await session.scalar(seq_stmt)) + 1
 
     record = Homework(
         homework=homework,

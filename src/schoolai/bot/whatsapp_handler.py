@@ -48,7 +48,7 @@ def notify_keyboard(student_ids: list[int]) -> InlineKeyboardMarkup:
     rows = [[InlineKeyboardButton("📱 Notificar a todos", callback_data="wa_notify:all")]]
     if len(student_ids) <= 5:
         rows.extend(
-            [InlineKeyboardButton(f"📱 Notificar a alumno {sid}", callback_data=f"wa_notify:{sid}")]
+            [[InlineKeyboardButton(f"📱 Notificar a alumno {sid}", callback_data=f"wa_notify:{sid}")]]
             for sid in student_ids
         )
     return InlineKeyboardMarkup(rows)

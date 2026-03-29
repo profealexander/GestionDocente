@@ -89,25 +89,29 @@ async def add_participantes(
     student_ids: list[int],
 ) -> int:
     """Agrega estudiantes a una actividad (ignora duplicados). Retorna cuántos se agregaron."""
-    added = 0
-    for sid in student_ids:
-        existing = (
-            (
-                await session.execute(
-                    select(ActividadParticipante).where(
-                        ActividadParticipante.actividad_id == actividad_id,
-                        ActividadParticipante.student_id == sid,
-                    ),
+    if not student_ids:
+        return 0
+
+    # Batch SELECT — una sola query para todos los IDs
+    existing_ids = set(
+        (
+            await session.execute(
+                select(ActividadParticipante.student_id).where(
+                    ActividadParticipante.actividad_id == actividad_id,
+                    ActividadParticipante.student_id.in_(student_ids),
                 )
             )
-            .scalars()
-            .first()
-        )
-        if not existing:
-            session.add(ActividadParticipante(actividad_id=actividad_id, student_id=sid))
-            added += 1
+        ).scalars().all()
+    )
+
+    to_add = [
+        ActividadParticipante(actividad_id=actividad_id, student_id=sid)
+        for sid in student_ids
+        if sid not in existing_ids
+    ]
+    session.add_all(to_add)
     await session.commit()
-    return added
+    return len(to_add)
 
 
 async def get_participantes(

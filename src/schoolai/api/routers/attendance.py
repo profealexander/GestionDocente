@@ -3,7 +3,7 @@
 from datetime import date
 from typing import Optional
 
-from fastapi import APIRouter, Depends, Query
+from fastapi import APIRouter, Depends, HTTPException, Query
 from pydantic import BaseModel
 from sqlalchemy import delete, select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -66,10 +66,9 @@ async def list_attendance(
         stmt = stmt.where(Attendance.status == status)
 
     if grade_id is not None:
-        # Join through students to filter by grade
-        student_ids_stmt = select(Student.id).where(Student.grade_id == grade_id)
-        student_ids = (await session.execute(student_ids_stmt)).scalars().all()
-        stmt = stmt.where(Attendance.student_id.in_(student_ids))
+        stmt = stmt.join(Student, Attendance.student_id == Student.id).where(
+            Student.grade_id == grade_id
+        )
 
     rows = (await session.execute(stmt)).scalars().all()
 
@@ -122,6 +121,15 @@ async def save_attendance(
             Attendance.date == body.date,
         ),
     )
+
+    # Validate all submitted student_ids belong to the grade
+    valid_ids = set(student_ids_in_grade)
+    invalid = [r.student_id for r in body.records if r.student_id not in valid_ids]
+    if invalid:
+        raise HTTPException(
+            status_code=400,
+            detail=f"student_id fuera del grado {body.grade_id}: {invalid}",
+        )
 
     # Insert only non-present records
     inserted = 0

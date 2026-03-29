@@ -16,6 +16,10 @@ from loguru import logger
 
 _BASE = "https://api.green-api.com"
 
+# Cliente compartido por proceso — evita handshake TCP/TLS por cada mensaje
+_client = httpx.AsyncClient(timeout=15.0)
+_client_pdf = httpx.AsyncClient(timeout=30.0)
+
 
 def _chat_id(phone: str) -> str:
     """Convert +593XXXXXXXXX or 593XXXXXXXXX to WhatsApp chatId format."""
@@ -27,8 +31,7 @@ async def send_whatsapp(instance_id: str, token: str, phone: str, message: str) 
     url = f"{_BASE}/waInstance{instance_id}/sendMessage/{token}"
     payload = {"chatId": _chat_id(phone), "message": message}
     try:
-        async with httpx.AsyncClient(timeout=15.0) as client:
-            resp = await client.post(url, json=payload)
+        resp = await _client.post(url, json=payload)
         ok = resp.status_code == 200 and resp.json().get("idMessage")
         if ok:
             logger.info(f"[whatsapp] enviado a {phone}")
@@ -54,12 +57,11 @@ async def send_whatsapp_pdf(
     url = f"https://media.green-api.com/waInstance{instance_id}/sendFileByUpload/{token}"
     chat_id_val = _chat_id(phone)
     try:
-        async with httpx.AsyncClient(timeout=30.0) as client:
-            resp = await client.post(
-                url,
-                data={"chatId": chat_id_val, "caption": caption},
-                files={"file": (file_name, pdf_bytes, "application/pdf")},
-            )
+        resp = await _client_pdf.post(
+            url,
+            data={"chatId": chat_id_val, "caption": caption},
+            files={"file": (file_name, pdf_bytes, "application/pdf")},
+        )
         ok = resp.status_code == 200 and resp.json().get("idMessage")
         if ok:
             logger.info(f"[whatsapp] PDF enviado a {phone}")

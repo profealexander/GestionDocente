@@ -163,7 +163,7 @@ async def list_actividades(
     session: AsyncSession = Depends(get_session),
     current_user=Depends(get_current_user),
 ):
-    teacher_id = getattr(current_user, "teacher_id", None) or getattr(current_user, "id", None)
+    teacher_id = current_user.get("teacher_id") or current_user.get("id")
     actividades = await get_actividades(session, teacher_id=teacher_id, only_active=only_active)
     return [
         ActividadOut(
@@ -189,7 +189,7 @@ async def create_actividad_endpoint(
     session: AsyncSession = Depends(get_session),
     current_user=Depends(get_current_user),
 ):
-    teacher_id = getattr(current_user, "teacher_id", None) or getattr(current_user, "id", None)
+    teacher_id = current_user.get("teacher_id") or current_user.get("id")
     actividad = await create_actividad(
         session,
         nombre=body.nombre,
