@@ -350,7 +350,8 @@ async def _sel_hw_student(user_id: int, student_id: int, pending, bot) -> None:
                 .all()
             )
             for hw in hws:
-                await save_non_completers(session, hw.id, student_ids, status)
+                await save_non_completers(session, hw.id, student_ids, status, commit=False)
+            await session.commit()
             total = await count_students_in_grade(session, p["grade_id"])
 
         status_label = _HW_STATUS_LABELS.get(status, "No entregaron")
@@ -1180,7 +1181,8 @@ async def _save_homework_report(
 
         if student_ids:
             for hw in homeworks:
-                await save_non_completers(session, hw.id, student_ids, data.status)
+                await save_non_completers(session, hw.id, student_ids, data.status, commit=False)
+            await session.commit()
 
         status_label = _HW_STATUS_LABELS.get(data.status, "No entregaron")
 

@@ -202,20 +202,23 @@ async def save_non_completers(
     homework_id: int,
     student_ids: list[int],
     status: str = "missing",
+    *,
+    commit: bool = True,
 ) -> int:
+    from sqlalchemy import delete as _delete
+
     from schoolai.db.models.homework_submission import HomeworkSubmission
 
-    # Delete previous records for this homework (idempotent)
-    existing = await session.execute(
-        select(HomeworkSubmission).where(HomeworkSubmission.homework_id == homework_id),
+    # Bulk delete previous records for this homework (idempotent)
+    await session.execute(
+        _delete(HomeworkSubmission).where(HomeworkSubmission.homework_id == homework_id),
     )
-    for sub in existing.scalars().all():
-        await session.delete(sub)
 
     for sid in student_ids:
         session.add(HomeworkSubmission(homework_id=homework_id, student_id=sid, status=status))
 
-    await session.commit()
+    if commit:
+        await session.commit()
     return len(student_ids)
 
 
