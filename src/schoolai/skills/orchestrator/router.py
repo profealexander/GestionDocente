@@ -75,6 +75,10 @@ _PATTERNS: dict[str, list[str]] = {
         r"\bcalendario\s+escolar\b",
         r"\bferiado[s]?\b",
         r"\bjornada\s+(laboral|escolar|de\s+trabajo)\b",
+        # Búsqueda web explícita
+        r"\bbusca[r]?\s+en\s+(internet|la\s+web|google|línea)\b",
+        r"\bbusca[r]?\s+información\s+(sobre|de|acerca)\b",
+        r"\bencuentra[r]?\s+(en\s+)?(internet|la\s+web)\b",
     ],
     "reminders": [
         r"\brecordatori[oa][s]?\b",                         # recordatorio, recordatorios

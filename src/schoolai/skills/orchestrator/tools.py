@@ -622,6 +622,18 @@ async def _delete_context_doc(telegram_id: int, doc_id: int) -> str:
     return await delete_context_doc(telegram_id=telegram_id, doc_id=doc_id)
 
 
+async def _web_search(query: str) -> str:
+    """Searches the internet via DuckDuckGo and returns top results."""
+    from schoolai.skills.context.tools import web_search
+    return await web_search(query=query)
+
+
+async def _save_web_page(telegram_id: int, url: str, hint: str | None = None) -> str:
+    """Downloads a web page and saves it as a context document."""
+    from schoolai.skills.context.tools import save_web_page
+    return await save_web_page(telegram_id=telegram_id, url=url, hint=hint)
+
+
 # ── Reminders ─────────────────────────────────────────────────────────────────
 
 
@@ -1049,6 +1061,53 @@ TOOLS: list[ToolDef] = [
             "required": ["telegram_id", "doc_id"],
         },
         fn=_delete_context_doc,
+    ),
+    ToolDef(
+        name="web_search",
+        description=(
+            "Searches the internet via DuckDuckGo. Use when the teacher asks about something "
+            "not found in their context documents (regulations, school calendars, general info). "
+            "Returns title, snippet and URL for each result. "
+            "After showing results, offer to save a relevant URL with save_web_page."
+        ),
+        parameters={
+            "type": "object",
+            "properties": {
+                "query": {
+                    "type": "string",
+                    "description": "Search query in the most specific form possible.",
+                },
+            },
+            "required": ["query"],
+        },
+        fn=_web_search,
+    ),
+    ToolDef(
+        name="save_web_page",
+        description=(
+            "Downloads a web page or online document and saves it as a context document "
+            "for future queries. Use after web_search when the teacher confirms they want "
+            "to save a result."
+        ),
+        parameters={
+            "type": "object",
+            "properties": {
+                "telegram_id": {
+                    "type": "integer",
+                    "description": "The teacher's Telegram ID from the system prompt.",
+                },
+                "url": {
+                    "type": "string",
+                    "description": "The URL to download and save.",
+                },
+                "hint": {
+                    "type": "string",
+                    "description": "Optional description to help categorize the document.",
+                },
+            },
+            "required": ["telegram_id", "url"],
+        },
+        fn=_save_web_page,
     ),
     ToolDef(
         name="create_reminder",
