@@ -55,12 +55,26 @@ _PATTERNS: dict[str, list[str]] = {
         r"\bdeuda[s]?\b",
     ],
     "context": [
+        # Gestión explícita de documentos
         r"\bdocumento[s]?\s+de\s+contexto\b",
         r"\barchivo[s]?\s+cargado[s]?\b",
         r"\bmi[s]?\s+documento[s]?\b",
         r"\bborrar?\s+(el\s+)?documento\b",
         r"\beliminar?\s+(el\s+)?documento\b",
         r"\blist[ao]r?\s+(mis\s+)?documentos?\b",
+        # Consultas sobre contenido de documentos institucionales
+        r"\bhorario\s+de\s+(recreo|almuerzo|entrada|salida|clases?)\b",
+        r"\bel\s+reglamento\b",
+        r"\bel\s+cronograma\b",
+        r"\bla\s+normativa\b",
+        r"\bel\s+procedimiento\b",
+        r"\bqué\s+dice\s+(el|la|un|una)\b",
+        r"\bsegún\s+(el|la)\s+(reglamento|cronograma|normativa|documento|circular|manual)\b",
+        r"\bcuál\s+es\s+(el\s+horario|la\s+norma|el\s+proceso|el\s+procedimiento)\b",
+        r"\bfecha[s]?\s+de\s+(examen|evaluación|inicio|cierre|entrega)\b",
+        r"\bcalendario\s+escolar\b",
+        r"\bferiado[s]?\b",
+        r"\bjornada\s+(laboral|escolar|de\s+trabajo)\b",
     ],
     "reminders": [
         r"\brecordatori[oa][s]?\b",                         # recordatorio, recordatorios

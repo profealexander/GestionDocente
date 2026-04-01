@@ -31,7 +31,8 @@ async def search_context(
     for doc in docs:
         scope_label = "Institucional" if doc.scope == "institution" else "Personal"
         parts.append(
-            f"[{doc.title}] ({scope_label} — {doc.category})\n{doc.content[:800]}"
+            f"[DOCUMENTO: {doc.title}] ({scope_label} — {doc.category})\n"
+            f"{doc.content}"
         )
     return "\n\n---\n\n".join(parts)
 
