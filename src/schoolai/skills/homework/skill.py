@@ -83,6 +83,7 @@ class HomeworkSkill(BaseSkill):
         from schoolai.skills.homework.detector import (
             extract_course,
             extract_date,
+            extract_subject_from_aliases,
             extract_subject_phrase,
             extract_subjects,
         )
@@ -113,6 +114,13 @@ class HomeworkSkill(BaseSkill):
             if phrase:
                 subject = phrase
                 subjects = [phrase]
+
+        # Tercer fallback: buscar alias conocidos en el texto completo
+        if subject is None:
+            alias_match = extract_subject_from_aliases(text)
+            if alias_match:
+                subject = alias_match
+                subjects = [alias_match]
 
         # Completar con contexto de jornada ANTES del LLM — evita alucinaciones
         if not course or not subject:

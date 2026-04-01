@@ -152,6 +152,20 @@ def _normalize_alias(s: str) -> str:
     return s.lower().strip()
 
 
+def extract_subject_from_aliases(text: str) -> str | None:
+    """Busca en el texto alguna clave conocida de SUBJECT_ALIASES.
+
+    Tercer fallback cuando regex y _SUBJ_PHRASE_RE no detectan nada.
+    Retorna el nombre completo de la materia si hay coincidencia.
+    """
+    norm = _normalize_alias(text)
+    # Ordenar por longitud descendente para preferir coincidencias más específicas
+    for key, full_name in sorted(SUBJECT_ALIASES.items(), key=lambda x: -len(x[0])):
+        if key in norm:
+            return full_name
+    return None
+
+
 def extract_subject_phrase(text: str) -> str | None:
     """Extrae la materia de mensajes como 'tarea de X de primero BT' o 'tarea X: desc'.
 
