@@ -1,6 +1,6 @@
 from datetime import date
 
-from sqlalchemy import func, select
+from sqlalchemy import distinct, func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from schoolai.db.models.grade import Grade
@@ -21,6 +21,18 @@ _GRADE_ALIASES = {
     "primer bt": "PRIMERO BT",
     "primero bt": "PRIMERO BT",
     "primero bachillerato": "PRIMERO BT",
+    # Primero BT — variantes de voz (STT): "be te", "vt", "v t", "vete"
+    "primero be te": "PRIMERO BT",
+    "primero bete": "PRIMERO BT",
+    "primero vt": "PRIMERO BT",
+    "primero v t": "PRIMERO BT",
+    "primero vete": "PRIMERO BT",
+    "1ero be te": "PRIMERO BT",
+    "1ero vt": "PRIMERO BT",
+    "1ero vete": "PRIMERO BT",
+    "primer be te": "PRIMERO BT",
+    "primer vt": "PRIMERO BT",
+    "primer vete": "PRIMERO BT",
     # Segundo BT
     "2bt": "SEGUNDO BT",
     "2 bt": "SEGUNDO BT",
@@ -34,6 +46,15 @@ _GRADE_ALIASES = {
     "segunda bt": "SEGUNDO BT",
     "segundo bachillerato": "SEGUNDO BT",
     "segunda bachillerato": "SEGUNDO BT",
+    # Segundo BT — variantes de voz
+    "segundo be te": "SEGUNDO BT",
+    "segundo bete": "SEGUNDO BT",
+    "segundo vt": "SEGUNDO BT",
+    "segundo v t": "SEGUNDO BT",
+    "segundo vete": "SEGUNDO BT",
+    "2do be te": "SEGUNDO BT",
+    "2do vt": "SEGUNDO BT",
+    "2do vete": "SEGUNDO BT",
     # Tercero BT
     "3bt": "TERCERO BT",
     "3 bt": "TERCERO BT",
@@ -43,7 +64,16 @@ _GRADE_ALIASES = {
     "3° bt": "TERCERO BT",
     "tercero bt": "TERCERO BT",
     "tercero bachillerato": "TERCERO BT",
-    # EGB
+    # Tercero BT — variantes de voz
+    "tercero be te": "TERCERO BT",
+    "tercero bete": "TERCERO BT",
+    "tercero vt": "TERCERO BT",
+    "tercero v t": "TERCERO BT",
+    "tercero vete": "TERCERO BT",
+    "3ero be te": "TERCERO BT",
+    "3ero vt": "TERCERO BT",
+    "3ero vete": "TERCERO BT",
+    # EGB con sufijo
     "2do egb": "SEGUNDO EGB",
     "2° egb": "SEGUNDO EGB",
     "segundo egb": "SEGUNDO EGB",
@@ -66,11 +96,44 @@ _GRADE_ALIASES = {
     "10mo egb": "DECIMO EGB",
     "décimo egb": "DECIMO EGB",
     "decimo egb": "DECIMO EGB",
+    # EGB sin sufijo — cuarto–décimo (4to-10mo básica superior)
+    "cuarto": "CUARTO EGB",
+    "4to": "CUARTO EGB",
+    "4": "CUARTO EGB",
+    "quinto": "QUINTO EGB",
+    "5to": "QUINTO EGB",
+    "5": "QUINTO EGB",
+    "sexto": "SEXTO EGB",
+    "6to": "SEXTO EGB",
+    "6": "SEXTO EGB",
+    "séptimo": "SEPTIMO EGB",
+    "septimo": "SEPTIMO EGB",
+    "7mo": "SEPTIMO EGB",
+    "7": "SEPTIMO EGB",
+    "octavo": "OCTAVO EGB",
+    "8vo": "OCTAVO EGB",
+    "8": "OCTAVO EGB",
+    "noveno": "NOVENO EGB",
+    "9no": "NOVENO EGB",
+    "9": "NOVENO EGB",
+    "décimo": "DECIMO EGB",
+    "decimo": "DECIMO EGB",
+    "10mo": "DECIMO EGB",
+    "10": "DECIMO EGB",
 }
 
 
+def _normalize_grade_key(s: str) -> str:
+    """Minúsculas + sin tildes + sin espacios extra."""
+    import unicodedata
+    s = unicodedata.normalize("NFD", s)
+    s = "".join(c for c in s if unicodedata.category(c) != "Mn")
+    return " ".join(s.lower().split())
+
+
 async def find_grade(session: AsyncSession, name: str) -> Grade | None:
-    normalized = _GRADE_ALIASES.get(name.lower().strip())
+    key = _normalize_grade_key(name)
+    normalized = _GRADE_ALIASES.get(key)
     search = normalized or name.upper()
     result = await session.execute(
         select(Grade).where(Grade.name.ilike(f"%{search}%")).order_by(Grade.sort_order),
@@ -79,14 +142,69 @@ async def find_grade(session: AsyncSession, name: str) -> Grade | None:
 
 
 async def find_subject(session: AsyncSession, name: str) -> Subject | None:
-    """Fuzzy search using pg_trgm similarity."""
+    """Fuzzy search using pg_trgm similarity. Checks aliases first."""
+    from schoolai.skills.homework.detector import SUBJECT_ALIASES, _normalize_alias
+
+    # Alias exacto (cubre abreviaturas cortas como "gc", "pcp")
+    resolved = SUBJECT_ALIASES.get(_normalize_alias(name), name)
+
     result = await session.execute(
         select(Subject)
-        .where(func.similarity(func.lower(Subject.name), name.lower()) > 0.15)
-        .order_by(func.similarity(func.lower(Subject.name), name.lower()).desc())
+        .where(func.similarity(func.lower(Subject.name), resolved.lower()) > 0.15)
+        .order_by(func.similarity(func.lower(Subject.name), resolved.lower()).desc())
         .limit(1),
     )
     return result.scalars().first()
+
+
+async def get_teacher_subject_ids(
+    session: AsyncSession,
+    teacher_id: int,
+    grade_id: int | None = None,
+) -> list[int]:
+    """Returns distinct subject IDs the teacher is scheduled to teach.
+
+    If grade_id is given, restricts to that grade only.
+    Returns [] if teacher has no active schedule (caller should treat as "no restriction").
+    """
+    from schoolai.db.models.teacher import Schedule
+
+    stmt = select(distinct(Schedule.subject_id)).where(
+        Schedule.teacher_id == teacher_id,
+        Schedule.is_active.is_(True),
+    )
+    if grade_id is not None:
+        stmt = stmt.where(Schedule.grade_id == grade_id)
+    result = await session.execute(stmt)
+    return [row[0] for row in result.all()]
+
+
+async def get_teacher_subjects(
+    session: AsyncSession,
+    teacher_id: int,
+    grade_id: int,
+) -> list["Subject"]:  # noqa: F821
+    """Returns Subject objects the teacher teaches in a specific grade."""
+    from schoolai.db.models.teacher import Schedule
+
+    rows = (
+        await session.execute(
+            select(Schedule.subject_id)
+            .where(
+                Schedule.teacher_id == teacher_id,
+                Schedule.grade_id == grade_id,
+                Schedule.is_active.is_(True),
+            )
+            .distinct()
+        )
+    ).all()
+    subject_ids = [r[0] for r in rows]
+    if not subject_ids:
+        return []
+    subjects = (
+        await session.execute(select(Subject).where(Subject.id.in_(subject_ids)))
+    ).scalars().all()
+    return list(subjects)
 
 
 def _get_trimester_num(d: date) -> int:
@@ -123,14 +241,10 @@ async def save_homework(
     if existing:
         return existing
 
-    # Calcular sequence_num con lock para evitar condición de carrera
-    seq_stmt = (
-        select(func.coalesce(func.max(Homework.sequence_num), 0))
-        .where(
-            Homework.grade_id == grade_id,
-            Homework.trimester_num == trimester,
-        )
-        .with_for_update()
+    # Calcular sequence_num: MAX global por curso + trimestre (para búsqueda interna)
+    seq_stmt = select(func.coalesce(func.max(Homework.sequence_num), 0)).where(
+        Homework.grade_id == grade_id,
+        Homework.trimester_num == trimester,
     )
     seq_num = (await session.scalar(seq_stmt)) + 1
 
@@ -150,7 +264,12 @@ async def save_homework(
     return record
 
 
-async def list_open(session: AsyncSession, grade_id: int | None = None) -> list[Homework]:
+async def list_open(
+    session: AsyncSession,
+    grade_id: int | None = None,
+    teacher_id: int | None = None,
+    subject_id: int | None = None,
+) -> list[Homework]:
     from datetime import date as _date
 
     current_trimester = _get_trimester_num(_date.today())
@@ -160,6 +279,10 @@ async def list_open(session: AsyncSession, grade_id: int | None = None) -> list[
     )
     if grade_id:
         stmt = stmt.where(Homework.grade_id == grade_id)
+    if teacher_id:
+        stmt = stmt.where(Homework.teacher_id == teacher_id)
+    if subject_id:
+        stmt = stmt.where(Homework.subject_id == subject_id)
     stmt = stmt.order_by(Homework.submission_date.desc())
     result = await session.execute(stmt)
     return list(result.scalars().all())
@@ -191,7 +314,8 @@ async def find_homework_by_ref(
         if trimester_num is None:
             trimester_num = _get_trimester_num(_date.today())
         stmt = stmt.where(Homework.trimester_num == trimester_num)
-    if subject_id:
+    # Filtrar por materia si se provee — la numeración es por materia
+    if subject_id is not None:
         stmt = stmt.where(Homework.subject_id == subject_id)
     result = await session.execute(stmt)
     return result.scalars().first()

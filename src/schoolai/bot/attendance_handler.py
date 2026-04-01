@@ -244,8 +244,38 @@ async def _save_and_reply(
     student_ids = [c["student_id"] for c in state.confirmed]
     statuses = {c["student_id"]: c["status"] for c in state.confirmed}
 
+    from sqlalchemy import select as _sel
+
+    from schoolai.bot.state import get_jornada as _get_jornada
+    from schoolai.db.models.teacher import Teacher as _Teacher
+    from schoolai.skills.attendance.service import infer_period_from_schedule
+
+    # 1. Contexto desde jornada activa
+    _jornada = _get_jornada(user_id)
+    _period = _jornada.current_period if _jornada else None
+    _subject_name = _period.get("subject_name") if _period else None
+    _period_start = _period.get("start_time") if _period else None
+    _period_end = _period.get("end_time") if _period else None
+
     async with async_session() as session:
-        result = await save_absences(student_ids, statuses, state.attendance_date, session)
+        # 2. Fallback: inferir del horario según hora y día actual
+        if _subject_name is None:
+            _teacher = (
+                await session.execute(
+                    _sel(_Teacher).where(_Teacher.telegram_id == user_id)
+                )
+            ).scalar_one_or_none()
+            if _teacher:
+                _subject_name, _period_start, _period_end = (
+                    await infer_period_from_schedule(session, _teacher.id, state.grade_id)
+                )
+
+        result = await save_absences(
+            student_ids, statuses, state.attendance_date, session,
+            subject_name=_subject_name,
+            period_start=_period_start,
+            period_end=_period_end,
+        )
 
     clear_attendance(user_id)
 

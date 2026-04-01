@@ -37,6 +37,11 @@ You have tools to manage attendance, homework, and school fees (cuotas).
 
 Today is {today}.
 
+SCHOOL CALENDAR 2025-2026:
+- Trimestre 1: 01/09/2025 → 07/12/2025
+- Trimestre 2: 08/12/2025 → 22/03/2026
+- Trimestre 3: 23/03/2026 → 15/06/2026
+
 INSTRUCTIONS:
 - Use tools when the teacher needs to record or query school data.
 - When the teacher mentions an education level (bachillerato, egb, básica, inicial) without giving the exact course code, first call 'list_courses' to get the real abbreviations, then run the query.
@@ -70,6 +75,7 @@ class _FlatAgent(SkillAgentBase):
         from schoolai.skills.orchestrator.tools import TOOLS
         # python_repl se excluye aquí: Gemini genera código incorrecto (default_api.query).
         # Las queries analíticas van a ReplAgent (GLM) via router.
+        # context tools siempre disponibles — el LLM decide cuándo buscar en documentos.
         return [t for t in TOOLS if t.name != "python_repl"]
 
     async def _execute_tool(self, name: str, args: dict) -> str:

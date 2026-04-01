@@ -22,12 +22,16 @@ from loguru import logger
 from telegram import Update
 from telegram.ext import (
     ApplicationBuilder,
+    CallbackQueryHandler,
     CommandHandler,
     ContextTypes,
     MessageHandler,
     filters,
 )
 from telegram.request import HTTPXRequest
+
+from schoolai.bot.context_handler import handle_context_text_command, handle_context_upload
+from schoolai.bot.jornada_handler import handle_horario_callback, handle_horario_command
 
 from schoolai.config import settings
 
@@ -48,6 +52,7 @@ async def _handle_cancel(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
 
 async def _handle_text(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     from schoolai.bot.handlers import is_allowed
+    from schoolai.bot.jornada_handler import _horario_interceptor
     from schoolai.skills.orchestrator.skill import OrchestratorSkill
 
     user = update.effective_user
@@ -57,6 +62,9 @@ async def _handle_text(update: Update, context: ContextTypes.DEFAULT_TYPE) -> No
 
     text = update.message.text.strip()
     logger.info(f"[agente] user={user.id}: {text[:200]}")
+
+    if await _horario_interceptor(update, user.id):
+        return
 
     skill = OrchestratorSkill()
     await skill.handle(update, user.id, text)
@@ -116,10 +124,12 @@ async def _error_handler(update: object, context: ContextTypes.DEFAULT_TYPE) -> 
 
 async def _post_init(app) -> None:
     from schoolai.bot.state import init_redis
+    from schoolai.skills.reminders.dispatcher import job_dispatch_reminders
     from schoolai.skills.utils.courses import load_course_map
 
     init_redis(settings.redis_url)
     await load_course_map()
+    app.job_queue.run_repeating(job_dispatch_reminders, interval=300, first=60)
     logger.info("[agente] listo — OrchestratorSkill activo")
 
 
@@ -178,13 +188,17 @@ def run_agente() -> None:
     app.add_error_handler(_error_handler)
     app.add_handler(CommandHandler("start", _handle_start))
     app.add_handler(CommandHandler("cancelar", _handle_cancel))
+    app.add_handler(CommandHandler("horario", handle_horario_command))
+    app.add_handler(CallbackQueryHandler(handle_horario_callback, pattern=r"^hor_day:"))
+    app.add_handler(CommandHandler("contexto", handle_context_text_command))
+    app.add_handler(MessageHandler(filters.PHOTO | filters.Document.ALL, handle_context_upload))
     app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, _handle_text))
     app.add_handler(MessageHandler(filters.VOICE | filters.AUDIO, _handle_voice))
 
     logger.info("Bot Agente running. Press Ctrl+C to stop.")
     app.run_polling(
         drop_pending_updates=True,
-        allowed_updates=["message"],
+        allowed_updates=["message", "callback_query"],
     )
 
 

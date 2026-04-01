@@ -17,7 +17,8 @@ Callbacks:
 """
 
 import asyncio
-from datetime import date, datetime
+import re
+from datetime import date, datetime, timedelta
 from datetime import time as _time
 from functools import cache
 
@@ -34,6 +35,7 @@ from schoolai.bot.state import (
     JornadaSession,
     clear_jornada,
     get_jornada,
+    iter_all_jornada,
     set_jornada,
 )
 from schoolai.db.connection import async_session
@@ -42,14 +44,36 @@ from schoolai.skills.db.schedule_service import get_schedule_for_day, get_teache
 
 # ── Teclados estáticos cacheados ──────────────────────────────────────────────
 
-_ACTIVE_KEYBOARD = InlineKeyboardMarkup(
+_ABSENT_REASONS: dict[str, str] = {
+    "meeting":  "📋 Reunión delegada",
+    "permit":   "📝 Permiso",
+    "sick":     "🤒 Enfermedad / Malestar",
+    "other":    "❓ Otro motivo",
+}
+
+_ABSENT_REASON_KEYBOARD = InlineKeyboardMarkup(
     [
         [
-            InlineKeyboardButton("▶️ Siguiente clase", callback_data="jor_next"),
-            InlineKeyboardButton("⏸ Pausar", callback_data="jor_pause"),
+            InlineKeyboardButton("📋 Reunión delegada", callback_data="jor_absent_reason:meeting"),
+            InlineKeyboardButton("📝 Permiso",          callback_data="jor_absent_reason:permit"),
+        ],
+        [
+            InlineKeyboardButton("🤒 Enfermedad",       callback_data="jor_absent_reason:sick"),
+            InlineKeyboardButton("❓ Otro motivo",      callback_data="jor_absent_reason:other"),
         ],
     ],
 )
+
+def _active_keyboard(has_prev: bool) -> InlineKeyboardMarkup:
+    rows = [
+        [
+            InlineKeyboardButton("▶️ Siguiente clase", callback_data="jor_next"),
+            InlineKeyboardButton("⏸ Pausar",           callback_data="jor_pause"),
+        ],
+    ]
+    if has_prev:
+        rows.append([InlineKeyboardButton("⬅️ Clase anterior", callback_data="jor_back")])
+    return InlineKeyboardMarkup(rows)
 
 _FINISHED_KEYBOARD = InlineKeyboardMarkup(
     [
@@ -73,10 +97,13 @@ def _build_sop() -> SOPEngine:
             # waiting — tarjeta de período mostrada, esperando al docente
             ("waiting", "jor_here"): _on_here,
             ("waiting", "jor_skip"): _on_skip,
+            ("waiting", "jor_back"): _on_back,
+            ("waiting", "jor_absent"): _on_absent_menu,
             ("waiting", "jor_pause"): _on_pause,
             ("waiting", "jor_end"): _on_end,
             # active — docente en clase
             ("active", "jor_next"): _on_next,
+            ("active", "jor_back"): _on_back,
             ("active", "jor_pause"): _on_pause,
             ("active", "jor_end"): _on_end,
             # paused — en receso
@@ -91,6 +118,73 @@ def _build_sop() -> SOPEngine:
             # jor_goto:{i} se parsea por separado en el dispatcher
         },
     )
+
+
+# ── Job de reconexión — corre 20s después del arranque ───────────────────────
+
+
+async def job_reconnect_resume(context: ContextTypes.DEFAULT_TYPE) -> None:
+    """Detecta sesiones de jornada activas cuyo período ya pasó y ofrece retomar.
+
+    Se ejecuta una única vez, 20 s después del arranque (tiempo para procesar
+    los mensajes que estaban en cola durante la desconexión).
+    """
+    sessions = iter_all_jornada()
+    if not sessions:
+        return
+
+    for user_id, jornada in sessions:
+        if jornada.status == "done":
+            continue
+        if not jornada.periods:
+            continue
+
+        correct_index = _current_period_index(jornada.periods)
+
+        # Sesión al día o ya llegamos al último período → no tocar
+        if correct_index <= jornada.current_index:
+            continue
+
+        # Avanzar al período que corresponde ahora
+        jornada.current_index = min(correct_index, len(jornada.periods) - 1)
+        jornada.status = "waiting"
+        jornada.clear_context()
+        set_jornada(user_id, jornada)
+
+        p = jornada.current_period
+        if not p:
+            continue
+
+        now_str = datetime.now().strftime("%H:%M")
+        try:
+            await context.bot.send_message(
+                chat_id=jornada.chat_id,
+                text=(
+                    f"📶 *Reconectado — {now_str}*\n\n"
+                    f"Según la hora actual corresponde:\n\n"
+                    f"*{_hora_label(p['period_num'])}  ·  {p['grade_name']}  —  {p['subject_name']}*\n"
+                    f"🕐 {p['start_time']} – {p['end_time']}\n\n"
+                    f"_¿Estás en esta clase?_"
+                ),
+                parse_mode=ParseMode.MARKDOWN,
+                reply_markup=InlineKeyboardMarkup(
+                    [
+                        [
+                            InlineKeyboardButton("✅ Sí, estoy aquí", callback_data="jor_here"),
+                            InlineKeyboardButton("🚫 No asistí",      callback_data="jor_absent"),
+                        ],
+                        [
+                            InlineKeyboardButton("📋 Seleccionar período", callback_data="jor_pick"),
+                        ],
+                    ],
+                ),
+            )
+            logger.info(
+                f"[jornada:reconnect] prompted user={user_id} "
+                f"period={p['period_num']} grade={p['grade_name']}",
+            )
+        except Exception as e:
+            logger.warning(f"[jornada:reconnect] no se pudo notificar user={user_id}: {e}")
 
 
 # ── Job 06:00 ─────────────────────────────────────────────────────────────────
@@ -244,6 +338,12 @@ async def handle_jornada_callback(update, context: ContextTypes.DEFAULT_TYPE) ->
         await _on_goto(query, user_id, int(data.split(":")[1]), context)
         return
 
+    # jor_absent_reason:{reason} — confirmación de razón de ausencia
+    if data.startswith("jor_absent_reason:"):
+        reason = data.split(":", 1)[1]
+        await _on_absent_reason(query, user_id, reason, context)
+        return
+
     jornada = get_jornada(user_id)
     status = jornada.status if jornada else "none"
 
@@ -323,13 +423,14 @@ async def _on_here(query, user_id: int, context: ContextTypes.DEFAULT_TYPE) -> N
     set_jornada(user_id, jornada)
 
     await query.edit_message_text(
-        f"✅ *{p['grade_name']} — {p['subject_name']}*\n"
+        f"✅ *{_hora_label(p['period_num'])}  ·  {p['grade_name']} — {p['subject_name']}*\n"
         f"🕐 {p['start_time']}–{p['end_time']}\n\n"
         "_Contexto activo. Registra asistencia o tareas normalmente._",
         parse_mode=ParseMode.MARKDOWN,
-        reply_markup=_ACTIVE_KEYBOARD,
+        reply_markup=_active_keyboard(has_prev=jornada.current_index > 0),
     )
-    await query.message.reply_text("\u200b", reply_markup=REMOVE_KEYBOARD)
+    tmp = await query.message.reply_text(".", reply_markup=REMOVE_KEYBOARD)
+    await tmp.delete()
     logger.info(
         f"[jornada] active user={user_id} grade={p['grade_name']} subject={p['subject_name']}",
     )
@@ -339,6 +440,61 @@ async def _on_skip(query, user_id: int, context: ContextTypes.DEFAULT_TYPE) -> N
     jornada = get_jornada(user_id)
     if not jornada:
         return
+
+    jornada.current_index += 1
+    jornada.status = "waiting"
+    jornada.clear_context()
+    set_jornada(user_id, jornada)
+
+    await query.edit_message_reply_markup(reply_markup=None)
+
+    if not jornada.current_period:
+        await _finish_jornada(context.bot, user_id, jornada)
+        return
+
+    await _send_period_card(context.bot, jornada, user_id)
+
+
+async def _on_absent_menu(query, user_id: int, context: ContextTypes.DEFAULT_TYPE) -> None:
+    """Muestra el sub-menú de razones de ausencia del docente."""
+    jornada = get_jornada(user_id)
+    if not jornada or not jornada.current_period:
+        return
+
+    p = jornada.current_period
+    await query.edit_message_text(
+        f"🚫 *{p['grade_name']} — {p['subject_name']}*\n"
+        f"🕐 {p['start_time']}–{p['end_time']}\n\n"
+        "_¿Cuál es el motivo de tu ausencia?_",
+        parse_mode="Markdown",
+        reply_markup=_ABSENT_REASON_KEYBOARD,
+    )
+
+
+async def _on_absent_reason(
+    query, user_id: int, reason: str, context: ContextTypes.DEFAULT_TYPE,
+) -> None:
+    """Registra la ausencia del docente con razón y avanza al siguiente período."""
+    jornada = get_jornada(user_id)
+    if not jornada:
+        return
+
+    p = jornada.current_period
+    if p:
+        reason_label = _ABSENT_REASONS.get(reason, "Otro motivo")
+        jornada.absences.append(
+            {
+                "period_num": p["period_num"],
+                "grade_name": p["grade_name"],
+                "subject_name": p["subject_name"],
+                "reason": reason,
+                "reason_label": reason_label,
+            },
+        )
+        logger.info(
+            f"[jornada] ausencia docente user={user_id} "
+            f"grade={p['grade_name']} reason={reason}",
+        )
 
     jornada.current_index += 1
     jornada.status = "waiting"
@@ -424,7 +580,7 @@ async def _on_end(query, user_id: int, context=None) -> None:
         "_Toca 📅 Jornada cuando quieras retomar._",
         parse_mode=ParseMode.MARKDOWN,
     )
-    await query.message.reply_text("\u200b", reply_markup=JORNADA_KEYBOARD)
+    await query.message.reply_text("📅 Toca Jornada para retomar.", reply_markup=JORNADA_KEYBOARD)
     logger.info(f"[jornada] ended user={user_id}")
 
 
@@ -458,6 +614,13 @@ def _current_period_index(periods: list[dict]) -> int:
     return len(periods)  # todos pasaron
 
 
+_ORDINAL = {1:"1RA",2:"2DA",3:"3RA",4:"4TA",5:"5TA",6:"6TA",7:"7MA",8:"8VA"}
+
+
+def _hora_label(n: int) -> str:
+    return f"{_ORDINAL.get(n, f'{n}RA')} HORA"
+
+
 def _build_period_list(periods) -> list[dict]:
     return [
         {
@@ -479,7 +642,7 @@ async def _send_period_card(bot, jornada: JornadaSession, user_id: int) -> None:
     num = jornada.current_index + 1
 
     text = (
-        f"📚 *Clase {num} de {total}*\n\n"
+        f"📚 *Clase {num} de {total}  ·  {_hora_label(p['period_num'])}*\n\n"
         f"*{p['grade_name']}  —  {p['subject_name']}*\n"
         f"🕐 {p['start_time']} – {p['end_time']}\n\n"
         "_¿Ya estás en el aula?_"
@@ -487,13 +650,16 @@ async def _send_period_card(bot, jornada: JornadaSession, user_id: int) -> None:
     buttons = [
         [
             InlineKeyboardButton("✅ Estoy en clase", callback_data="jor_here"),
-            InlineKeyboardButton("⏭ Saltar", callback_data="jor_skip"),
+            InlineKeyboardButton("🚫 No asistí",      callback_data="jor_absent"),
         ],
         [
-            InlineKeyboardButton("⏸ Pausar Jornada", callback_data="jor_pause"),
-            InlineKeyboardButton("🔴 Finalizar Jornada", callback_data="jor_end"),
+            InlineKeyboardButton("⏭ Saltar",          callback_data="jor_skip"),
+            InlineKeyboardButton("⏸ Pausar Jornada",  callback_data="jor_pause"),
         ],
     ]
+    if jornada.current_index > 0:
+        buttons.append([InlineKeyboardButton("⬅️ Clase anterior", callback_data="jor_back")])
+    buttons.append([InlineKeyboardButton("🔴 Finalizar Jornada", callback_data="jor_end")])
 
     await bot.send_message(
         chat_id=jornada.chat_id,
@@ -505,16 +671,44 @@ async def _send_period_card(bot, jornada: JornadaSession, user_id: int) -> None:
 
 async def _finish_jornada(bot, user_id: int, jornada: JornadaSession) -> None:
     total = len(jornada.periods)
+    absences = jornada.absences
+
+    lines = [f"🎉 *¡Jornada completada!*\nClases del día: *{total}*"]
+
+    if absences:
+        lines.append(f"\n⚠️ *Ausencias registradas ({len(absences)}):*")
+        for a in absences:
+            lines.append(
+                f"  • P{a['period_num']} {a['grade_name']} — {a['subject_name']}"
+                f"\n    _{a['reason_label']}_",
+            )
+    else:
+        lines.append("\n_Buen trabajo. Hasta mañana._")
+
     clear_jornada(user_id)
     await bot.send_message(
         chat_id=jornada.chat_id,
-        text=(
-            f"🎉 *¡Jornada completada!*\nClases del día: *{total}*\n\n_Buen trabajo. Hasta mañana._"
-        ),
+        text="\n".join(lines),
         parse_mode=ParseMode.MARKDOWN,
         reply_markup=JORNADA_KEYBOARD,
     )
-    logger.info(f"[jornada] completed user={user_id} total={total}")
+    logger.info(f"[jornada] completed user={user_id} total={total} absences={len(absences)}")
+
+
+async def _on_back(query, user_id: int, context: ContextTypes.DEFAULT_TYPE) -> None:
+    jornada = get_jornada(user_id)
+    if not jornada or jornada.current_index == 0:
+        await query.answer("Ya estás en la primera clase.", show_alert=True)
+        return
+
+    jornada.current_index -= 1
+    jornada.status = "waiting"
+    jornada.clear_context()
+    set_jornada(user_id, jornada)
+
+    await query.edit_message_reply_markup(reply_markup=None)
+    await _send_period_card(context.bot, jornada, user_id)
+    logger.info(f"[jornada] back user={user_id} index={jornada.current_index}")
 
 
 async def _on_restart(query, user_id: int, context) -> None:
@@ -573,3 +767,180 @@ def jornada_context_banner(user_id: int) -> str | None:
     if not s or s.status != "active":
         return None
     return f"\n\n📌 _Modo Jornada: {s.grade_name} — {s.subject_name}_  [▶️ Siguiente](jor_next)"
+
+
+# ── /horario ──────────────────────────────────────────────────────────────────
+
+# Tiempos estándar por número de hora (bachillerato, 8 horas)
+_PERIOD_TIMES: dict[int, tuple[str, str]] = {
+    1: ("07:30", "08:15"),
+    2: ("08:15", "09:00"),
+    3: ("09:00", "09:45"),
+    4: ("09:45", "10:30"),
+    5: ("10:50", "11:30"),
+    6: ("11:30", "12:10"),
+    7: ("12:10", "12:50"),
+    8: ("12:50", "13:30"),
+}
+_TOTAL_PERIODS = 8
+
+
+_ORDINAL_TO_NUM = {
+    "PRIMERO": "1", "PRIMERA": "1", "SEGUNDO": "2", "SEGUNDA": "2",
+    "TERCERO": "3", "TERCERA": "3", "CUARTO": "4", "CUARTA": "4",
+    "QUINTO": "5", "SEXTO": "6", "SEPTIMO": "7", "SÉPTIMO": "7",
+    "OCTAVO": "8", "NOVENO": "9", "DECIMO": "10", "DÉCIMO": "10",
+    "INICIAL": "I", "PREPARATORIA": "P",
+}
+_STOP_WORDS = {"y", "de", "del", "la", "el", "los", "las", "con", "en", "a", "e", "o"}
+# Receso entre H4 y H5
+_BREAK_BEFORE = 5
+
+
+def _grade_abbrev(name: str) -> str:
+    """'PRIMERO BT' → '1BT', 'OCTAVO EGB' → '8EGB'"""
+    parts = name.upper().split()
+    num = _ORDINAL_TO_NUM.get(parts[0], parts[0])
+    level = parts[-1] if len(parts) > 1 else ""
+    return f"{num}{level}" if level in ("BT", "EGB") else num
+
+
+def _subject_abbrev(name: str) -> str:
+    """'Contabilidad General' → 'CG', 'Gestión Contable y Adm. Financiera' → 'GCAF'"""
+    words = [w for w in name.split() if w.lower() not in _STOP_WORDS and len(w) > 2]
+    if len(words) == 1:
+        return words[0][:3].upper()
+    return "".join(w[0].upper() for w in words)
+
+
+def _build_schedule_text(periods: list, day: int) -> str:
+    by_num = {p.period_num: p for p in periods}
+    day_name = DAY_NAMES[day].upper()
+    lines = [f"📅 *{day_name}*", ""]
+    for h in range(1, _TOTAL_PERIODS + 1):
+        if h == _BREAK_BEFORE:
+            lines.append("")
+        start = _PERIOD_TIMES.get(h, ("—:—", "—:—"))[0]
+        ord_label = _ORDINAL.get(h, str(h))
+        if h in by_num:
+            p = by_num[h]
+            grade = _grade_abbrev(p.grade.name)
+            subj = _subject_abbrev(p.subject.name)
+            lines.append(f"`{ord_label}` {start}  {grade} · {subj}")
+        else:
+            lines.append(f"`{ord_label}` {start}  —")
+    return "\n".join(lines)
+
+
+def _day_nav_keyboard(current_day: int) -> InlineKeyboardMarkup:
+    labels = ["LUN", "MAR", "MIÉ", "JUE", "VIE"]
+    buttons = [
+        InlineKeyboardButton(
+            f"·{labels[d]}·" if d == current_day else labels[d],
+            callback_data=f"hor_day:{d}",
+        )
+        for d in range(5)
+    ]
+    return InlineKeyboardMarkup([buttons])
+
+
+async def handle_horario_command(update, context) -> None:
+    user_id = update.effective_user.id
+    today = date.today().weekday()
+    if today > 4:
+        today = 0  # fin de semana → mostrar lunes
+
+    async with async_session() as session:
+        teacher = await get_teacher_by_telegram(session, user_id)
+        if not teacher:
+            await update.message.reply_text(
+                "No tienes un perfil de docente vinculado.\n"
+                "Usa /db → 📅 Horario para configurarlo.",
+            )
+            return
+        periods = await get_schedule_for_day(session, teacher.id, today)
+
+    await update.message.reply_text(
+        _build_schedule_text(periods, today),
+        parse_mode=ParseMode.MARKDOWN,
+        reply_markup=_day_nav_keyboard(today),
+    )
+
+
+async def handle_horario_callback(update, context) -> None:
+    query = update.callback_query
+    await query.answer()
+    user_id = update.effective_user.id
+    day = int(query.data.split(":")[1])
+
+    async with async_session() as session:
+        teacher = await get_teacher_by_telegram(session, user_id)
+        if not teacher:
+            await query.edit_message_text("Perfil de docente no encontrado.")
+            return
+        periods = await get_schedule_for_day(session, teacher.id, day)
+
+    await query.edit_message_text(
+        _build_schedule_text(periods, day),
+        parse_mode=ParseMode.MARKDOWN,
+        reply_markup=_day_nav_keyboard(day),
+    )
+
+
+# ── Detección por lenguaje natural ────────────────────────────────────────────
+
+_HORARIO_RE = re.compile(
+    r"\b(horario|mi horario|ver horario|clases?(?: de)?(?: hoy| ma[nñ]ana)?|"
+    r"qu[eé] tengo(?: hoy| ma[nñ]ana)?|"
+    r"qu[eé] clases?(?: tengo)?)\b",
+    re.IGNORECASE,
+)
+
+_DAY_WORDS: dict[str, int] = {
+    "lunes": 0, "martes": 1, "miércoles": 2, "miercoles": 2,
+    "jueves": 3, "viernes": 4,
+    "hoy": -1, "mañana": -2, "manana": -2,
+}
+
+
+def _extract_day_from_text(text: str) -> int:
+    """Intenta extraer el día de semana del texto. Retorna -1 = hoy por defecto."""
+    t = text.lower()
+    for word, val in _DAY_WORDS.items():
+        if word in t:
+            if val == -1:
+                return date.today().weekday()
+            if val == -2:
+                return (date.today() + timedelta(days=1)).weekday() % 5
+            return val
+    return date.today().weekday()
+
+
+async def _horario_interceptor(update, user_id: int) -> bool:
+    """Detecta solicitudes de horario en lenguaje natural."""
+    text = update.message.text
+    if not _HORARIO_RE.search(text):
+        return False
+
+    day = _extract_day_from_text(text)
+    if day > 4:
+        day = 0  # fin de semana → lunes
+
+    async with async_session() as session:
+        teacher = await get_teacher_by_telegram(session, user_id)
+        if not teacher:
+            return False
+        periods = await get_schedule_for_day(session, teacher.id, day)
+
+    await update.message.reply_text(
+        _build_schedule_text(periods, day),
+        parse_mode=ParseMode.MARKDOWN,
+        reply_markup=_day_nav_keyboard(day),
+    )
+    return True
+
+
+# Auto-registro al importar este módulo (aplica a bots Libre y Jornada)
+from schoolai.bot.text_interceptors import text_interceptors  # noqa: E402
+
+text_interceptors.register(priority=8, name="horario_natural")(_horario_interceptor)

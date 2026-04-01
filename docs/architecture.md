@@ -110,11 +110,13 @@ handlers.py — _dispatch()
        ▼
 skills/registry.py — detect_all(text)
   Itera skills en orden de prioridad:
-  1. AttendanceSkill   (p=10)  ← keywords O(1) + patterns regex
-  2. HWReportSkill     (p=20)
-  3. HomeworkSkill     (p=30)
-  4. QuerySkill        (p=40)
-  5. CuotaSkill        (p=50)
+  1. AttendanceEditSkill (p=8)   ← editar/corregir asistencia
+  2. AttendanceSkill     (p=10)  ← keywords O(1) + patterns regex
+  3. HWReportSkill       (p=20)
+  4. HomeworkSkill       (p=30)
+  5. CuotaSkill          (p=35)
+  6. HWEditSkill         (p=40)
+  7. QuerySkill          (p=40)
   └── [] vacío → detect() fallback:
        1. OrchestratorSkill (p=90) — Gemini 2.5 Flash-Lite ReAct
        2. ChatSkill         (p=100) — Groq 70B conversación libre
@@ -167,15 +169,15 @@ whatsapp = "schoolai.bot.channels.whatsapp:WhatsAppChannel"
 
 | Prioridad | Skill | Intent | Detección |
 |---|---|---|---|
-| 8  | AttendanceEditSkill | `attendance_edit` | editar/corregir/cambiar + asistencia/falta |
-| 10 | AttendanceSkill | `attendance` | keywords: faltó, atraso, ausente… |
-| 20 | HWReportSkill | `homework_report` | keywords: no entregó, cumplimiento… |
-| 25 | HWEditSkill | `homework_edit` | editar/modificar + tarea |
-| 30 | HomeworkSkill | `homework` | keywords: tarea, deber, examen… |
-| 40 | QuerySkill | `query` | trigger explícito + dominio |
-| 50 | CuotaSkill | `cuota` | keywords: cuota, actividad, pago… |
-| 90 | OrchestratorSkill | `orchestrator` | **fallback 1** — `matches()=False`, Gemini 2.5 Flash-Lite |
-| 100 | ChatSkill | `chat` | **fallback 2** — Groq 70B conversación libre |
+| 8   | AttendanceEditSkill | `attendance_edit` | editar/corregir/cambiar + asistencia/falta |
+| 10  | AttendanceSkill     | `attendance`      | keywords: faltó, atraso, ausente… |
+| 20  | HWReportSkill       | `homework_report` | keywords: no entregó, cumplimiento… |
+| 30  | HomeworkSkill       | `homework`        | keywords: tarea, deber, examen… (requiere materia) |
+| 35  | CuotaSkill          | `cuota`           | keywords: cuota, actividad, pago… |
+| 40  | HWEditSkill         | `homework_edit`   | editar/modificar/eliminar + tarea |
+| 40  | QuerySkill          | `query`           | trigger explícito (ver/dame/mostrar…) + dominio |
+| 90  | OrchestratorSkill   | `orchestrator`    | **fallback 1** — `matches()=False`, Gemini 2.5 Flash-Lite |
+| 100 | ChatSkill           | `chat`            | **fallback 2** — Groq 70B conversación libre |
 
 `detect_all()` excluye `orchestrator` y `chat` (son fallbacks, no skills de detección primaria).
 `detect()` busca primero en `detect_all()`, luego en orden: OrchestratorSkill → ChatSkill.
@@ -278,8 +280,8 @@ Sobrevive reinicios — la hora configurada persiste en `logs/cron.json`.
 | `planner.py` | Divide texto multi-intent en fragmentos por skill |
 | `base.py` | BaseSkill: `priority`, `matches()` con keywords O(1) + patterns regex |
 | `attendance/` | Skill + AttendanceEditSkill + tools + matcher fuzzy + service + handler_edit |
-| `homework/` | Skill + tools + detector + repository + handler_edit |
-| `query/` | Skill + tools + extracción de períodos/cursos |
+| `homework/` | HomeworkSkill (crear, requiere materia) + HWEditSkill (editar/eliminar con confirmación) + HWReportSkill + detector + repository + handler_edit |
+| `query/` | Skill + tools + extracción de períodos/cursos + formatter (listado visual con stats, índice de materias, numeración emoji) |
 | `cuotas/` | Skill + tools + handlers (create/pago/query/edit) + service + exporter |
 | `orchestrator/` | OrchestratorSkill + router de patrones + SkillAgents especializados + ReplAgent + session + 11 tools |
 | `ia/` | ChatSkill: chat IA general con streaming (Groq 70B) |

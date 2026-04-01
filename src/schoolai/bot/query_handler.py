@@ -10,13 +10,30 @@ from schoolai.skills.query.resolver import resolve_attendance, resolve_homework
 
 
 async def _run_query(reply_fn, user_id: int, intent: QueryIntent, grade_id: int) -> None:
+    from sqlalchemy import select
+
+    from schoolai.db.models.teacher import Teacher
+    from schoolai.skills.homework.repository import get_teacher_subject_ids
+
     async with async_session() as session:
         if intent.type == "attendance":
             data = await resolve_attendance(intent, grade_id, session)
             text = format_attendance(data)
             mode = ParseMode.MARKDOWN
         else:
-            data = await resolve_homework(intent, grade_id, session)
+            teacher_subject_ids = None
+            teacher = (
+                await session.execute(select(Teacher).where(Teacher.telegram_id == user_id))
+            ).scalar_one_or_none()
+            teacher_id_val = None
+            if teacher:
+                teacher_id_val = teacher.id
+                ids = await get_teacher_subject_ids(session, teacher.id, grade_id)
+                if ids:
+                    teacher_subject_ids = ids
+            data = await resolve_homework(
+                intent, grade_id, session, teacher_subject_ids, teacher_id=teacher_id_val
+            )
             text = format_homework(data)
             mode = ParseMode.HTML
 

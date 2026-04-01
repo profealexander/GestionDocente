@@ -21,6 +21,9 @@ class Attendance(Base):
     )
     date: Mapped[date] = mapped_column(Date, nullable=False)
     status: Mapped[str] = mapped_column(String(1), nullable=False)  # F | AT | J
+    subject_name: Mapped[str | None] = mapped_column(String(120), nullable=True)
+    period_start: Mapped[str | None] = mapped_column(String(5), nullable=True)  # "09:00"
+    period_end: Mapped[str | None] = mapped_column(String(5), nullable=True)    # "09:45"
     notes: Mapped[str | None] = mapped_column(String, nullable=True)
     recorded_by: Mapped[int | None] = mapped_column(Integer, ForeignKey("people.id"), nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now())

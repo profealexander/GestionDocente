@@ -1,6 +1,28 @@
 import re
 from datetime import date, timedelta
 
+# Aliases para nombres informales / abreviaturas de materias
+# clave: texto normalizado (minúsculas, sin tildes)
+SUBJECT_ALIASES: dict[str, str] = {
+    "gc": "Gestión Contable y Administración Financiera",
+    "gcaf": "Gestión Contable y Administración Financiera",
+    "gestion contable": "Gestión Contable y Administración Financiera",
+    "gestion contable y administracion financiera": "Gestión Contable y Administración Financiera",
+    "pcp": "Planificación y Control Presupuestario",
+    "planif": "Planificación y Control Presupuestario",
+    "planificacion": "Planificación y Control Presupuestario",
+    "planificacion presupuestaria": "Planificación y Control Presupuestario",
+    "fil": "Filosofía",
+    "filo": "Filosofía",
+    "filosofia": "Filosofía",
+    "costos": "Contabilidad de Costos",
+    "cont costos": "Contabilidad de Costos",
+    "contabilidad costos": "Contabilidad de Costos",
+    "ciudadania": "Educación para la Ciudadanía",
+    "edu ciudadania": "Educación para la Ciudadanía",
+    "educacion ciudadania": "Educación para la Ciudadanía",
+}
+
 HOMEWORK_KEYWORDS = [
     "tarea",
     "actividad",
@@ -27,13 +49,19 @@ COURSE_PATTERNS = [
     r"\b(inicial\s+[12]|preparatoria)\b",
     # EGB con sufijo explícito (cubre segundo y tercero que son ambiguos con BT)
     r"\b(segundo|tercero|cuarto|quinto|sexto|s[eé]ptimo|octavo|noveno|d[eé]cimo)\s+egb\b",
-    # EGB sin sufijo — solo los que no son ambiguos con bachillerato (4to en adelante)
+    # EGB con abreviatura numérica + sufijo
+    r"\b(2do|3ero|4to|5to|6to|7mo|8vo|9no|10mo)\s+egb\b",
+    # EGB sin sufijo: cuarto–décimo y sus números/abreviaturas (no ambiguos con BT)
     r"\b(cuarto|quinto|sexto|s[eé]ptimo|octavo|noveno|d[eé]cimo)\b(?!\s*(bt|bachi|bachillerato|egb))",
-    # Bachillerato
-    r"\b(primero|1ero|1ro|1er|1°|1o|primer)\s*(bt|bachillerato|bachi)\b",
-    r"\b(segundo|segunda|2do|2da|2°|2o)\s*(bt|bachillerato|bachi)\b",
-    r"\b(tercero|tercera|3ero|3ro|3°|3o)\s*(bt|bachillerato|bachi)\b",
-    r"\b[123][°o]?\s*(bt|bachi|bachillerato|egb)\b",
+    r"\b(4to|5to|6to|7mo|8vo|9no|10mo)\b(?!\s*(bt|bachi|bachillerato|egb))",
+    # Números solos 4–10 → EGB, solo cuando NO están precedidos de una palabra de tarea
+    # (evita "tarea 9", "ejercicio 5", etc.). Lookbehind fijo sin \b para Python.
+    r"(?<!tarea )(?<!deber )(?<!ejercicio )(?<!examen )(?<!actividad )\b([4-9]|10)\b(?!\s*(bt|bachi|bachillerato|egb|°|o\b))",
+    # Bachillerato — sufijo BT incluyendo variantes de voz: "be te", "vt", "v t", "vete"
+    r"\b(primero|1ero|1ro|1er|1°|1o|primer)\s*(bt|b\.?\s*t\.?|be\s*te|vt|v\s*t|vete|bachillerato|bachi)\b",
+    r"\b(segundo|segunda|2do|2da|2°|2o)\s*(bt|b\.?\s*t\.?|be\s*te|vt|v\s*t|vete|bachillerato|bachi)\b",
+    r"\b(tercero|tercera|3ero|3ro|3°|3o)\s*(bt|b\.?\s*t\.?|be\s*te|vt|v\s*t|vete|bachillerato|bachi)\b",
+    r"\b[123][°o]?\s*(bt|b\.?\s*t\.?|be\s*te|vt|v\s*t|vete|bachi|bachillerato|egb)\b",
 ]
 
 SUBJECT_PATTERNS = [
@@ -98,6 +126,60 @@ def extract_subjects(text: str) -> list[str]:
             if s not in found:
                 found.append(s)
     return found
+
+
+# Patrón: "tarea de [materia] de/para/en [curso]"
+_SUBJ_PHRASE_RE = re.compile(
+    r'\b(?:tarea|deber|deberes?|actividad|evaluaci[oó]n|examen|trabajo|investigaci[oó]n)\s+de\s+'
+    r'(.+?)\s+(?:de|para|en)\s+'
+    r'(?:primero|segundo|tercero|cuarto|quinto|sexto|s[eé]ptimo|octavo|noveno|d[eé]cimo|'
+    r'preparatoria|inicial|\d)',
+    re.IGNORECASE,
+)
+
+# Patrón: "tarea [materia]:" o "deber [materia]:"
+_SUBJ_COLON_RE = re.compile(
+    r'\b(?:tarea|deber|deberes?|actividad|evaluaci[oó]n|examen|trabajo)\s+([^:]+?)\s*:',
+    re.IGNORECASE,
+)
+
+
+def _normalize_alias(s: str) -> str:
+    """Quita tildes y pone en minúsculas para búsqueda en SUBJECT_ALIASES."""
+    import unicodedata
+    s = unicodedata.normalize("NFD", s)
+    s = "".join(c for c in s if unicodedata.category(c) != "Mn")
+    return s.lower().strip()
+
+
+def extract_subject_phrase(text: str) -> str | None:
+    """Extrae la materia de mensajes como 'tarea de X de primero BT' o 'tarea X: desc'.
+
+    Primero verifica aliases exactos; si no hay coincidencia retorna la frase
+    para que find_subject() haga fuzzy matching en DB.
+    """
+    phrase: str | None = None
+
+    m = _SUBJ_PHRASE_RE.search(text)
+    if m:
+        phrase = m.group(1).strip()
+    else:
+        m2 = _SUBJ_COLON_RE.search(text)
+        if m2:
+            candidate = m2.group(1).strip()
+            # Excluir si es el curso en sí (contiene número o "primero/segundo/...")
+            if not re.search(r'\b(\d|primero|segundo|tercero)\b', candidate, re.IGNORECASE):
+                phrase = candidate
+
+    if phrase is None:
+        return None
+
+    # Verificar alias exacto primero
+    normalized = _normalize_alias(phrase)
+    if normalized in SUBJECT_ALIASES:
+        return SUBJECT_ALIASES[normalized]
+
+    return phrase
 
 
 def extract_date(text: str) -> date | None:

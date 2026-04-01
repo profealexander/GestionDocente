@@ -46,21 +46,6 @@ def _pick_grade_keyboard(actividad_id: int, grades) -> InlineKeyboardMarkup:
     return InlineKeyboardMarkup(buttons)
 
 
-def _cuota_grade_keyboard(actividad_id: int, grades) -> InlineKeyboardMarkup:
-    """Teclado legacy cuota_grade: (backward compat)."""
-    buttons, row = [], []
-    for g in grades:
-        row.append(
-            InlineKeyboardButton(
-                g.name, callback_data=f"cuota_grade:{actividad_id}:{g.id}:{g.name}",
-            ),
-        )
-        if len(row) == 3:
-            buttons.append(row)
-            row = []
-    if row:
-        buttons.append(row)
-    return InlineKeyboardMarkup(buttons)
 
 
 def _pick_student_keyboard(

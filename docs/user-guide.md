@@ -143,14 +143,32 @@ Tarea de matemáticas para décimo EGB: ejercicios 1 al 10 para el viernes
 Primer BT, tarea de química para el 20/03: reporte de laboratorio
 ```
 
-### Sin materia especificada
+> ⚠️ **La materia es obligatoria.** Si no se incluye en el mensaje, el bot
+> rechaza el registro e indica cómo corregirlo.
+
+El bot asigna el número de tarea automáticamente (#1, #2, #3…) dentro del
+trimestre, ordenado del más reciente al más antiguo. La numeración es
+independiente por materia.
+
+---
+
+## Editar o eliminar una tarea
 
 ```
-Tercero BT investigar los tipos de energía renovable para mañana
+Editar tarea de 2bt
+Modificar tarea #3
 ```
 
-El bot asignará el número de tarea automáticamente (#1, #2, #3...) dentro del
-trimestre actual.
+El bot muestra un menú con las tareas abiertas del curso (o de la materia
+activa si estás en Modo Jornada). Desde el menú puedes:
+
+| Opción | Acción |
+|---|---|
+| 📝 Descripción | Cambia el texto de la tarea |
+| 📅 Fecha | Cambia la fecha de entrega |
+| 📚 Materia | Cambia la materia asignada |
+| 🔒 Cerrar / 🔓 Abrir | Cambia el estado de la tarea |
+| 🗑️ Eliminar tarea | Elimina con confirmación previa |
 
 ---
 

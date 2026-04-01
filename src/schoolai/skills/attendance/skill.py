@@ -58,6 +58,10 @@ class AttendanceSkill(BaseSkill):
         from schoolai.skills.utils.extract_rules import extract_fallback, extract_prefilter
 
         result = extract_prefilter(text)
+        # "quien faltó?" y similares → query de asistencia, no registro
+        if result is not None and result.intent == "query":
+            await handle_extraction(update, user_id, result)
+            return
         if result is None or result.intent != "attendance":
             result = extract_fallback(text)
         if result is None or result.intent != "attendance":

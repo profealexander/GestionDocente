@@ -51,7 +51,7 @@ async def handle_text(update: Update, context: ContextTypes.DEFAULT_TYPE) -> Non
     logger.info(f"[text] user={user.id} (@{user.username}): {text[:200]}")
     logger.debug(f"[text:full] user={user.id}: {text}")
 
-    await _dispatch(update, user.id, text)
+    await _dispatch(update, user.id, text, context)
 
 
 async def handle_voice(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
@@ -81,7 +81,7 @@ async def handle_voice(update: Update, context: ContextTypes.DEFAULT_TYPE) -> No
         return
 
     await update.message.reply_text(f'Escuché: "{text}"')
-    await _dispatch(update, user.id, text)
+    await _dispatch(update, user.id, text, context)
 
 
 def _detect_course_only(text: str) -> tuple[str, int, str] | None:
@@ -167,7 +167,7 @@ async def _show_course_group_menu(update: Update, courses: list[tuple[str, str]]
     )
 
 
-async def _dispatch(update: Update, user_id: int, text: str) -> None:
+async def _dispatch(update: Update, user_id: int, text: str, context: ContextTypes.DEFAULT_TYPE = None) -> None:
     """Despacha el mensaje al skill correcto a través de capas de intercepción.
 
     Capas (en orden):
@@ -182,16 +182,11 @@ async def _dispatch(update: Update, user_id: int, text: str) -> None:
         if text in _JORNADA_TRIGGERS:
             from schoolai.bot.jornada_handler import handle_jornada_command
 
-            await handle_jornada_command(update, None)
+            await handle_jornada_command(update, context)
             return
-        session = get_jornada(user_id)
-        if not session or session.status == "done":
-            await update.message.reply_text(
-                "Toca el botón o escribe *j* para iniciar tu jornada.",
-                parse_mode="Markdown",
-                reply_markup=JORNADA_KEYBOARD,
-            )
-            return
+        # Si no hay sesión o está terminada, las skills funcionan igual que el bot libre.
+        # Solo bloqueamos cuando el texto es ambiguo y no hay sesión iniciada
+        # (el pipeline de skills sigue corriendo debajo).
 
     if await resolve_selection_text(update, user_id):
         return

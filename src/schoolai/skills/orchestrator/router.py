@@ -54,6 +54,20 @@ _PATTERNS: dict[str, list[str]] = {
         r"\bcobro[s]?\b",
         r"\bdeuda[s]?\b",
     ],
+    "context": [
+        r"\bdocumento[s]?\s+de\s+contexto\b",
+        r"\barchivo[s]?\s+cargado[s]?\b",
+        r"\bmi[s]?\s+documento[s]?\b",
+        r"\bborrar?\s+(el\s+)?documento\b",
+        r"\beliminar?\s+(el\s+)?documento\b",
+        r"\blist[ao]r?\s+(mis\s+)?documentos?\b",
+    ],
+    "reminders": [
+        r"\brecordatori[oa][s]?\b",                         # recordatorio, recordatorios
+        r"\bprograma[r]?\s+(un\s+)?(aviso|recordatorio|mensaje)",
+        r"\benvía?[r]?\s+(un\s+)?(recordatorio|aviso)",
+        r"\brecuérda[m]?[e]?\b",                            # recuérdame, recuérda
+    ],
     "repl": [
         r"\bpromedio\b",                                    # promedio de faltas/notas
         r"\bestadístic",                                    # estadísticas
@@ -84,8 +98,10 @@ def _get_agents() -> dict[str, SkillAgentBase]:
     global _agents_cache
     if _agents_cache is None:
         from schoolai.skills.orchestrator.skill_agents.attendance import AttendanceAgent
+        from schoolai.skills.orchestrator.skill_agents.context import ContextAgent
         from schoolai.skills.orchestrator.skill_agents.cuotas import CuotasAgent
         from schoolai.skills.orchestrator.skill_agents.homework import HomeworkAgent
+        from schoolai.skills.orchestrator.skill_agents.reminders import RemindersAgent
         from schoolai.skills.orchestrator.skill_agents.repl import ReplAgent
 
         _agents_cache = {
@@ -93,6 +109,8 @@ def _get_agents() -> dict[str, SkillAgentBase]:
             "homework": HomeworkAgent(),
             "cuotas": CuotasAgent(),
             "repl": ReplAgent(),
+            "reminders": RemindersAgent(),
+            "context": ContextAgent(),
         }
     return _agents_cache
 

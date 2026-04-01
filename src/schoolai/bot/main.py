@@ -37,10 +37,14 @@ from schoolai.bot.db_handler import handle_db_callback, handle_db_command, handl
 from schoolai.bot.handlers import JORNADA_KEYBOARD, handle_text, handle_voice
 from schoolai.bot.help_handler import handle_help_back, handle_help_callback, handle_help_command
 from schoolai.bot.jornada_handler import (
+    handle_horario_callback,
+    handle_horario_command,
     handle_jornada_callback,
     handle_jornada_command,
     job_morning_notify,
+    job_reconnect_resume,
 )
+from schoolai.skills.reminders.dispatcher import job_dispatch_reminders
 from schoolai.bot.mode import set_mode
 from schoolai.bot.notif_handler import handle_doc_notify_callback
 from schoolai.bot.position_handler import handle_position_callback, handle_position_text
@@ -213,6 +217,8 @@ async def _post_init(app) -> None:
     app.bot_data["jornada_mode"] = is_jornada()
     if is_jornada():
         await _send_jornada_keyboard_to_teachers(app.bot)
+        # 20 s de gracia para procesar mensajes en cola antes del prompt de reconexión
+        app.job_queue.run_once(job_reconnect_resume, when=20)
     else:
         await _remove_keyboard_from_teachers(app.bot)
 
@@ -338,6 +344,8 @@ def run(dev: bool = False) -> None:
 
     # TTL cleanup cada 10 minutos
     app.job_queue.run_repeating(_run_cleanup, interval=600, first=600)
+    # Dispatcher de recordatorios cada 5 minutos
+    app.job_queue.run_repeating(job_dispatch_reminders, interval=300, first=60)
 
     app.add_error_handler(_error_handler)
 
@@ -374,6 +382,10 @@ def run(dev: bool = False) -> None:
     app.add_handler(CommandHandler("jornada", handle_jornada_command))
     app.add_handler(CallbackQueryHandler(handle_jornada_callback, pattern=r"^jor_"))
 
+    # ── Horario ───────────────────────────────────────────────────────────────
+    app.add_handler(CommandHandler("horario", handle_horario_command))
+    app.add_handler(CallbackQueryHandler(handle_horario_callback, pattern=r"^hor_day:"))
+
     # ── Catch-all: edit flows + logging de callbacks no manejados ─────────────
     app.add_handler(CallbackQueryHandler(callback_router.route))
 
@@ -387,8 +399,11 @@ def run(dev: bool = False) -> None:
     app.add_handler(MessageHandler(filters.VOICE | filters.AUDIO, handle_voice))
 
     logger.info("Bot running. Press Ctrl+C to stop.")
+    # Modo Jornada: conservar mensajes en cola para procesar asistencia/tareas
+    # enviadas mientras el bot estaba caído. Modo Libre: descartar actualizaciones viejas.
+    from schoolai.bot.mode import is_jornada as _is_jornada
     app.run_polling(
-        drop_pending_updates=True,
+        drop_pending_updates=not _is_jornada(),
         allowed_updates=["message", "callback_query"],
     )
 

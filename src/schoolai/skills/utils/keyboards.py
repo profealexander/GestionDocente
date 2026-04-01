@@ -3,7 +3,11 @@
 from telegram import InlineKeyboardButton, InlineKeyboardMarkup
 
 
-def grade_keyboard(grades: list, callback_prefix: str) -> InlineKeyboardMarkup:
+def grade_keyboard(
+    grades: list,
+    callback_prefix: str,
+    with_all_mine: bool = False,
+) -> InlineKeyboardMarkup:
     """Teclado inline de cursos con prefijo de callback configurable.
 
     callback_prefix: p.ej. 'att_grade', 'qry_grade', 'db_grade'
@@ -12,9 +16,20 @@ def grade_keyboard(grades: list, callback_prefix: str) -> InlineKeyboardMarkup:
 
     Para att_grade y db_grade el formato es '{prefix}:{id}:{name}'.
     Para qry_grade el formato es '{prefix}:{id}'.
+
+    with_all_mine: agrega botón "📚 Todos mis cursos" al inicio.
     """
     include_name = callback_prefix in ("att_grade", "db_grade", "act_grade", "pos_grade")
     buttons = []
+
+    if with_all_mine:
+        buttons.append([
+            InlineKeyboardButton(
+                "📚 Todos mis cursos",
+                callback_data=f"{callback_prefix}:all_mine",
+            ),
+        ])
+
     row = []
     for g in grades:
         if include_name:

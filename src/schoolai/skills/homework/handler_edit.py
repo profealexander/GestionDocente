@@ -11,6 +11,35 @@ from schoolai.db.models.homework import Homework
 
 # ── Helpers ───────────────────────────────────────────────────────────────────
 
+_SUBJECT_SHORT: dict[str, str] = {
+    "Gestión Contable y Administración Financiera": "Gest. Contable",
+    "Planificación y Control Presupuestario": "Plan. Presupuest.",
+    "Contabilidad de Costos": "Cont. Costos",
+    "Educación para la Ciudadanía": "Edu. Ciudadanía",
+}
+_STOP_WORDS = {"de", "del", "la", "el", "los", "las", "para", "y", "e", "a", "en"}
+
+
+def _shorten_subject(name: str, max_len: int = 16) -> str:
+    """Acorta nombres de materia largos para botones de Telegram."""
+    if not name:
+        return "Sin materia"
+    short = _SUBJECT_SHORT.get(name)
+    if short:
+        return short
+    if len(name) <= max_len:
+        return name
+    result = ""
+    for word in name.split():
+        if word.lower() in _STOP_WORDS:
+            continue
+        candidate = f"{result} {word}".strip() if result else word
+        if len(candidate) > max_len:
+            result = result or word[:max_len - 1] + "…"
+            break
+        result = candidate
+    return result or name[:max_len - 1] + "…"
+
 
 def _hw_summary(hw: Homework) -> str:
     subj = hw.subject.name if hw.subject else "sin materia"
@@ -18,7 +47,7 @@ def _hw_summary(hw: Homework) -> str:
     delivery = hw.delivery_date.strftime("%d/%m/%Y") if hw.delivery_date else "sin fecha"
     desc = hw.homework[:80] + ("…" if len(hw.homework) > 80 else "")
     return (
-        f"✏️ *Tarea #{hw.sequence_num}* — {hw.grade.name}\n"
+        f"✏️ *Tarea* — {hw.grade.name}\n"
         f"Materia: {subj} | Entrega: {delivery} | Estado: {estado}\n"
         f"_{desc}_\n\n"
         "¿Qué deseas modificar?"
@@ -38,14 +67,17 @@ def _edit_keyboard(hw: Homework) -> InlineKeyboardMarkup:
             InlineKeyboardButton("📚 Materia", callback_data=f"hw_edit_field:{hw.id}:materia"),
             InlineKeyboardButton(toggle_label, callback_data=f"hw_edit_toggle:{hw.id}"),
         ],
+        [
+            InlineKeyboardButton("🗑️ Eliminar tarea", callback_data=f"hw_edit_delete:{hw.id}"),
+        ],
     ])
 
 
 def _pick_keyboard(tasks: list[Homework]) -> InlineKeyboardMarkup:
     buttons = []
-    for hw in tasks:
-        subj = hw.subject.name if hw.subject else "sin materia"
-        label = f"#{hw.sequence_num} — {subj} | {hw.grade.name}"
+    for i, hw in enumerate(tasks, 1):
+        subj = _shorten_subject(hw.subject.name) if hw.subject else "sin materia"
+        label = f"#{i} — {subj} | {hw.grade.name}"
         buttons.append([InlineKeyboardButton(label, callback_data=f"hw_edit_pick:{hw.id}")])
     return InlineKeyboardMarkup(buttons)
 
@@ -53,15 +85,31 @@ def _pick_keyboard(tasks: list[Homework]) -> InlineKeyboardMarkup:
 # ── Handler principal ─────────────────────────────────────────────────────────
 
 
-async def handle_hw_edit(update, user_id: int, course: str | None, hw_ref: int | None) -> None:
+async def handle_hw_edit(
+    update,
+    user_id: int,
+    course: str | None,
+    hw_ref: int | None,
+    subject_id: int | None = None,
+) -> None:
+    from sqlalchemy import select as _sel
+
+    from schoolai.db.models.teacher import Teacher
     from schoolai.skills.homework.repository import find_grade, find_homework_by_ref, list_open
 
     async with async_session() as session:
+        teacher = (
+            await session.execute(_sel(Teacher).where(Teacher.telegram_id == user_id))
+        ).scalar_one_or_none()
+        teacher_id = teacher.id if teacher else None
+
         grade = await find_grade(session, course) if course else None
         grade_id = grade.id if grade else None
 
         if hw_ref is not None and grade_id:
-            hw = await find_homework_by_ref(session, sequence_num=hw_ref, grade_id=grade_id)
+            hw = await find_homework_by_ref(
+                session, sequence_num=hw_ref, grade_id=grade_id, subject_id=subject_id,
+            )
             if hw:
                 await update.message.reply_text(
                     _hw_summary(hw),
@@ -70,7 +118,9 @@ async def handle_hw_edit(update, user_id: int, course: str | None, hw_ref: int |
                 )
                 return
 
-        tasks = await list_open(session, grade_id=grade_id)
+        tasks = await list_open(
+            session, grade_id=grade_id, teacher_id=teacher_id, subject_id=subject_id,
+        )
 
     if not tasks:
         suffix = f" en {grade.name}" if grade else ""
@@ -224,6 +274,59 @@ async def handle_hw_edit_text(update, user_id: int) -> bool:
     return True
 
 
+async def handle_hw_edit_delete_callback(update, context) -> None:
+    """hw_edit_delete:{hw_id} — pide confirmación antes de eliminar."""
+    query = update.callback_query
+    await query.answer()
+
+    hw_id = int(query.data.split(":")[1])
+
+    async with async_session() as session:
+        hw = await session.get(Homework, hw_id)
+
+    if not hw:
+        await query.edit_message_text("Tarea no encontrada.")
+        return
+
+    subj = hw.subject.name if hw.subject else "sin materia"
+    desc = hw.homework[:60] + ("…" if len(hw.homework) > 60 else "")
+    await query.edit_message_text(
+        f"⚠️ *¿Eliminar esta tarea?*\n\n"
+        f"_{desc}_\n"
+        f"Materia: {subj} | {hw.grade.name}\n\n"
+        "Esta acción no se puede deshacer.",
+        parse_mode=ParseMode.MARKDOWN,
+        reply_markup=InlineKeyboardMarkup([
+            [
+                InlineKeyboardButton("✅ Sí, eliminar", callback_data=f"hw_edit_confirm_delete:{hw_id}"),
+                InlineKeyboardButton("❌ Cancelar", callback_data=f"hw_edit_pick:{hw_id}"),
+            ],
+        ]),
+    )
+
+
+async def handle_hw_edit_confirm_delete_callback(update, context) -> None:
+    """hw_edit_confirm_delete:{hw_id} — elimina la tarea definitivamente."""
+    from schoolai.skills.homework.repository import delete_homework
+
+    query = update.callback_query
+    await query.answer()
+
+    hw_id = int(query.data.split(":")[1])
+
+    async with async_session() as session:
+        hw = await session.get(Homework, hw_id)
+        grade_name = hw.grade.name if hw else "—"
+        seq = hw.sequence_num if hw else "—"
+        deleted = await delete_homework(session, hw_id)
+
+    if deleted:
+        logger.info(f"[homework] delete hw_id={hw_id} grade={grade_name}")
+        await query.edit_message_text(f"🗑️ Tarea eliminada correctamente.")
+    else:
+        await query.edit_message_text("Tarea no encontrada.")
+
+
 # ── Auto-register ──────────────────────────────────────────────────────────────
 
 from schoolai.bot.callback_router import callback_router  # noqa: E402
@@ -232,4 +335,6 @@ from schoolai.bot.text_interceptors import text_interceptors  # noqa: E402
 callback_router.register("hw_edit_pick:")(handle_hw_edit_pick_callback)
 callback_router.register("hw_edit_field:")(handle_hw_edit_field_callback)
 callback_router.register("hw_edit_toggle:")(handle_hw_edit_toggle_callback)
+callback_router.register("hw_edit_delete:")(handle_hw_edit_delete_callback)
+callback_router.register("hw_edit_confirm_delete:")(handle_hw_edit_confirm_delete_callback)
 text_interceptors.register(priority=10, name="hw_edit_text")(handle_hw_edit_text)

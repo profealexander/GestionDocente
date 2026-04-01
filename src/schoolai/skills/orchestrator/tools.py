@@ -69,15 +69,19 @@ def _period_to_dates(period: str, qtype: str):
 
 
 async def _record_attendance(
+    telegram_id: int,
     names: list[str],
     course: str,
     date: str = "today",
     status: str = "absent",
 ) -> str:
     """Records absences, tardiness or justified absences for students in a course."""
+    from sqlalchemy import select
+
     from schoolai.db.connection import async_session
+    from schoolai.db.models.teacher import Teacher
     from schoolai.skills.attendance.matcher import match_names
-    from schoolai.skills.attendance.service import save_absences
+    from schoolai.skills.attendance.service import infer_period_from_schedule, save_absences
     from schoolai.skills.homework.repository import find_grade
 
     status_map = {"absent": "F", "late": "AT", "justified": "J"}
@@ -103,9 +107,24 @@ async def _record_attendance(
         if not resolved:
             return f"No se encontraron estudiantes: {', '.join(names)}"
 
+        # Infer current period from teacher's schedule
+        _subject_name, _period_start, _period_end = None, None, None
+        _teacher = (
+            await session.execute(select(Teacher).where(Teacher.telegram_id == telegram_id))
+        ).scalar_one_or_none()
+        if _teacher:
+            _subject_name, _period_start, _period_end = await infer_period_from_schedule(
+                session, _teacher.id, grade.id
+            )
+
         student_ids = [m.matched_id for m in resolved]
         statuses = {m.matched_id: m.status for m in resolved}
-        await save_absences(student_ids, statuses, att_date, session)
+        await save_absences(
+            student_ids, statuses, att_date, session,
+            subject_name=_subject_name,
+            period_start=_period_start,
+            period_end=_period_end,
+        )
 
     labels = {"F": "Falta", "AT": "Atraso", "J": "Justificado"}
     label = labels.get(db_status, db_status)
@@ -145,6 +164,7 @@ async def _query_attendance(
 
 
 async def _create_assignment(
+    telegram_id: int,
     description: str,
     course: str,
     subjects: list[str] | None = None,
@@ -154,9 +174,18 @@ async def _create_assignment(
 
     If multiple subjects are specified, creates one record per subject,
     each with its own sequence_num within that subject.
+    Only subjects assigned to the teacher in their schedule are allowed.
     """
+    from sqlalchemy import select
+
     from schoolai.db.connection import async_session
-    from schoolai.skills.homework.repository import find_grade, find_subject, save_homework
+    from schoolai.db.models.teacher import Teacher
+    from schoolai.skills.homework.repository import (
+        find_grade,
+        find_subject,
+        get_teacher_subject_ids,
+        save_homework,
+    )
 
     subjects = [s for s in (subjects or []) if s]
     delivery = _parse_date(due_date) if due_date else None
@@ -166,18 +195,34 @@ async def _create_assignment(
         if not grade:
             return f"Curso '{course}' no encontrado."
 
+        teacher = (
+            await session.execute(select(Teacher).where(Teacher.telegram_id == telegram_id))
+        ).scalar_one_or_none()
+        teacher_id = teacher.id if teacher else None
+
+        allowed_ids: list[int] | None = None
+        if teacher_id:
+            ids = await get_teacher_subject_ids(session, teacher_id, grade.id)
+            if ids:
+                allowed_ids = ids
+
         date_str = delivery.strftime("%d/%m/%Y") if delivery else "sin fecha"
 
         if len(subjects) <= 1:
             subject_id, subject_name = None, None
             if subjects:
                 subject = await find_subject(session, subjects[0])
+                if subject and allowed_ids is not None and subject.id not in allowed_ids:
+                    return (
+                        f"No tienes asignada la materia '{subject.name}' en {grade.name}. "
+                        "Solo puedes crear tareas para tus asignaturas."
+                    )
                 subject_id = subject.id if subject else None
                 subject_name = subject.name if subject else subjects[0]
 
             hw = await save_homework(
                 session, homework=description, grade_id=grade.id,
-                subject_id=subject_id, delivery_date=delivery,
+                subject_id=subject_id, delivery_date=delivery, teacher_id=teacher_id,
             )
             subject_str = f" | {subject_name}" if subject_name else ""
             return (
@@ -186,28 +231,40 @@ async def _create_assignment(
             )
 
         lines = [f"Tareas registradas — {grade.name} — {date_str}:"]
+        skipped = []
         for subject_name in subjects:
             subject = await find_subject(session, subject_name)
+            if subject and allowed_ids is not None and subject.id not in allowed_ids:
+                skipped.append(subject.name)
+                continue
             subject_id = subject.id if subject else None
             subject_display = subject.name if subject else subject_name
-
             hw = await save_homework(
                 session, homework=description, grade_id=grade.id,
-                subject_id=subject_id, delivery_date=delivery,
+                subject_id=subject_id, delivery_date=delivery, teacher_id=teacher_id,
             )
             lines.append(f"  #{hw.sequence_num} {subject_display}")
 
+        if skipped:
+            lines.append(f"  Omitidas (no son tus materias): {', '.join(skipped)}")
         lines.append(f"  Descripcion: {description}")
         return "\n".join(lines)
 
 
 async def _query_assignments(
+    telegram_id: int,
     courses: list[str],
     period: str = "trimestre",
 ) -> str:
-    """Queries recorded homework assignments for one or more courses."""
+    """Queries recorded homework assignments for one or more courses.
+
+    Only shows assignments for subjects the teacher is scheduled to teach.
+    """
+    from sqlalchemy import select
+
     from schoolai.db.connection import async_session
-    from schoolai.skills.homework.repository import find_grade
+    from schoolai.db.models.teacher import Teacher
+    from schoolai.skills.homework.repository import find_grade, get_teacher_subject_ids
     from schoolai.skills.query.formatter import format_homework_multi
     from schoolai.skills.query.resolver import resolve_homework
 
@@ -216,12 +273,22 @@ async def _query_assignments(
     not_found = []
 
     async with async_session() as session:
+        teacher = (
+            await session.execute(select(Teacher).where(Teacher.telegram_id == telegram_id))
+        ).scalar_one_or_none()
+        teacher_id = teacher.id if teacher else None
+
         for course in courses:
             grade = await find_grade(session, course)
             if not grade:
                 not_found.append(course)
                 continue
-            data = await resolve_homework(intent, grade.id, session)
+            teacher_subject_ids = None
+            if teacher_id:
+                ids = await get_teacher_subject_ids(session, teacher_id, grade.id)
+                if ids:
+                    teacher_subject_ids = ids
+            data = await resolve_homework(intent, grade.id, session, teacher_subject_ids)
             hw_data.append(data)
 
     if not hw_data:
@@ -526,6 +593,71 @@ async def _python_repl(code: str) -> str:
     return await run_repl(code)
 
 
+# ── Context documents ─────────────────────────────────────────────────────────
+
+
+async def _search_context(
+    telegram_id: int,
+    query: str,
+    category: str | None = None,
+) -> str:
+    """Searches the teacher's context documents (personal + institutional)."""
+    from schoolai.skills.context.tools import search_context
+    return await search_context(telegram_id=telegram_id, query=query, category=category)
+
+
+async def _list_context_docs(
+    telegram_id: int,
+    category: str | None = None,
+    scope: str | None = None,
+) -> str:
+    """Lists available context documents for the teacher."""
+    from schoolai.skills.context.tools import list_context_docs
+    return await list_context_docs(telegram_id=telegram_id, category=category, scope=scope)
+
+
+async def _delete_context_doc(telegram_id: int, doc_id: int) -> str:
+    """Deletes a context document by ID."""
+    from schoolai.skills.context.tools import delete_context_doc
+    return await delete_context_doc(telegram_id=telegram_id, doc_id=doc_id)
+
+
+# ── Reminders ─────────────────────────────────────────────────────────────────
+
+
+async def _create_reminder(
+    telegram_id: int,
+    message: str,
+    scheduled_at: str,
+    target: str = "teacher",
+    course: str | None = None,
+) -> str:
+    """Schedules a reminder via Telegram (teacher) and/or WhatsApp (parents)."""
+    from schoolai.skills.reminders.tools import create_reminder
+
+    return await create_reminder(
+        telegram_id=telegram_id,
+        message=message,
+        scheduled_at=scheduled_at,
+        target=target,
+        course=course,
+    )
+
+
+async def _list_reminders(telegram_id: int, status: str = "pending") -> str:
+    """Lists the teacher's reminders."""
+    from schoolai.skills.reminders.tools import list_reminders
+
+    return await list_reminders(telegram_id=telegram_id, status=status)
+
+
+async def _cancel_reminder(telegram_id: int, reminder_id: int) -> str:
+    """Cancels a pending reminder by ID."""
+    from schoolai.skills.reminders.tools import cancel_reminder
+
+    return await cancel_reminder(telegram_id=telegram_id, reminder_id=reminder_id)
+
+
 # ── Registry ──────────────────────────────────────────────────────────────────
 
 
@@ -560,8 +692,12 @@ TOOLS: list[ToolDef] = [
                         "justified=excused absence, all_present=everyone attended"
                     ),
                 },
+                "telegram_id": {
+                    "type": "integer",
+                    "description": "Telegram ID of the teacher making the record (injected automatically)",
+                },
             },
-            "required": ["names", "course"],
+            "required": ["names", "course", "telegram_id"],
         },
         fn=_record_attendance,
     ),
@@ -587,10 +723,17 @@ TOOLS: list[ToolDef] = [
     ),
     ToolDef(
         name="create_assignment",
-        description="Records a new homework assignment, task, or activity for a course.",
+        description=(
+            "Records a new homework assignment, task, or activity for a course. "
+            "Only subjects in the teacher's own schedule are allowed."
+        ),
         parameters={
             "type": "object",
             "properties": {
+                "telegram_id": {
+                    "type": "integer",
+                    "description": "Teacher's Telegram ID (use exactly the value from the system prompt)",
+                },
                 "description": {
                     "type": "string",
                     "description": "Full description of the homework or assignment",
@@ -610,16 +753,23 @@ TOOLS: list[ToolDef] = [
                     "description": "Due date YYYY-MM-DD. Optional.",
                 },
             },
-            "required": ["description", "course"],
+            "required": ["telegram_id", "description", "course"],
         },
         fn=_create_assignment,
     ),
     ToolDef(
         name="query_assignments",
-        description="Queries the recorded homework assignments for one or more courses.",
+        description=(
+            "Queries the recorded homework assignments for one or more courses. "
+            "Only shows assignments for the teacher's own subjects."
+        ),
         parameters={
             "type": "object",
             "properties": {
+                "telegram_id": {
+                    "type": "integer",
+                    "description": "Teacher's Telegram ID (use exactly the value from the system prompt)",
+                },
                 "courses": {
                     "type": "array",
                     "items": {"type": "string"},
@@ -630,7 +780,7 @@ TOOLS: list[ToolDef] = [
                     "description": "today, yesterday, week, month, trimestre. Default: trimestre",
                 },
             },
-            "required": ["courses"],
+            "required": ["telegram_id", "courses"],
         },
         fn=_query_assignments,
     ),
@@ -827,6 +977,156 @@ TOOLS: list[ToolDef] = [
             "required": ["code"],
         },
         fn=_python_repl,
+    ),
+    ToolDef(
+        name="search_context",
+        description=(
+            "Searches the teacher's context documents (personal and institutional) "
+            "using full-text search. Call this when answering questions that may require "
+            "information the teacher previously uploaded (schedule, school calendar, policies, etc.)."
+        ),
+        parameters={
+            "type": "object",
+            "properties": {
+                "telegram_id": {
+                    "type": "integer",
+                    "description": "The teacher's Telegram ID from the system prompt.",
+                },
+                "query": {
+                    "type": "string",
+                    "description": "The search query in Spanish.",
+                },
+                "category": {
+                    "type": "string",
+                    "enum": ["schedule", "calendar", "policies", "contacts", "notes", "other"],
+                    "description": "Optional category filter.",
+                },
+            },
+            "required": ["telegram_id", "query"],
+        },
+        fn=_search_context,
+    ),
+    ToolDef(
+        name="list_context_docs",
+        description="Lists the context documents available to the teacher.",
+        parameters={
+            "type": "object",
+            "properties": {
+                "telegram_id": {
+                    "type": "integer",
+                    "description": "The teacher's Telegram ID from the system prompt.",
+                },
+                "category": {
+                    "type": "string",
+                    "enum": ["schedule", "calendar", "policies", "contacts", "notes", "other"],
+                    "description": "Optional category filter.",
+                },
+                "scope": {
+                    "type": "string",
+                    "enum": ["personal", "institution"],
+                    "description": "Optional scope filter.",
+                },
+            },
+            "required": ["telegram_id"],
+        },
+        fn=_list_context_docs,
+    ),
+    ToolDef(
+        name="delete_context_doc",
+        description="Deletes a context document by its ID. Ask for confirmation before calling.",
+        parameters={
+            "type": "object",
+            "properties": {
+                "telegram_id": {
+                    "type": "integer",
+                    "description": "The teacher's Telegram ID from the system prompt.",
+                },
+                "doc_id": {
+                    "type": "integer",
+                    "description": "The document ID to delete.",
+                },
+            },
+            "required": ["telegram_id", "doc_id"],
+        },
+        fn=_delete_context_doc,
+    ),
+    ToolDef(
+        name="create_reminder",
+        description=(
+            "Schedules a new reminder for the teacher (Telegram) and/or course parents (WhatsApp). "
+            "target: 'teacher' | 'parents' | 'both'. "
+            "course is required when target is 'parents' or 'both'."
+        ),
+        parameters={
+            "type": "object",
+            "properties": {
+                "telegram_id": {
+                    "type": "integer",
+                    "description": "The teacher's Telegram ID from the system prompt.",
+                },
+                "message": {
+                    "type": "string",
+                    "description": "The reminder text to send.",
+                },
+                "scheduled_at": {
+                    "type": "string",
+                    "description": "ISO 8601 datetime, e.g. 2026-04-04T07:00:00",
+                },
+                "target": {
+                    "type": "string",
+                    "enum": ["teacher", "parents", "both"],
+                    "description": (
+                        "teacher=Telegram to teacher, parents=WhatsApp to course parents, "
+                        "both=both channels."
+                    ),
+                },
+                "course": {
+                    "type": "string",
+                    "description": "Course abbreviation. Required when target is 'parents' or 'both'.",
+                },
+            },
+            "required": ["telegram_id", "message", "scheduled_at", "target"],
+        },
+        fn=_create_reminder,
+    ),
+    ToolDef(
+        name="list_reminders",
+        description="Lists the teacher's reminders filtered by status.",
+        parameters={
+            "type": "object",
+            "properties": {
+                "telegram_id": {
+                    "type": "integer",
+                    "description": "The teacher's Telegram ID from the system prompt.",
+                },
+                "status": {
+                    "type": "string",
+                    "enum": ["pending", "sent", "failed", "cancelled", "all"],
+                    "description": "Filter by status. Default: 'pending'.",
+                },
+            },
+            "required": ["telegram_id"],
+        },
+        fn=_list_reminders,
+    ),
+    ToolDef(
+        name="cancel_reminder",
+        description="Cancels a pending reminder by its ID.",
+        parameters={
+            "type": "object",
+            "properties": {
+                "telegram_id": {
+                    "type": "integer",
+                    "description": "The teacher's Telegram ID from the system prompt.",
+                },
+                "reminder_id": {
+                    "type": "integer",
+                    "description": "The reminder ID to cancel.",
+                },
+            },
+            "required": ["telegram_id", "reminder_id"],
+        },
+        fn=_cancel_reminder,
     ),
 ]
 

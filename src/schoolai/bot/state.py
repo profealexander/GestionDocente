@@ -247,6 +247,9 @@ class JornadaSession:
     grade_name: str | None = None
     subject_id: int | None = None
     subject_name: str | None = None
+    # Ausencias del docente registradas durante la jornada
+    # [{period_num, grade_name, subject_name, reason, reason_label}]
+    absences: list[dict] = field(default_factory=list)
 
     @property
     def current_period(self) -> dict | None:
@@ -280,11 +283,22 @@ def clear_jornada(user_id: int) -> None:
 
 
 def get_jornada_context(user_id: int) -> tuple[int | None, str | None, int | None, str | None]:
-    """Returns (grade_id, grade_name, subject_id, subject_name) if jornada active, else Nones."""
+    """Returns (grade_id, grade_name, subject_id, subject_name) if jornada active or waiting."""
     s = _jornada_store.get(user_id)
-    if s and s.status == "active":
+    if not s:
+        return None, None, None, None
+    if s.status == "active":
         return s.grade_id, s.grade_name, s.subject_id, s.subject_name
+    # "waiting": tarjeta de período visible → usar current_period como contexto
+    if s.status == "waiting" and s.current_period:
+        p = s.current_period
+        return p.get("grade_id"), p.get("grade_name"), p.get("subject_id"), p.get("subject_name")
     return None, None, None, None
+
+
+def iter_all_jornada() -> list[tuple[int, "JornadaSession"]]:
+    """Retorna todas las sesiones de jornada activas (memoria + Redis)."""
+    return _jornada_store.scan_all()
 
 
 def clear_jornada_all_stale() -> int:

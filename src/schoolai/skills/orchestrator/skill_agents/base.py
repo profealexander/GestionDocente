@@ -258,8 +258,10 @@ class SkillAgentBase:
         if teacher_id:
             system_prompt += (
                 f"\n\nCurrent teacher Telegram ID: {teacher_id}. "
-                "When calling 'my_courses' or 'my_schedule', always pass "
-                f"telegram_id={teacher_id} exactly."
+                "When calling 'my_courses', 'my_schedule', 'create_assignment', "
+                "'query_assignments', 'record_attendance', 'search_context', 'list_context_docs', "
+                "'delete_context_doc', 'create_reminder', 'list_reminders', or "
+                f"'cancel_reminder', always pass telegram_id={teacher_id} exactly."
             )
 
         messages: list[dict] = (

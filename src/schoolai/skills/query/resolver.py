@@ -15,9 +15,19 @@ from schoolai.skills.query.detector import QueryIntent
 
 
 @dataclass
+class AttendanceEntry:
+    date: date
+    status: str                    # F | AT | J
+    subject_name: str | None = None
+    period_start: str | None = None   # "08:00"
+    period_end: str | None = None     # "09:30"
+    period_number: int | None = None  # school-wide period index (1-based)
+
+
+@dataclass
 class AttendanceRecord:
     student_name: str
-    entries: list[tuple[date, str]]  # [(date, status)]
+    entries: list[AttendanceEntry]
 
 
 @dataclass
@@ -90,10 +100,37 @@ async def resolve_attendance(
 
     rows = (await session.execute(att_stmt)).scalars().all()
 
-    # Group by student
-    by_student: dict[int, list[tuple[date, str]]] = {}
+    # For day queries: compute school-wide period numbers from ALL schedules
+    # (all days combined to get the correct global bell schedule order)
+    start_to_num: dict[str, int] = {}
+    if intent.period == "day":
+        from schoolai.db.models.teacher import Schedule
+        all_starts = [
+            row[0]
+            for row in (
+                await session.execute(
+                    select(Schedule.start_time)
+                    .where(Schedule.is_active.is_(True))
+                    .distinct()
+                    .order_by(Schedule.start_time)
+                )
+            ).all()
+        ]
+        start_to_num = {s: idx + 1 for idx, s in enumerate(all_starts)}
+
+    # Group by student, preserving subject_name
+    by_student: dict[int, list[AttendanceEntry]] = {}
     for row in rows:
-        by_student.setdefault(row.student_id, []).append((row.date, row.status))
+        by_student.setdefault(row.student_id, []).append(
+            AttendanceEntry(
+                date=row.date,
+                status=row.status,
+                subject_name=row.subject_name,
+                period_start=row.period_start,
+                period_end=row.period_end,
+                period_number=start_to_num.get(row.period_start) if row.period_start else None,
+            )
+        )
 
     records = [
         AttendanceRecord(student_name=name_map[sid], entries=entries)
@@ -110,19 +147,34 @@ async def resolve_attendance(
     )
 
 
+async def resolve_attendance_multi(
+    intent: QueryIntent,
+    grade_ids: list[int],
+    session: AsyncSession,
+) -> list[AttendanceData]:
+    return [await resolve_attendance(intent, gid, session) for gid in grade_ids]
+
+
 async def resolve_homework_multi(
     intent: QueryIntent,
     grade_ids: list[int],
     session: AsyncSession,
+    teacher_subject_ids: list[int] | None = None,
+    teacher_id: int | None = None,
 ) -> list["HomeworkData"]:
     # Sequential — AsyncSession no soporta acceso concurrente desde asyncio.gather
-    return [await resolve_homework(intent, gid, session) for gid in grade_ids]
+    return [
+        await resolve_homework(intent, gid, session, teacher_subject_ids, teacher_id)
+        for gid in grade_ids
+    ]
 
 
 async def resolve_homework(
     intent: QueryIntent,
     grade_id: int,
     session: AsyncSession,
+    teacher_subject_ids: list[int] | None = None,
+    teacher_id: int | None = None,
 ) -> HomeworkData:
     grade = await session.get(Grade, grade_id)
     grade_name = grade.name if grade else str(grade_id)
@@ -134,6 +186,8 @@ async def resolve_homework(
     ]
     if intent.trimester_num is not None:
         filters.append(Homework.trimester_num == intent.trimester_num)
+    if teacher_subject_ids:
+        filters.append(Homework.subject_id.in_(teacher_subject_ids))
 
     stmt = select(Homework).where(and_(*filters)).order_by(Homework.submission_date.desc())
     rows = (await session.execute(stmt)).scalars().all()

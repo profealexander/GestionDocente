@@ -37,6 +37,7 @@ from schoolai.skills.homework.repository import (
     find_grade,
     find_homework_by_ref,
     find_subject,
+    get_teacher_subject_ids,
     list_open,
     save_homework,
     save_non_completers,
@@ -64,6 +65,9 @@ from schoolai.skills.utils.schema import (
 # Caché ligero: datos parciales esperando que el usuario elija curso
 # {user_id: ExtractionResult} — NO bloquea mensajes nuevos
 _pending_cache: dict[int, ExtractionResult] = {}
+
+# Usuarios esperando que escriban la materia para una tarea pendiente
+_await_subject: set[int] = set()
 
 STATUS_MAP = {
     "absent": ABSENT,
@@ -492,6 +496,7 @@ async def _handle_attendance(
         if grade_name:
             data.course = grade_name
             data.complete = True
+            result.via_llm = False  # jornada context is trusted — skip confirmation
 
     if not data.course:
         ctx = get_course_context(user_id)
@@ -519,7 +524,7 @@ async def _handle_attendance(
     from schoolai.config import settings
     from schoolai.skills.utils.dates import parse_date as _pd
 
-    if result.via_llm or settings.supervised_mode:
+    if settings.supervised_mode:
         status_label = {"absent": "Falta", "late": "Atraso", "justified": "Justificado"}.get(
             data.status, "Falta",
         )
@@ -579,12 +584,43 @@ async def _save_attendance(
     ambiguous = [r for r in results if r.ambiguous]
     not_found = [r for r in results if r.not_found]
 
-    # Guardar resueltos directo
+    # Guardar resueltos directo — incluir materia y hora si hay jornada activa
     if resolved:
+        from sqlalchemy import select as _sel
+
+        from schoolai.bot.state import get_jornada as _get_jornada
+        from schoolai.db.models.teacher import Teacher as _Teacher
+        from schoolai.skills.attendance.service import infer_period_from_schedule
+
         student_ids = [r.matched_id for r in resolved]
         statuses = {r.matched_id: r.status for r in resolved}
+
+        # 1. Contexto desde jornada activa
+        _jornada = _get_jornada(user_id)
+        _period = _jornada.current_period if _jornada else None
+        _subject_name = _period.get("subject_name") if _period else None
+        _period_start = _period.get("start_time") if _period else None
+        _period_end = _period.get("end_time") if _period else None
+
         async with async_session() as session:
-            await save_absences(student_ids, statuses, attendance_date, session)
+            # 2. Fallback: inferir del horario si no hay jornada
+            if _subject_name is None:
+                _teacher = (
+                    await session.execute(
+                        _sel(_Teacher).where(_Teacher.telegram_id == user_id)
+                    )
+                ).scalar_one_or_none()
+                if _teacher:
+                    _subject_name, _period_start, _period_end = (
+                        await infer_period_from_schedule(session, _teacher.id, grade.id)
+                    )
+
+            await save_absences(
+                student_ids, statuses, attendance_date, session,
+                subject_name=_subject_name,
+                period_start=_period_start,
+                period_end=_period_end,
+            )
 
     status_label = {"absent": "Faltas", "late": "Atrasos", "justified": "Justificados"}.get(
         data.status, "Faltas",
@@ -651,6 +687,7 @@ async def _handle_homework(
             data.subject = subject_name
         if data.course and data.subject:
             data.complete = True
+            result.via_llm = False  # jornada context is trusted — skip confirmation
 
     if not data.course:
         ctx = get_course_context(user_id)
@@ -673,12 +710,18 @@ async def _handle_homework(
         return
 
     if not data.subject and not data.subjects:
-        data.subject = "Asignación"
+        await update.message.reply_text(
+            f"⚠️ No se puede registrar una tarea sin materia.\n"
+            f"Indica la materia en el mensaje, por ejemplo:\n"
+            f"_Tarea de Matemáticas para {data.course}: {data.description[:40]}_",
+            parse_mode=ParseMode.MARKDOWN,
+        )
+        return
 
     from schoolai.config import settings
 
     subjects_display = ", ".join(data.subjects) if data.subjects else data.subject
-    if result.via_llm or settings.supervised_mode:
+    if settings.supervised_mode:
         desc_preview = data.description[:60]
         set_pending_confirm(
             user_id,
@@ -714,7 +757,10 @@ async def _save_homework(reply_fn, user_id: int, data: HomeworkExtract) -> None:
     from schoolai.db.models.teacher import Teacher
 
     # Determinar lista de materias a crear
-    subjects_list = data.subjects or ([data.subject] if data.subject else ["Asignación"])
+    subjects_list = data.subjects or ([data.subject] if data.subject else [])
+    if not subjects_list:
+        await reply_fn("⚠️ No se puede registrar una tarea sin materia.")
+        return
 
     async with async_session() as session:
         grade = await find_grade(session, data.course)
@@ -737,13 +783,29 @@ async def _save_homework(reply_fn, user_id: int, data: HomeworkExtract) -> None:
                 )
             ).scalar_one_or_none()
 
+        # Materias permitidas para este docente en este curso
+        allowed_subject_ids: list[int] | None = None
+        if teacher_id:
+            ids = await get_teacher_subject_ids(session, teacher_id, grade.id)
+            if ids:
+                allowed_subject_ids = ids
+
         records: list[tuple] = []
+        skipped: list[str] = []
         for subj_name in subjects_list:
             subj_obj = (
                 await find_subject(session, subj_name)
                 if subj_name and subj_name != "Asignación"
                 else None
             )
+            # Validar que la materia pertenece al docente (si hay restricción)
+            if (
+                allowed_subject_ids is not None
+                and subj_obj is not None
+                and subj_obj.id not in allowed_subject_ids
+            ):
+                skipped.append(subj_obj.name)
+                continue
             record = await save_homework(
                 session,
                 homework=data.description,
@@ -754,6 +816,32 @@ async def _save_homework(reply_fn, user_id: int, data: HomeworkExtract) -> None:
             )
             records.append((record, subj_obj, subj_name))
 
+    if not records and teacher_id and allowed_subject_ids:
+        # Las materias extraídas del texto no coinciden con el horario del docente.
+        # Fallback: crear la tarea para todas las materias del docente en ese curso.
+        from schoolai.skills.homework.repository import get_teacher_subjects
+        async with async_session() as session:
+            grade = await find_grade(session, data.course)
+            delivery = _resolve_delivery(data.delivery_date)
+            teacher_subjects = await get_teacher_subjects(session, teacher_id, grade.id)
+            for subj_obj in teacher_subjects:
+                record = await save_homework(
+                    session,
+                    homework=data.description,
+                    grade_id=grade.id,
+                    subject_id=subj_obj.id,
+                    delivery_date=delivery,
+                    teacher_id=teacher_id,
+                )
+                records.append((record, subj_obj, subj_obj.name))
+
+    if not records:
+        await reply_fn(
+            "No pude registrar la tarea. Verifica que tengas materias asignadas en el horario.",
+            parse_mode=ParseMode.MARKDOWN,
+        )
+        return
+
     delivery_str = (
         records[0][0].delivery_date.strftime("%d/%m/%Y")
         if records[0][0].delivery_date
@@ -763,12 +851,14 @@ async def _save_homework(reply_fn, user_id: int, data: HomeworkExtract) -> None:
     if len(records) == 1:
         record, subj_obj, subj_name = records[0]
         subject_str = subj_obj.name if subj_obj else "sin materia"
-        await reply_fn(
+        msg = (
             f"✅ Tarea #{record.sequence_num} registrada\n"
             f"{subject_str} | {grade.name} | Trimestre {record.trimester_num}\n"
-            f"Entrega: {delivery_str}",
-            parse_mode=ParseMode.MARKDOWN,
+            f"Entrega: {delivery_str}"
         )
+        if skipped:
+            msg += f"\n⚠️ Omitidas (no son tus materias): {', '.join(skipped)}"
+        await reply_fn(msg, parse_mode=ParseMode.MARKDOWN)
         logger.info(f"[action] homework user={user_id} id={record.id}")
     else:
         lines = [
@@ -779,6 +869,8 @@ async def _save_homework(reply_fn, user_id: int, data: HomeworkExtract) -> None:
             subj_label = subj_obj.name if subj_obj else subj_name
             lines.append(f"  • Tarea #{record.sequence_num} — {subj_label}")
         lines.append(f"Entrega: {delivery_str}")
+        if skipped:
+            lines.append(f"⚠️ Omitidas (no son tus materias): {', '.join(skipped)}")
         await reply_fn("\n".join(lines), parse_mode=ParseMode.MARKDOWN)
         logger.info(f"[action] homework user={user_id} ids={[r[0].id for r in records]}")
 
@@ -858,7 +950,11 @@ async def _handle_query(update, user_id: int, result: ExtractionResult, data: Qu
             )
         await update.message.reply_text(
             "¿De qué curso quieres la consulta?",
-            reply_markup=grade_keyboard(grades, "act_grade"),
+            reply_markup=grade_keyboard(
+                grades,
+                "act_grade",
+                with_all_mine=(data.query_type in ("attendance", "homework")),
+            ),
         )
         return
 
@@ -874,16 +970,40 @@ async def _handle_query(update, user_id: int, result: ExtractionResult, data: Qu
         )
         return
 
+    label = " y ".join(
+        data.courses[i].upper()
+        for i in range(len(data.courses))
+        if data.courses[i] in course_abbrev_map
+    )
+
     if len(grade_ids) == 1:
         await _run_query(update.message.reply_text, user_id, intent, grade_ids[0])
-    else:
+    elif data.query_type == "attendance":
+        from schoolai.skills.query.formatter import format_attendance_multi
+        from schoolai.skills.query.resolver import resolve_attendance_multi
         async with async_session() as session:
-            data_list = await resolve_homework_multi(intent, grade_ids, session)
-        label = " y ".join(
-            data.courses[i].upper()
-            for i in range(len(data.courses))
-            if data.courses[i] in course_abbrev_map
-        )
+            data_list = await resolve_attendance_multi(intent, grade_ids, session)
+        text = format_attendance_multi(data_list, label)
+        await update.message.reply_text(text, parse_mode=ParseMode.MARKDOWN)
+    else:
+        from schoolai.db.models.teacher import Teacher as _Teacher
+
+        async with async_session() as session:
+            teacher_subject_ids = None
+            _teacher = (
+                await session.execute(
+                    select(_Teacher).where(_Teacher.telegram_id == user_id),
+                )
+            ).scalar_one_or_none()
+            teacher_id_val = None
+            if _teacher:
+                teacher_id_val = _teacher.id
+                ids = await get_teacher_subject_ids(session, _teacher.id)
+                if ids:
+                    teacher_subject_ids = ids
+            data_list = await resolve_homework_multi(
+                intent, grade_ids, session, teacher_subject_ids, teacher_id=teacher_id_val
+            )
         text = format_homework_multi(data_list, label)
         await update.message.reply_text(text, parse_mode=ParseMode.HTML)
 
@@ -998,6 +1118,13 @@ async def handle_course_action_callback(update, context) -> None:
 async def _handle_homework_report(
     update, user_id: int, result: ExtractionResult, data: HomeworkReportExtract,
 ) -> None:
+    if not data.course:
+        grade_id, grade_name, _, _ = get_jornada_context(user_id)
+        if grade_name:
+            data.course = grade_name
+            data.complete = True
+            result.via_llm = False  # jornada context is trusted — skip confirmation
+
     if not data.course:
         ctx = get_course_context(user_id)
         if ctx and ctx.pending_intent == "homework_report":
@@ -1239,6 +1366,91 @@ async def _save_homework_report(
         )
 
 
+# ── Consulta asistencia todos mis cursos ──────────────────────────────────────
+
+
+async def _query_my_courses_attendance(reply_fn, user_id: int, intent) -> None:
+    """Consulta asistencia de todos los cursos del docente, agrupada por curso."""
+    from sqlalchemy import select as _sel
+
+    from schoolai.db.models.teacher import Schedule, Teacher
+    from schoolai.skills.query.formatter import format_attendance_multi
+    from schoolai.skills.query.resolver import resolve_attendance_multi
+
+    async with async_session() as session:
+        teacher = (
+            await session.execute(_sel(Teacher).where(Teacher.telegram_id == user_id))
+        ).scalar_one_or_none()
+
+        if not teacher:
+            await reply_fn("No tienes un perfil de docente registrado.")
+            return
+
+        # Cursos únicos del docente (por horario activo)
+        schedule_rows = (
+            await session.execute(
+                _sel(Schedule)
+                .where(Schedule.teacher_id == teacher.id, Schedule.is_active.is_(True))
+                .order_by(Schedule.grade_id)
+            )
+        ).scalars().all()
+
+        grade_ids = list({s.grade_id for s in schedule_rows})
+        if not grade_ids:
+            await reply_fn("No tienes cursos asignados en el horario.")
+            return
+
+        # Mantener orden por grade_id
+        grade_ids_ordered = sorted(grade_ids)
+        data_list = await resolve_attendance_multi(intent, grade_ids_ordered, session)
+
+    text = format_attendance_multi(data_list, "Mis cursos")
+    await reply_fn(text, parse_mode=ParseMode.MARKDOWN)
+
+
+async def _query_my_courses_homework(reply_fn, user_id: int, data) -> None:
+    """Consulta tareas de todos los cursos del docente."""
+    from sqlalchemy import select as _sel
+
+    from schoolai.db.models.teacher import Schedule, Teacher
+    from schoolai.skills.homework.repository import get_teacher_subject_ids
+    from schoolai.skills.query.formatter import format_homework_multi
+    from schoolai.skills.query.resolver import resolve_homework_multi
+
+    async with async_session() as session:
+        teacher = (
+            await session.execute(_sel(Teacher).where(Teacher.telegram_id == user_id))
+        ).scalar_one_or_none()
+
+        if not teacher:
+            await reply_fn("No tienes un perfil de docente registrado.")
+            return
+
+        schedule_rows = (
+            await session.execute(
+                _sel(Schedule)
+                .where(Schedule.teacher_id == teacher.id, Schedule.is_active.is_(True))
+                .order_by(Schedule.grade_id)
+            )
+        ).scalars().all()
+
+        grade_ids = sorted({s.grade_id for s in schedule_rows})
+        if not grade_ids:
+            await reply_fn("No tienes cursos asignados en el horario.")
+            return
+
+        intent = _build_query_intent(data.period, data.subject)
+        subject_ids = await get_teacher_subject_ids(session, teacher.id)
+        data_list = await resolve_homework_multi(
+            intent, grade_ids, session,
+            teacher_subject_ids=subject_ids, teacher_id=teacher.id,
+        )
+
+    text = format_homework_multi(data_list, "Mis cursos")
+    from telegram.constants import ParseMode as _PM
+    await reply_fn(text, parse_mode=_PM.HTML)
+
+
 # ── Callback: usuario eligió curso ────────────────────────────────────────────
 
 
@@ -1251,11 +1463,24 @@ async def handle_act_callback(update, context) -> None:
     data = query.data  # "act_grade:{id}:{name}"
 
     parts = data.split(":", 2)
+    raw_id = parts[1]  # puede ser "all_mine" o un entero como str
     grade_name = parts[2] if len(parts) > 2 else parts[1]
 
     result = pop_pending(user_id)
     if not result:
         await query.edit_message_text("Sesión expirada. Vuelve a enviar el mensaje.")
+        return
+
+    # ── Caso especial: todos mis cursos ──────────────────────────────────────────
+    if raw_id == "all_mine":
+        if result.intent == "query" and result.data.query_type == "attendance":
+            intent_obj = _build_query_intent(result.data.period, result.data.subject)
+            intent_obj.type = "attendance"
+            await _query_my_courses_attendance(query.edit_message_text, user_id, intent_obj)
+        elif result.intent == "query" and result.data.query_type == "homework":
+            await _query_my_courses_homework(query.edit_message_text, user_id, result.data)
+        else:
+            await query.edit_message_text("Opción no disponible para esta consulta.")
         return
 
     # Completar con el curso seleccionado
@@ -1285,3 +1510,31 @@ async def handle_act_callback(update, context) -> None:
             await _run_query(query.edit_message_text, user_id, intent_obj, grade.id)
         else:
             await query.edit_message_text(f"No encontré el curso {grade_name}.")
+
+
+# ── Interceptor: captura la materia cuando se preguntó al usuario ─────────────
+
+async def _subject_input_interceptor(update, user_id: int) -> bool:
+    """Captura el texto de materia cuando el bot lo está esperando."""
+    if user_id not in _await_subject:
+        return False
+
+    result = pop_pending(user_id)
+    _await_subject.discard(user_id)
+
+    if not result or result.intent != "homework":
+        return False
+
+    subject = update.message.text.strip()
+    result.data.subject = subject
+    result.data.subjects = [subject]
+    result.data.complete = True
+
+    await _save_homework(update.message.reply_text, user_id, result.data)
+    return True
+
+
+# Auto-registro al importar este módulo
+from schoolai.bot.text_interceptors import text_interceptors as _ti  # noqa: E402
+
+_ti.register(priority=5, name="hw_subject_input")(_subject_input_interceptor)

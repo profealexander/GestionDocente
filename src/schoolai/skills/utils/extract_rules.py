@@ -22,9 +22,15 @@ _QUERY_ATT_RE = re.compile(
     r"|inasistencias?|faltas?)\b",
     re.IGNORECASE,
 )
-_QUERY_HW_RE = re.compile(r"\b(tareas?|deberes?|pendientes?)\b", re.IGNORECASE)
+_QUERY_HW_RE = re.compile(r"\b(tareas?|taras?|deberes?|pendientes?)\b", re.IGNORECASE)
 _QUERY_TRIGGER_RE = re.compile(
     r"^\s*(ver|dame|muestra|lista|mostrar|que\s+hay|hay|cuantas?|reporte|listado)\b",
+    re.IGNORECASE,
+)
+# "quien faltó?", "quiénes faltaron?", "quien no asistió?" → attendance query
+_QUERY_WHO_RE = re.compile(
+    r"^\s*qui[eé]n(es)?\s+(falt[oó]|faltaron|no\s+asisti[oó]|no\s+asistieron"
+    r"|no\s+vino|no\s+vinieron|est[aá](n)?\s+ausentes?)\b",
     re.IGNORECASE,
 )
 
@@ -47,6 +53,7 @@ _HW_KW: frozenset[str] = frozenset(
     for w in (
         "tareas",
         "tarea",
+        "taras",
         "deberes",
         "pendientes",
     )
@@ -295,6 +302,10 @@ def extract_prefilter(text: str) -> ExtractionResult | None:
 
     norm = normalize(t)
     tokens = _norm_tokens(norm)
+
+    # "quien faltó?" / "quiénes faltaron?" → attendance query (not registration)
+    if _QUERY_WHO_RE.match(t):
+        return _make_query("attendance", norm, "today")
 
     if _ALL_PRESENT_RE.search(t):
         course = _extract_course(t)

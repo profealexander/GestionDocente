@@ -82,6 +82,25 @@ class StateStore(Generic[T]):
         self.clear(user_id)
         return val
 
+    def scan_all(self) -> list[tuple[int, T]]:
+        """Returns all entries — in-memory dict + Redis scan for entries not yet loaded."""
+        results: dict[int, T] = dict(self._data)
+        if self._use_redis and _redis_client is not None:
+            try:
+                for key in _redis_client.scan_iter(f"{self._key}:*"):
+                    key_str = key.decode() if isinstance(key, bytes) else key
+                    try:
+                        uid = int(key_str.rsplit(":", 1)[1])
+                    except (ValueError, IndexError):
+                        continue
+                    if uid not in results:
+                        obj = _rget(key_str)
+                        if obj is not None:
+                            results[uid] = obj
+            except Exception:
+                pass
+        return list(results.items())
+
     def cleanup_stale(self) -> int:
         now = time.monotonic()
         expired = [uid for uid, ts in self._timestamps.items() if now - ts > self._ttl]
