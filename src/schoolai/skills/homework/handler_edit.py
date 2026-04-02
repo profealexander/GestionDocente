@@ -109,6 +109,7 @@ async def handle_hw_edit(
         if hw_ref is not None and grade_id:
             hw = await find_homework_by_ref(
                 session, sequence_num=hw_ref, grade_id=grade_id, subject_id=subject_id,
+                any_trimester=True,
             )
             if hw:
                 await update.message.reply_text(
@@ -317,7 +318,6 @@ async def handle_hw_edit_confirm_delete_callback(update, context) -> None:
     async with async_session() as session:
         hw = await session.get(Homework, hw_id)
         grade_name = hw.grade.name if hw else "—"
-        seq = hw.sequence_num if hw else "—"
         deleted = await delete_homework(session, hw_id)
 
     if deleted:

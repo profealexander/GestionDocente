@@ -23,28 +23,6 @@ SUBJECT_ALIASES: dict[str, str] = {
     "educacion ciudadania": "Educación para la Ciudadanía",
 }
 
-HOMEWORK_KEYWORDS = [
-    "tarea",
-    "actividad",
-    "ejercicio",
-    "trabajo",
-    "investigar",
-    "leer",
-    "resolver",
-    "estudiar",
-    "entregar",
-    "proyecto",
-    "práctica",
-    "practica",
-    "homework",
-    "asignación",
-    "asignacion",
-    "examen",
-    "prueba",
-    "evaluación",
-    "evaluacion",
-]
-
 COURSE_PATTERNS = [
     r"\b(inicial\s+[12]|preparatoria)\b",
     # EGB con sufijo explícito (cubre segundo y tercero que son ambiguos con BT)
@@ -96,10 +74,6 @@ _COURSE_PATTERNS_RE = [re.compile(p) for p in COURSE_PATTERNS]
 _SUBJECT_PATTERNS_RE = [re.compile(p) for p in SUBJECT_PATTERNS]
 _DATE_PATTERNS_RE = [(re.compile(p), kind) for p, kind in DATE_PATTERNS]
 
-
-def is_homework_message(text: str) -> bool:
-    text_lower = text.lower()
-    return any(kw in text_lower for kw in HOMEWORK_KEYWORDS)
 
 
 def extract_course(text: str) -> str | None:

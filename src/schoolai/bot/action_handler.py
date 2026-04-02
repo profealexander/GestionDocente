@@ -66,9 +66,6 @@ from schoolai.skills.utils.schema import (
 # {user_id: ExtractionResult} — NO bloquea mensajes nuevos
 _pending_cache: dict[int, ExtractionResult] = {}
 
-# Usuarios esperando que escriban la materia para una tarea pendiente
-_await_subject: set[int] = set()
-
 STATUS_MAP = {
     "absent": ABSENT,
     "late": LATE,
@@ -1512,29 +1509,3 @@ async def handle_act_callback(update, context) -> None:
             await query.edit_message_text(f"No encontré el curso {grade_name}.")
 
 
-# ── Interceptor: captura la materia cuando se preguntó al usuario ─────────────
-
-async def _subject_input_interceptor(update, user_id: int) -> bool:
-    """Captura el texto de materia cuando el bot lo está esperando."""
-    if user_id not in _await_subject:
-        return False
-
-    result = pop_pending(user_id)
-    _await_subject.discard(user_id)
-
-    if not result or result.intent != "homework":
-        return False
-
-    subject = update.message.text.strip()
-    result.data.subject = subject
-    result.data.subjects = [subject]
-    result.data.complete = True
-
-    await _save_homework(update.message.reply_text, user_id, result.data)
-    return True
-
-
-# Auto-registro al importar este módulo
-from schoolai.bot.text_interceptors import text_interceptors as _ti  # noqa: E402
-
-_ti.register(priority=5, name="hw_subject_input")(_subject_input_interceptor)

@@ -80,7 +80,7 @@ async def web_search(query: str) -> str:
 
     parts = []
     for i, r in enumerate(results, 1):
-        parts.append(f"{i}. **{r['title']}**\n{r['body']}\nURL: {r['url']}")
+        parts.append(f"{i}. {r['title']}\n{r['body']}\nURL: {r['url']}")
     return "\n\n".join(parts)
 
 

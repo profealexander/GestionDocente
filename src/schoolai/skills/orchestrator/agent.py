@@ -10,11 +10,13 @@ Flujo (Fase 2):
   4. Guardar sesión y retornar respuesta
 
 Estructura de skill_agents/:
-  base.py        — SkillAgentBase: loop ReAct genérico (Fase 1)
-  attendance.py  — AttendanceAgent: 3 tools, prompt de asistencia
-  homework.py    — HomeworkAgent: 3 tools, prompt de tareas
-  cuotas.py      — CuotasAgent: 5 tools, prompt de cuotas/pagos
-  (futuro)       — JornadaAgent, DocumentsAgent, ...
+  base.py        — SkillAgentBase: loop ReAct genérico
+  attendance.py  — AttendanceAgent: tools de asistencia
+  homework.py    — HomeworkAgent: tools de tareas
+  cuotas.py      — CuotasAgent: tools de cuotas/pagos
+  repl.py        — ReplAgent: Python REPL para estadísticas
+  reminders.py   — RemindersAgent: recordatorios programados
+  context.py     — ContextAgent: documentos + búsqueda web
 
 Agregar una nueva skill:
   1. Crear skill_agents/<nombre>.py con la subclase

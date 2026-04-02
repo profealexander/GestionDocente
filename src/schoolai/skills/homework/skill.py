@@ -242,6 +242,17 @@ class HWReportSkill(BaseSkill):
         ),
     ]
 
+    _MISS_RE: re.Pattern = re.compile(
+        r"\b(no\s+entreg[oó]|no\s+cumpli[oó]|no\s+trajo|falt[oó]\s+entregar)\b",
+        re.IGNORECASE,
+    )
+    _COURSE_TOK: re.Pattern = re.compile(
+        r"\b(\d{1,2}(?:bt|egb)|prep|i[12])\b", re.IGNORECASE
+    )
+    _NOISE: frozenset[str] = frozenset(
+        {"hoy", "ayer", "el", "la", "los", "las", "de", "del", "al", "para"}
+    )
+
     async def handle(self, update, user_id: int, text: str) -> None:
         from schoolai.bot.action_handler import handle_extraction
         from schoolai.skills.homework.detector import extract_course, extract_subject
@@ -255,25 +266,19 @@ class HWReportSkill(BaseSkill):
         else:
             status = "missing"
 
-        _MISS_RE = re.compile(
-            r"\b(no\s+entreg[oó]|no\s+cumpli[oó]|no\s+trajo|falt[oó]\s+entregar)\b",
-            re.IGNORECASE,
-        )
         names: list[str] = []
-        m = _MISS_RE.search(text)
+        m = self._MISS_RE.search(text)
         if m:
             left = text[: m.start()].strip().rstrip(",.")
             if len(left) > 2:
-                _COURSE_TOK = re.compile(r"\b(\d{1,2}(?:bt|egb)|prep|i[12])\b", re.IGNORECASE)
-                _NOISE = {"hoy", "ayer", "el", "la", "los", "las", "de", "del", "al", "para"}
                 parts = re.split(r",\s*|\s+y\s+", left, flags=re.IGNORECASE)
                 names = [
                     p.strip()
                     for p in parts
                     if p.strip()
                     and len(p.strip()) > 2
-                    and p.strip().lower() not in _NOISE
-                    and not _COURSE_TOK.fullmatch(p.strip())
+                    and p.strip().lower() not in self._NOISE
+                    and not self._COURSE_TOK.fullmatch(p.strip())
                 ]
 
         ref_m = re.search(r"\b(?:tarea|la|#)\s*#?(\d+)\b", text, re.IGNORECASE)
