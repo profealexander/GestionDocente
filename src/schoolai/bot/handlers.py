@@ -12,7 +12,6 @@ from telegram.ext import ContextTypes
 
 from schoolai.bot.action_handler import resolve_selection_text
 from schoolai.bot.mode import is_jornada
-from schoolai.bot.state import get_jornada
 from schoolai.bot.transcription import transcribe
 from schoolai.bot.whatsapp_handler import handle_wa_setup_text
 from schoolai.config import settings

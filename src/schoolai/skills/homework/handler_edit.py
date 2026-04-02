@@ -322,7 +322,7 @@ async def handle_hw_edit_confirm_delete_callback(update, context) -> None:
 
     if deleted:
         logger.info(f"[homework] delete hw_id={hw_id} grade={grade_name}")
-        await query.edit_message_text(f"🗑️ Tarea eliminada correctamente.")
+        await query.edit_message_text("🗑️ Tarea eliminada correctamente.")
     else:
         await query.edit_message_text("Tarea no encontrada.")
 
