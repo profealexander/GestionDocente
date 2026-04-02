@@ -159,8 +159,9 @@ schoolai/
     ├── db/                     # Capa de base de datos
     │   ├── connection.py       # Sesión async SQLAlchemy
     │   └── models/             # ORM: grade, student, teacher (+whatsapp_phone),
-    │                           # homework, attendance, subject, cuota…
-    └── skills/                 # Sistema de skills
+    │                           # homework, attendance, subject, cuota,
+    │                           # context_document, reminder
+    └── skills/                 # Sistema de skills (SkillRegistry + pipeline regex → Orchestrator → Chat)
         ├── registry.py         # SkillRegistry: detect() + detect_all()
         ├── planner.py          # Divide mensajes multi-intent por skill
         ├── base.py             # BaseSkill: priority + matches() keywords + regex
@@ -168,9 +169,13 @@ schoolai/
         ├── homework/           # Skill (via_llm) + tools + detector + repository + handler_edit
         ├── query/              # Skill + tools
         ├── cuotas/             # Skill + tools + handlers (create/pago/query/edit) + service
-        ├── orchestrator/       # OrchestratorSkill + agent ReAct loop + 11 tools + ReplAgent (Gemini/GLM dual)
+        ├── orchestrator/       # OrchestratorSkill + agent ReAct loop + 15+ tools
+        │                       # SkillAgents: attendance, homework, cuotas, repl, reminders, context
+        │                       # Router de patrones 0ms (6 dominios) + _FlatAgent fallback
+        ├── context/            # ContextAgent: documentos institucionales + búsqueda web (DuckDuckGo)
+        ├── reminders/          # RemindersAgent: recordatorios programados vía Telegram
         ├── ia/                 # ChatSkill con streaming (Groq 70B)
-        ├── llm/                # Cliente unificado + tool_caller + providers (groq/zai)
+        ├── llm/                # Cliente unificado + tool_caller + providers (groq/google/zai)
         ├── documents/          # Generación de documentos PDF
         ├── whatsapp/           # Integración Green API (saliente)
         └── utils/              # normalize, extract_rules, schema (via_llm), keyboards
