@@ -2,13 +2,15 @@
 
 from dataclasses import dataclass
 
-from sqlalchemy import select, update
+from sqlalchemy import func, or_, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from schoolai.db.models.person import Person
 from schoolai.db.models.student import Student
 from schoolai.db.models.student_representative import StudentRepresentative
+from schoolai.db.models.teacher import Teacher
 from schoolai.skills.db.deduplicator import DedupeResult, MatchType
+from schoolai.skills.utils.text import normalize
 
 # /db usa etiquetas en español; el constraint de DB requiere valores en inglés
 _ROLE_MAP: dict[str, str] = {
@@ -117,6 +119,46 @@ async def link_representative(
             ),
         )
     await session.commit()
+
+
+async def search_teachers_by_name(name: str, session: AsyncSession) -> list[Teacher]:
+    """Busca docentes activos por nombre o apellido (parcial, sin tildes)."""
+    norm = normalize(name)
+    full_name = func.lower(Person.first_name + " " + Person.last_name)
+    teachers = (
+        (
+            await session.execute(
+                select(Teacher)
+                .join(Teacher.person)
+                .where(
+                    Teacher.is_active == True,  # noqa: E712
+                    or_(
+                        full_name.contains(norm),
+                        func.lower(Person.last_name + " " + Person.first_name).contains(norm),
+                    ),
+                ),
+            )
+        )
+        .unique()
+        .scalars()
+        .all()
+    )
+    return [
+        t for t in teachers
+        if t.person and norm in normalize(f"{t.person.first_name} {t.person.last_name}")
+    ]
+
+
+async def save_teacher_whatsapp(
+    teacher_id: int, phone: str, session: AsyncSession,
+) -> str | None:
+    """Guarda o actualiza el whatsapp_phone de un docente. Retorna el nombre del docente."""
+    teacher = await session.get(Teacher, teacher_id)
+    if not teacher:
+        return None
+    teacher.whatsapp_phone = phone
+    await session.commit()
+    return f"{teacher.person.first_name} {teacher.person.last_name}"
 
 
 def _build_person(parsed: dict, role: str) -> Person:

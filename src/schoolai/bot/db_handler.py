@@ -18,9 +18,9 @@ from schoolai.db.models.grade import Grade
 from schoolai.db.models.person import Person
 from schoolai.db.models.student import Student
 from schoolai.db.models.teacher import Teacher
+from schoolai.skills.db.service import link_representative, save_people, save_teacher_whatsapp, search_teachers_by_name
 from schoolai.skills.db.deduplicator import build_preview_lines, deduplicate
 from schoolai.skills.db.parser import parse_list
-from schoolai.skills.db.service import link_representative, save_people
 from schoolai.skills.utils.keyboards import grade_keyboard
 from schoolai.skills.utils.text import normalize
 
@@ -422,32 +422,9 @@ async def _on_link_confirm(query, user_id: int, student_id: int) -> None:
 async def _on_wa_search_teacher(update: Update, user_id: int, flow: DbFlow) -> None:
     """Busca docente por nombre para asignarle WhatsApp."""
     query_text = update.message.text.strip()
-    norm = normalize(query_text)
 
     async with async_session() as session:
-        full_name = func.lower(Person.first_name + " " + Person.last_name)
-        teachers = (
-            (
-                await session.execute(
-                    select(Teacher)
-                    .join(Teacher.person)
-                    .where(
-                        Teacher.is_active == True,  # noqa: E712
-                        or_(
-                            full_name.contains(norm),
-                            func.lower(Person.last_name + " " + Person.first_name).contains(norm),
-                        ),
-                    ),
-                )
-            )
-            .unique()
-            .scalars()
-            .all()
-        )
-        matches = [
-            t for t in teachers
-            if t.person and norm in normalize(f"{t.person.first_name} {t.person.last_name}")
-        ]
+        matches = await search_teachers_by_name(query_text, session)
 
     if not matches:
         await update.message.reply_text(
@@ -511,17 +488,16 @@ async def _on_wa_save_phone(update: Update, user_id: int, flow: DbFlow) -> None:
         return
 
     async with async_session() as session:
-        teacher = await session.get(Teacher, flow.target_teacher_id)
-        if not teacher:
-            await update.message.reply_text("Docente no encontrado.")
-            clear_db_flow(user_id)
-            return
-        teacher.whatsapp_phone = phone
-        await session.commit()
+        name = await save_teacher_whatsapp(flow.target_teacher_id, phone, session)
+
+    if not name:
+        await update.message.reply_text("Docente no encontrado.")
+        clear_db_flow(user_id)
+        return
 
     clear_db_flow(user_id)
     await update.message.reply_text(
-        f"✅ WhatsApp de *{flow.target_teacher_name}* guardado: `{phone}`",
+        f"✅ WhatsApp de *{name}* guardado: `{phone}`",
         parse_mode=ParseMode.MARKDOWN,
     )
     logger.info(f"[db] whatsapp teacher={flow.target_teacher_id} phone={phone}")
