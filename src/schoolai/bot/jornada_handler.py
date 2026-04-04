@@ -694,6 +694,18 @@ async def _finish_jornada(bot, user_id: int, jornada: JornadaSession) -> None:
     )
     logger.info(f"[jornada] completed user={user_id} total={total} absences={len(absences)}")
 
+    # Notificar tutores con resumen de inasistencias del día
+    try:
+        from schoolai.skills.whatsapp.tutor_notify import notify_tutors_end_of_day
+        notified = await notify_tutors_end_of_day()
+        if notified:
+            await bot.send_message(
+                chat_id=jornada.chat_id,
+                text=f"📱 Resumen de inasistencias enviado a {notified} tutor(es) por WhatsApp.",
+            )
+    except Exception as exc:
+        logger.error(f"[jornada] error notificando tutores: {exc}")
+
 
 async def _on_back(query, user_id: int, context: ContextTypes.DEFAULT_TYPE) -> None:
     jornada = get_jornada(user_id)
