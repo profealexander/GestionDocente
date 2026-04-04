@@ -1,0 +1,17 @@
+services:
+  db:
+    image: postgres:17
+    container_name: schoolai-db
+    environment:
+      POSTGRES_DB: schoolai
+      POSTGRES_USER: schoolai
+      POSTGRES_PASSWORD: "1234"
+    volumes:
+      - schoolai_db:/var/lib/postgresql/data
+    ports:
+      - "127.0.0.1:5432:5432"
+    restart: unless-stopped
+
+volumes:
+  schoolai_db:
+    name: schoolai_db
