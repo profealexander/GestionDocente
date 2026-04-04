@@ -581,6 +581,34 @@ def clear_pending_confirm(user_id: int) -> None:
     _confirm_store.clear(user_id)
 
 
+# ── Broadcast state ───────────────────────────────────────────────────────────
+
+BroadcastStep = Literal["await_recipients", "await_message", "await_attachment", "await_file"]
+
+
+@dataclass
+class BroadcastFlow:
+    step: BroadcastStep
+    filter_type: str = ""       # all | bachillerato | basica | grade:<id> | ids:1,2,3
+    message: str = ""
+    teacher_count: int = 0      # cuántos docentes recibirán el mensaje
+
+
+_broadcast_store: StateStore[BroadcastFlow] = StateStore("broadcast", use_redis=True, ttl=_REDIS_TTL_SHORT)
+
+
+def set_broadcast_flow(user_id: int, flow: BroadcastFlow) -> None:
+    _broadcast_store.set(user_id, flow)
+
+
+def get_broadcast_flow(user_id: int) -> BroadcastFlow | None:
+    return _broadcast_store.get(user_id)
+
+
+def clear_broadcast_flow(user_id: int) -> None:
+    _broadcast_store.clear(user_id)
+
+
 # ── Legacy cleanup_stale (backward compat for callers) ────────────────────────
 
 def cleanup_stale() -> int:

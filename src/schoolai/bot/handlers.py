@@ -193,6 +193,10 @@ async def _dispatch(update: Update, user_id: int, text: str, context: ContextTyp
     if await handle_wa_setup_text(update):
         return
 
+    from schoolai.bot.broadcast_handler import handle_broadcast_text
+    if await handle_broadcast_text(update, context):
+        return
+
     from schoolai.bot.text_interceptors import text_interceptors
 
     if await text_interceptors.run(update, user_id):

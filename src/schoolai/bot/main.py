@@ -31,6 +31,7 @@ from schoolai.bot.action_handler import (
 )
 from schoolai.bot.attendance_handler import handle_attendance_callback
 from schoolai.bot.callback_router import callback_router
+from schoolai.bot.broadcast_handler import handle_broadcast_callback
 from schoolai.bot.context_handler import handle_context_text_command
 from schoolai.bot.cron_handler import handle_cron_command
 from schoolai.bot.cron_service import cron_service
@@ -382,6 +383,9 @@ def run(dev: bool = False) -> None:
     # ── Modo Jornada ──────────────────────────────────────────────────────────
     app.add_handler(CommandHandler("jornada", handle_jornada_command))
     app.add_handler(CallbackQueryHandler(handle_jornada_callback, pattern=r"^jor_"))
+
+    # ── Broadcast ─────────────────────────────────────────────────────────────
+    app.add_handler(CallbackQueryHandler(handle_broadcast_callback, pattern=r"^bc_"))
 
     # ── Contexto ──────────────────────────────────────────────────────────────
     app.add_handler(CommandHandler("contexto", handle_context_text_command))
