@@ -12,6 +12,8 @@ Un docente escribe "faltaron Juan y María en 3B" y el sistema lo guarda, genera
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
 [![Python 3.13+](https://img.shields.io/badge/python-3.13+-blue.svg)](https://www.python.org/)
 
+![Demo SchoolAI](docs/assets/demo.png)
+
 ---
 
 ## Por qué existe este proyecto
