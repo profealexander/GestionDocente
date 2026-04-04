@@ -344,6 +344,12 @@ async def handle_jornada_callback(update, context: ContextTypes.DEFAULT_TYPE) ->
         await _on_absent_reason(query, user_id, reason, context)
         return
 
+    # jor_report_send:{grade_id} — enviar reporte al representante
+    if data.startswith("jor_report_send:"):
+        grade_id = int(data.split(":", 1)[1])
+        await _on_report_send(query, grade_id, context)
+        return
+
     jornada = get_jornada(user_id)
     status = jornada.status if jornada else "none"
 
@@ -694,17 +700,37 @@ async def _finish_jornada(bot, user_id: int, jornada: JornadaSession) -> None:
     )
     logger.info(f"[jornada] completed user={user_id} total={total} absences={len(absences)}")
 
-    # Notificar tutores con resumen de inasistencias del día
+    # Generar reportes por curso y mostrar en Telegram con botón de aprobación
     try:
-        from schoolai.skills.whatsapp.tutor_notify import notify_tutors_end_of_day
-        notified = await notify_tutors_end_of_day()
-        if notified:
+        from datetime import date as _date
+        from telegram import InlineKeyboardButton as _Btn, InlineKeyboardMarkup as _Kbd
+        from schoolai.skills.whatsapp.tutor_notify import build_daily_reports, format_telegram_report
+
+        today = _date.today()
+        reports = await build_daily_reports(today)
+
+        if reports:
             await bot.send_message(
                 chat_id=jornada.chat_id,
-                text=f"📱 Resumen de inasistencias enviado a {notified} tutor(es) por WhatsApp.",
+                text="📋 <b>Reportes de jornada listos</b> — revisa y aprueba el envío:",
+                parse_mode=ParseMode.HTML,
             )
+            for report in reports:
+                text = format_telegram_report(report, today)
+                keyboard = _Kbd([[
+                    _Btn(
+                        "📤 Notificar a todos los representantes",
+                        callback_data=f"jor_report_send:{report.grade_id}",
+                    ),
+                ]])
+                await bot.send_message(
+                    chat_id=jornada.chat_id,
+                    text=text,
+                    parse_mode=ParseMode.HTML,
+                    reply_markup=keyboard,
+                )
     except Exception as exc:
-        logger.error(f"[jornada] error notificando tutores: {exc}")
+        logger.error(f"[jornada] error generando reportes: {exc}")
 
 
 async def _on_back(query, user_id: int, context: ContextTypes.DEFAULT_TYPE) -> None:
@@ -950,6 +976,30 @@ async def _horario_interceptor(update, user_id: int) -> bool:
         reply_markup=_day_nav_keyboard(day),
     )
     return True
+
+
+async def _on_report_send(query, grade_id: int, context) -> None:
+    """Envía el reporte de jornada a los representantes del curso."""
+    from datetime import date as _date
+    from schoolai.skills.whatsapp.tutor_notify import send_report_to_representatives
+
+    await query.edit_message_reply_markup(reply_markup=None)
+    await context.bot.send_message(
+        chat_id=query.message.chat.id,
+        text="⏳ Enviando a representantes...",
+    )
+    sent, failed = await send_report_to_representatives(grade_id, _date.today())
+    lines = []
+    if sent:
+        lines.append(f"✅ Enviado a {sent} representante(s).")
+    if failed:
+        lines.append(f"❌ Falló el envío a {failed} representante(s).")
+    if not sent and not failed:
+        lines.append("ℹ️ No hay representantes con WhatsApp registrado para este curso.")
+    await context.bot.send_message(
+        chat_id=query.message.chat.id,
+        text="\n".join(lines),
+    )
 
 
 # Auto-registro al importar este módulo (aplica a bots Libre y Jornada)
