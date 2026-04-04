@@ -17,6 +17,7 @@ from schoolai.db.connection import async_session
 from schoolai.db.models.grade import Grade
 from schoolai.db.models.person import Person
 from schoolai.db.models.student import Student
+from schoolai.db.models.teacher import Teacher
 from schoolai.skills.db.deduplicator import build_preview_lines, deduplicate
 from schoolai.skills.db.parser import parse_list
 from schoolai.skills.db.service import link_representative, save_people
@@ -60,6 +61,15 @@ async def handle_db_callback(update: Update, context: ContextTypes.DEFAULT_TYPE)
     data = query.data
     logger.info(f"[db_callback] user={user_id} data={data!r}")
 
+    if data == "db_role:wa_docente":
+        await query.edit_message_reply_markup(reply_markup=None)
+        set_db_flow(user_id, DbFlow(step="wa_search_teacher", role="wa_docente"))
+        await query.edit_message_text(
+            "📱 *WhatsApp docente*\n\nEscribe el nombre del docente:",
+            parse_mode=ParseMode.MARKDOWN,
+        )
+        return
+
     if data == "db_role:horario":
         from schoolai.bot.schedule_handler import start_schedule_flow
 
@@ -91,6 +101,10 @@ async def handle_db_callback(update: Update, context: ContextTypes.DEFAULT_TYPE)
             await query.edit_message_text("Vinculación omitida.")
         else:
             await _on_link_confirm(query, user_id, int(value))
+
+    elif data.startswith("db_wa_teacher:"):
+        teacher_id = int(data.split(":", 1)[1])
+        await _on_wa_teacher_selected(query, user_id, teacher_id)
 
     elif data == "db_confirm":
         await _on_confirm(query, user_id)
@@ -197,6 +211,14 @@ async def handle_db_text(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
         await _on_link_student_search(update, user_id, flow)
         return
 
+    if flow.step == "wa_search_teacher":
+        await _on_wa_search_teacher(update, user_id, flow)
+        return
+
+    if flow.step == "wa_await_phone":
+        await _on_wa_save_phone(update, user_id, flow)
+        return
+
     if flow.step != "await_list":
         return
 
@@ -271,6 +293,7 @@ def _role_keyboard() -> InlineKeyboardMarkup:
     ]
     buttons.append([InlineKeyboardButton("📅 Horario", callback_data="db_role:horario")])
     buttons.append([InlineKeyboardButton("📋 Cargos docente", callback_data="db_role:cargos")])
+    buttons.append([InlineKeyboardButton("📱 WhatsApp docente", callback_data="db_role:wa_docente")])
     return InlineKeyboardMarkup(buttons)
 
 
@@ -391,3 +414,114 @@ async def _on_link_confirm(query, user_id: int, student_id: int) -> None:
         parse_mode=ParseMode.MARKDOWN,
     )
     logger.info(f"[db] link rep person={person_id} → student={student_id}")
+
+
+# ── WhatsApp docente ───────────────────────────────────────────────────────────
+
+
+async def _on_wa_search_teacher(update: Update, user_id: int, flow: DbFlow) -> None:
+    """Busca docente por nombre para asignarle WhatsApp."""
+    query_text = update.message.text.strip()
+    norm = normalize(query_text)
+
+    async with async_session() as session:
+        full_name = func.lower(Person.first_name + " " + Person.last_name)
+        teachers = (
+            (
+                await session.execute(
+                    select(Teacher)
+                    .join(Teacher.person)
+                    .where(
+                        Teacher.is_active == True,  # noqa: E712
+                        or_(
+                            full_name.contains(norm),
+                            func.lower(Person.last_name + " " + Person.first_name).contains(norm),
+                        ),
+                    ),
+                )
+            )
+            .unique()
+            .scalars()
+            .all()
+        )
+        matches = [
+            t for t in teachers
+            if t.person and norm in normalize(f"{t.person.first_name} {t.person.last_name}")
+        ]
+
+    if not matches:
+        await update.message.reply_text(
+            f"No encontré docentes con el nombre *{query_text}*. Intenta de nuevo.",
+            parse_mode=ParseMode.MARKDOWN,
+        )
+        return
+
+    if len(matches) > 8:
+        await update.message.reply_text("Demasiados resultados, sé más específico.")
+        return
+
+    buttons = [
+        [InlineKeyboardButton(
+            f"{t.person.first_name} {t.person.last_name}"
+            + (" ✅" if t.whatsapp_phone else ""),
+            callback_data=f"db_wa_teacher:{t.id}",
+        )]
+        for t in matches
+    ]
+    buttons.append([InlineKeyboardButton("❌ Cancelar", callback_data="db_cancel")])
+    await update.message.reply_text(
+        "¿A cuál docente asignar el número?",
+        reply_markup=InlineKeyboardMarkup(buttons),
+    )
+
+
+async def _on_wa_teacher_selected(query, user_id: int, teacher_id: int) -> None:
+    """Muestra número actual si existe y pide el nuevo."""
+    async with async_session() as session:
+        teacher = await session.get(Teacher, teacher_id)
+        if not teacher:
+            await query.edit_message_text("Docente no encontrado.")
+            clear_db_flow(user_id)
+            return
+        name = f"{teacher.person.first_name} {teacher.person.last_name}"
+        current = teacher.whatsapp_phone
+
+    flow = get_db_flow(user_id)
+    if not flow:
+        return
+    flow.step = "wa_await_phone"
+    flow.target_teacher_id = teacher_id
+    flow.target_teacher_name = name
+    set_db_flow(user_id, flow)
+
+    current_txt = f"\nNúmero actual: `{current}`" if current else ""
+    await query.edit_message_text(
+        f"📱 *{name}*{current_txt}\n\n¿Cuál es su número de WhatsApp?\n_(ej: +593XXXXXXXXX)_",
+        parse_mode=ParseMode.MARKDOWN,
+    )
+
+
+async def _on_wa_save_phone(update: Update, user_id: int, flow: DbFlow) -> None:
+    """Guarda el número de WhatsApp del docente."""
+    phone = update.message.text.strip().replace(" ", "")
+    if not phone.startswith("+") or len(phone) < 8:
+        await update.message.reply_text(
+            "Formato inválido. Usa código de país, ej: +593XXXXXXXXX",
+        )
+        return
+
+    async with async_session() as session:
+        teacher = await session.get(Teacher, flow.target_teacher_id)
+        if not teacher:
+            await update.message.reply_text("Docente no encontrado.")
+            clear_db_flow(user_id)
+            return
+        teacher.whatsapp_phone = phone
+        await session.commit()
+
+    clear_db_flow(user_id)
+    await update.message.reply_text(
+        f"✅ WhatsApp de *{flow.target_teacher_name}* guardado: `{phone}`",
+        parse_mode=ParseMode.MARKDOWN,
+    )
+    logger.info(f"[db] whatsapp teacher={flow.target_teacher_id} phone={phone}")

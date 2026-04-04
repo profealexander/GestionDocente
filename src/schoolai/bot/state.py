@@ -54,6 +54,7 @@ def init_redis(url: str) -> None:
 
 DbStep = Literal[
     "await_list", "await_grade", "await_section", "await_confirm", "await_link_student",
+    "wa_search_teacher", "wa_await_phone",
 ]
 
 
@@ -67,6 +68,8 @@ class DbFlow:
     section: str | None = None
     dedup_results: list | None = None  # list[DedupeResult]
     saved_person_ids: list[int] = field(default_factory=list)  # IDs creados tras confirmar
+    target_teacher_id: int | None = None  # para flujo wa_docente
+    target_teacher_name: str | None = None
 
 
 _db_store: StateStore[DbFlow] = StateStore("db", use_redis=True, ttl=_REDIS_TTL_SHORT)
