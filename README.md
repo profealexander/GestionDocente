@@ -288,3 +288,8 @@ uv run pytest
 ## Licencia
 
 [MIT](LICENSE) — úsalo, modifícalo, distribúyelo libremente.
+
+---
+
+> *"He aquí, os digo estas cosas para que aprendáis sabiduría; para que sepáis que cuando os halláis al servicio de vuestros semejantes, solo estáis al servicio de vuestro Dios."*
+> — [Mosíah 2:17](https://www.churchofjesuschrist.org/study/scriptures/bofm/mosiah/2?lang=spa)
