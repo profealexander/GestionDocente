@@ -1,7 +1,25 @@
 # SchoolAI
 
-Asistente escolar para docentes vía Telegram + API REST.
-Permite registrar tareas, asistencia, cuotas de actividades y consultar reportes mediante lenguaje natural.
+> Asistente IA para docentes — registra asistencia, tareas y cuotas desde Telegram con lenguaje natural, sin formularios.
+
+Un docente escribe "faltaron Juan y María en 3B" y el sistema lo guarda, genera reportes y notifica. Sin clics, sin formularios, sin apps que aprender.
+
+**Stack:** Python · FastAPI · PostgreSQL · Telegram · Groq · Gemini · SvelteKit
+
+[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
+[![Python 3.13+](https://img.shields.io/badge/python-3.13+-blue.svg)](https://www.python.org/)
+
+---
+
+## Por qué existe este proyecto
+
+Los docentes pierden horas semanales en trabajo administrativo repetitivo. SchoolAI convierte ese trabajo en una conversación de Telegram: el docente habla, el sistema escucha y actúa.
+
+- Registro de asistencia por voz o texto en segundos
+- Creación de tareas para múltiples materias en un mensaje
+- Control de cuotas y pagos de actividades
+- Consultas en lenguaje natural ("¿quién debe tareas esta semana?")
+- Panel web PWA para directivos
 
 ---
 
@@ -245,8 +263,28 @@ Directorio configurado en `LOG_DIR` (default: `logs/`):
 
 ---
 
-## Acceso directo Windows (WSL)
+## Contribuir
 
-Crea un archivo `.lnk` con:
-- **Target**: `C:\Windows\System32\wsl.exe`
-- **Arguments**: `-e /home/edwin8600/.local/bin/uv run --project /home/edwin8600/schoolai schoolai-dev`
+Las contribuciones son bienvenidas. Revisa los [issues abiertos](https://github.com/profealexander/schoolai/issues) — los marcados con `good first issue` son buenos puntos de entrada.
+
+Para cambios grandes abre un issue primero para discutir la dirección.
+
+```bash
+# Fork + clone
+git clone https://github.com/tu-usuario/schoolai
+cd schoolai
+uv sync
+
+# Crea tu rama
+git checkout -b feat/mi-mejora
+
+# Verifica antes de hacer PR
+uv run ruff check src/
+uv run pytest
+```
+
+---
+
+## Licencia
+
+[MIT](LICENSE) — úsalo, modifícalo, distribúyelo libremente.
