@@ -61,7 +61,8 @@ async def whatsapp_webhook(request: Request) -> dict:
     """Recibe webhooks de Green API para mensajes entrantes de docentes."""
     try:
         payload = await request.json()
-    except Exception:
+    except Exception as exc:
+        logger.warning(f"[wa_webhook] JSON inválido: {exc}")
         return {"status": "error", "detail": "invalid_json"}
 
     # Solo procesar mensajes de texto entrantes

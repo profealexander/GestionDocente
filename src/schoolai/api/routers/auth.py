@@ -1,6 +1,7 @@
 """Auth router — issue JWT tokens."""
 
 from fastapi import APIRouter, HTTPException, status
+from loguru import logger
 from pydantic import BaseModel
 
 from schoolai.api.auth import create_access_token, create_access_token_for_teacher
@@ -126,7 +127,8 @@ async def _resolve_role(telegram_id: int) -> str:
             return "admin"
         if cargo == "secretaria":
             return "secretaria"
-    except Exception:
-        pass  # DB not reachable → default to teacher
+    except Exception as exc:
+        logger.warning(f"[auth] error resolviendo rol para {telegram_id}: {exc}")
+        # DB no disponible → rol por defecto
 
     return "teacher"

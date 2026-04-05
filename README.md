@@ -7,7 +7,7 @@
 
 Un docente escribe "faltaron Juan y María en 3B" y el sistema lo guarda, genera reportes y notifica. Sin clics, sin formularios, sin apps que aprender.
 
-**Stack:** Python · FastAPI · PostgreSQL · Telegram · Groq · Gemini · SvelteKit
+**Stack:** Python · FastAPI · PostgreSQL (Docker) · Telegram · Groq · Gemini · Green API · SvelteKit
 
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
 [![Python 3.13+](https://img.shields.io/badge/python-3.13+-blue.svg)](https://www.python.org/)
@@ -26,6 +26,8 @@ Los docentes pierden horas semanales en trabajo administrativo repetitivo. Schoo
 - Creación de tareas para múltiples materias en un mensaje
 - Control de cuotas y pagos de actividades
 - Consultas en lenguaje natural ("¿quién debe tareas esta semana?")
+- Comunicados masivos a docentes vía WhatsApp (texto o archivo adjunto)
+- Reporte de fin de jornada por curso → aprobación del tutor → notificación automática a representantes
 - Panel web PWA para directivos
 
 ---
@@ -92,12 +94,24 @@ Escríbele a [@userinfobot](https://t.me/userinfobot) y te responderá con tu ID
 
 ## Base de datos
 
+### Con Docker (recomendado)
+
 ```bash
-# Crear base de datos
+docker compose up -d
+```
+
+Levanta PostgreSQL 17 en `localhost:5432` con volumen persistente `schoolai_db`.
+
+### Manual (sin Docker)
+
+```bash
 psql -U postgres -c "CREATE USER schoolai WITH PASSWORD '1234';"
 psql -U postgres -c "CREATE DATABASE schoolai OWNER schoolai;"
+```
 
-# Ejecutar migraciones
+### Migraciones
+
+```bash
 uv run alembic upgrade head
 ```
 
@@ -215,12 +229,29 @@ Ver [`docs/user-guide.md`](docs/user-guide.md) para la guía completa.
 | Comando | Descripción |
 |---|---|
 | `/start` | Saludo inicial |
-| `/ayuda` | Muestra la ayuda del bot |
+| `/ayuda` | Ayuda completa del bot (9 categorías) |
 | `/cancelar` | Cancela el flujo actual (incluyendo confirmaciones pendientes) |
-| `/db` | Accede al panel de base de datos |
+| `/db` | Panel de base de datos (docentes, estudiantes, horarios, WhatsApp) |
 | `/jornada` | Inicia el modo jornada manual |
+| `/horario` | Consulta el horario del día por sección |
+| `/contexto` | Gestiona documentos institucionales (normativas, circulares) |
 | `/cron` | Lista jobs cron con sus horarios |
 | `/cron morning_notify 07:30` | Cambia la hora del aviso matutino (solo admin) |
+
+---
+
+## WhatsApp (Green API)
+
+SchoolAI usa [Green API](https://green-api.com/) para enviar y recibir mensajes de WhatsApp.
+
+| Función | Descripción |
+|---|---|
+| Registro de número | Desde `/db → 📱 WhatsApp docente` en Telegram |
+| Comunicado masivo | Escribe "comunicado para todos los docentes: ..." |
+| Reporte de jornada | Al cerrar jornada, tutor aprueba → WhatsApp a representantes |
+| Canal entrante | `POST /webhook/whatsapp` — docentes pueden escribir desde WhatsApp |
+
+Requiere `GREEN_API_INSTANCE` y `GREEN_API_TOKEN` en `.env`.
 
 ---
 

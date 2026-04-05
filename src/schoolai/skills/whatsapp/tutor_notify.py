@@ -57,7 +57,7 @@ async def build_daily_reports(today: date) -> list[GradeReport]:
     async with async_session() as session:
         reports: dict[int, GradeReport] = {}
 
-        # 1. Inasistencias del día
+        # 1. Inasistencias del día — carga masiva de students y grades
         att_records = (
             (await session.execute(
                 select(Attendance).where(
@@ -67,69 +67,126 @@ async def build_daily_reports(today: date) -> list[GradeReport]:
             )).scalars().all()
         )
 
-        for rec in att_records:
-            student = await session.get(Student, rec.student_id)
-            if not student or not student.person:
-                continue
-            grade_id = student.grade_id
-            grade = await session.get(Grade, grade_id)
-            if grade_id not in reports:
-                reports[grade_id] = GradeReport(
-                    grade_id=grade_id,
-                    grade_name=grade.name if grade else f"Curso {grade_id}",
-                )
-            name = f"{student.person.first_name} {student.person.last_name}"
-            sr = reports[grade_id].students.setdefault(rec.student_id, StudentReport(name=name))
-            if rec.status == "absent":
-                sr.absent = True
-                sr.absent_subject = rec.subject_name or ""
-            elif rec.status == "late":
-                sr.late = True
-                sr.absent_subject = rec.subject_name or ""
-            elif rec.status == "justified":
-                sr.justified = True
-                sr.absent_subject = rec.subject_name or ""
-
-        # 2. Tareas con entrega hoy que tienen no-entregas registradas
-        hw_today = (
-            (await session.execute(
-                select(Homework).where(
-                    Homework.is_open == False,  # noqa: E712
-                )
-            )).scalars().all()
-        )
-        # Filtrar las que vencían hoy
-        hw_due_today = [
-            hw for hw in hw_today
-            if hw.delivery_date and hw.delivery_date.astimezone(timezone.utc).date() == today
-        ]
-
-        for hw in hw_due_today:
-            missing = (
-                (await session.execute(
-                    select(HomeworkSubmission).where(
-                        HomeworkSubmission.homework_id == hw.id,
-                        HomeworkSubmission.status == "missing",
+        if att_records:
+            student_ids = list({r.student_id for r in att_records})
+            students_map: dict[int, Student] = {
+                s.id: s
+                for s in (
+                    await session.execute(
+                        select(Student).where(Student.id.in_(student_ids))
                     )
-                )).scalars().all()
-            )
-            for sub in missing:
-                student = await session.get(Student, sub.student_id)
+                ).scalars().all()
+            }
+
+            grade_ids = {s.grade_id for s in students_map.values() if s.grade_id}
+            grades_map: dict[int, Grade] = {
+                g.id: g
+                for g in (
+                    await session.execute(
+                        select(Grade).where(Grade.id.in_(grade_ids))
+                    )
+                ).scalars().all()
+            }
+
+            for rec in att_records:
+                student = students_map.get(rec.student_id)
                 if not student or not student.person:
                     continue
                 grade_id = student.grade_id
-                grade = await session.get(Grade, grade_id)
+                if not grade_id:
+                    continue
+                grade = grades_map.get(grade_id)
                 if grade_id not in reports:
                     reports[grade_id] = GradeReport(
                         grade_id=grade_id,
                         grade_name=grade.name if grade else f"Curso {grade_id}",
                     )
                 name = f"{student.person.first_name} {student.person.last_name}"
-                sr = reports[grade_id].students.setdefault(
-                    sub.student_id, StudentReport(name=name),
+                sr = reports[grade_id].students.setdefault(rec.student_id, StudentReport(name=name))
+                if rec.status == "absent":
+                    sr.absent = True
+                    sr.absent_subject = rec.subject_name or ""
+                elif rec.status == "late":
+                    sr.late = True
+                    sr.absent_subject = rec.subject_name or ""
+                elif rec.status == "justified":
+                    sr.justified = True
+                    sr.absent_subject = rec.subject_name or ""
+
+        # 2. Tareas con entrega hoy que tienen no-entregas registradas
+        hw_due_today = [
+            hw for hw in (
+                await session.execute(
+                    select(Homework).where(
+                        Homework.is_open.is_(False),
+                        Homework.delivery_date.isnot(None),
+                    )
                 )
-                subject_name = hw.subject.name if hw.subject else "Materia"
-                sr.missing_hw.append(subject_name)
+            ).scalars().all()
+            if hw.delivery_date and hw.delivery_date.astimezone(timezone.utc).date() == today
+        ]
+
+        if hw_due_today:
+            hw_ids = [hw.id for hw in hw_due_today]
+            missing_subs = (
+                await session.execute(
+                    select(HomeworkSubmission).where(
+                        HomeworkSubmission.homework_id.in_(hw_ids),
+                        HomeworkSubmission.status == "missing",
+                    )
+                )
+            ).scalars().all()
+
+            # Cargar todos los students involucrados de una vez
+            sub_student_ids = list({s.student_id for s in missing_subs})
+            if sub_student_ids:
+                sub_students_map: dict[int, Student] = {
+                    s.id: s
+                    for s in (
+                        await session.execute(
+                            select(Student).where(Student.id.in_(sub_student_ids))
+                        )
+                    ).scalars().all()
+                }
+
+                # Cargar grades que falten
+                new_grade_ids = {
+                    s.grade_id
+                    for s in sub_students_map.values()
+                    if s.grade_id and s.grade_id not in reports
+                }
+                if new_grade_ids:
+                    new_grades = (
+                        await session.execute(
+                            select(Grade).where(Grade.id.in_(new_grade_ids))
+                        )
+                    ).scalars().all()
+                    extra_grades_map = {g.id: g for g in new_grades}
+                else:
+                    extra_grades_map = {}
+
+                hw_by_id = {hw.id: hw for hw in hw_due_today}
+
+                for sub in missing_subs:
+                    student = sub_students_map.get(sub.student_id)
+                    if not student or not student.person:
+                        continue
+                    grade_id = student.grade_id
+                    if not grade_id:
+                        continue
+                    if grade_id not in reports:
+                        grade = extra_grades_map.get(grade_id)
+                        reports[grade_id] = GradeReport(
+                            grade_id=grade_id,
+                            grade_name=grade.name if grade else f"Curso {grade_id}",
+                        )
+                    name = f"{student.person.first_name} {student.person.last_name}"
+                    sr = reports[grade_id].students.setdefault(
+                        sub.student_id, StudentReport(name=name),
+                    )
+                    hw = hw_by_id.get(sub.homework_id)
+                    subject_name = hw.subject.name if hw and hw.subject else "Materia"
+                    sr.missing_hw.append(subject_name)
 
     return [r for r in reports.values() if r.has_issues]
 
@@ -196,45 +253,61 @@ async def send_report_to_representatives(grade_id: int, today: date) -> tuple[in
         return 0, 0
 
     sent = failed = 0
+    student_ids = list(report.students.keys())
 
     async with async_session() as session:
-        for student_id, sr in report.students.items():
-            # Buscar representante primario con WhatsApp
-            rep_link = (
-                await session.execute(
-                    select(StudentRepresentative).where(
-                        StudentRepresentative.student_id == student_id,
-                        StudentRepresentative.is_primary_notify == True,  # noqa: E712
-                        StudentRepresentative.status == "active",
-                    )
+        # Carga masiva de representantes primarios con notificación activa
+        rep_links = (
+            await session.execute(
+                select(StudentRepresentative).where(
+                    StudentRepresentative.student_id.in_(student_ids),
+                    StudentRepresentative.is_primary_notify.is_(True),
+                    StudentRepresentative.status == "active",
                 )
-            ).scalar_one_or_none()
-
-            if not rep_link:
-                continue
-
-            contacts = (
-                (await session.execute(
-                    select(WhatsAppContact).where(
-                        WhatsAppContact.person_id == rep_link.person_id,
-                        WhatsAppContact.status == "active",
-                    )
-                )).scalars().all()
             )
-            if not contacts:
-                continue
+        ).scalars().all()
 
-            message = _build_rep_message(sr, report.grade_name, today)
-            ok = await send_whatsapp(
-                settings.green_api_instance,
-                settings.green_api_token,
-                contacts[0].phone,
-                message,
+        rep_by_student: dict[int, StudentRepresentative] = {
+            r.student_id: r for r in rep_links
+        }
+
+        # Carga masiva de contactos WhatsApp para los representantes encontrados
+        person_ids = list({r.person_id for r in rep_links})
+        if not person_ids:
+            return 0, 0
+
+        contacts_all = (
+            await session.execute(
+                select(WhatsAppContact).where(
+                    WhatsAppContact.person_id.in_(person_ids),
+                    WhatsAppContact.status == "active",
+                )
             )
-            if ok:
-                sent += 1
-            else:
-                failed += 1
+        ).scalars().all()
+
+        contacts_by_person: dict[int, WhatsAppContact] = {}
+        for c in contacts_all:
+            contacts_by_person.setdefault(c.person_id, c)
+
+    for student_id, sr in report.students.items():
+        rep_link = rep_by_student.get(student_id)
+        if not rep_link:
+            continue
+        contact = contacts_by_person.get(rep_link.person_id)
+        if not contact:
+            continue
+
+        message = _build_rep_message(sr, report.grade_name, today)
+        ok = await send_whatsapp(
+            settings.green_api_instance,
+            settings.green_api_token,
+            contact.phone,
+            message,
+        )
+        if ok:
+            sent += 1
+        else:
+            failed += 1
 
     logger.info(f"[tutor_notify] grade={grade_id} rep_sent={sent} failed={failed}")
     return sent, failed
