@@ -1,16 +1,32 @@
+<div align="center">
+
 > *"He aquí, os digo estas cosas para que aprendáis sabiduría; para que sepáis que cuando os halláis al servicio de vuestros semejantes, solo estáis al servicio de vuestro Dios."*
 > — [Mosíah 2:17](https://www.churchofjesuschrist.org/study/scriptures/bofm/mosiah/2?lang=spa)
 
-# SchoolAI
+# 🤖 SchoolAI
 
-> Asistente IA para docentes — registra asistencia, tareas y cuotas desde Telegram con lenguaje natural, sin formularios.
+**Asistente IA para docentes** — registra asistencia, tareas y cuotas desde Telegram con lenguaje natural, sin formularios.
+
+[Guía de usuario](docs/user-guide.md) | [Arquitectura](docs/architecture.md) | [API REST](#api-rest) | [Bot Agente](#ejecución)
+
+[![Python](https://img.shields.io/badge/Python-3.13+-3776AB?style=flat&logo=python&logoColor=white)](https://www.python.org/)
+[![FastAPI](https://img.shields.io/badge/FastAPI-0.115+-009688?style=flat&logo=fastapi&logoColor=white)](https://fastapi.tiangolo.com/)
+[![PostgreSQL](https://img.shields.io/badge/PostgreSQL-17-4169E1?style=flat&logo=postgresql&logoColor=white)](https://www.postgresql.org/)
+[![Groq](https://img.shields.io/badge/LLM-Groq-F55036?style=flat)](https://console.groq.com/)
+[![License: MIT](https://img.shields.io/badge/License-MIT-F7DF1E?style=flat)](LICENSE)
+
+[![Backend](https://img.shields.io/badge/Repo-Backend-181717?style=flat&logo=github&logoColor=white)](https://github.com/profealexander/schoolai)
+[![PWA](https://img.shields.io/badge/Repo-PWA_SvelteKit-FF3E00?style=flat&logo=svelte&logoColor=white)](https://github.com/profealexander/schoolai-web)
+[![Telegram](https://img.shields.io/badge/Canal-Telegram-26A5E4?style=flat&logo=telegram&logoColor=white)](https://t.me/BotFather)
+[![WhatsApp](https://img.shields.io/badge/Integración-Green_API-25D366?style=flat&logo=whatsapp&logoColor=white)](https://green-api.com/)
+
+[![Contactar por WhatsApp](https://img.shields.io/badge/Contactar%20al%20autor-WhatsApp-25D366?style=for-the-badge&logo=whatsapp&logoColor=white)](https://wa.me/593962385813)
+
+</div>
+
+---
 
 Un docente escribe "faltaron Juan y María en 3B" y el sistema lo guarda, genera reportes y notifica. Sin clics, sin formularios, sin apps que aprender.
-
-**Stack:** Python · FastAPI · PostgreSQL (Docker) · Telegram · Groq · Gemini · Green API · SvelteKit
-
-[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
-[![Python 3.13+](https://img.shields.io/badge/python-3.13+-blue.svg)](https://www.python.org/)
 
 **Repositorios:** [Backend (este repo)](https://github.com/profealexander/schoolai) · [PWA SvelteKit](https://github.com/profealexander/schoolai-web)
 
@@ -305,7 +321,9 @@ Directorio configurado en `LOG_DIR` (default: `logs/`):
 
 Las contribuciones son bienvenidas. Revisa los [issues abiertos](https://github.com/profealexander/schoolai/issues) — los marcados con `good first issue` son buenos puntos de entrada.
 
-Para cambios grandes abre un issue primero para discutir la dirección.
+Para cambios grandes abre un issue primero para discutir la dirección. También puedes escribirme directamente:
+
+[![Contactar por WhatsApp](https://img.shields.io/badge/Contactar-WhatsApp-25D366?style=for-the-badge&logo=whatsapp&logoColor=white)](https://wa.me/593962385813)
 
 ```bash
 # Fork + clone
