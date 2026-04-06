@@ -61,7 +61,9 @@ async def categorize(content: str, hint: str | None = None) -> dict[str, str]:
         )
 
     try:
+        from schoolai.skills.llm.usage import fire_record_usage
         response = await asyncio.to_thread(_call)
+        fire_record_usage(provider=provider, model=model, response=response, agent="context_categorizer")
         raw = (response.choices[0].message.content or "").strip()
         # Extraer JSON aunque venga envuelto en ```json ... ```
         match = re.search(r"\{.*\}", raw, re.DOTALL)

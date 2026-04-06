@@ -1,4 +1,6 @@
 from schoolai.db.models.attendance import Attendance  # noqa: F401
+from schoolai.db.models.teacher_absence import TeacherAbsence  # noqa: F401
+from schoolai.db.models.llm_usage import LLMUsage  # noqa: F401
 from schoolai.db.models.context_document import ContextDocument  # noqa: F401
 from schoolai.db.models.reminder import Reminder  # noqa: F401
 from schoolai.db.models.cuota import Actividad, ActividadPago, ActividadParticipante  # noqa: F401
@@ -29,5 +31,7 @@ __all__ = [
     "Subject",
     "Teacher",
     "TeacherPosition",
+    "LLMUsage",
+    "TeacherAbsence",
     "WhatsAppContact",
 ]

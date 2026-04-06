@@ -253,6 +253,8 @@ class JornadaSession:
     # Ausencias del docente registradas durante la jornada
     # [{period_num, grade_name, subject_name, reason, reason_label}]
     absences: list[dict] = field(default_factory=list)
+    # Si es "period" o "day": esperando texto libre para "Otro motivo"
+    awaiting_other_reason: str | None = None
 
     @property
     def current_period(self) -> dict | None:

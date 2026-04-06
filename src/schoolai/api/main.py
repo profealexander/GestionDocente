@@ -9,9 +9,11 @@ from schoolai.api.routers import (
     attendance,
     auth,
     cuotas,
+    dev,
     grades,
     health,
     homework,
+    llm_stats,
     students,
     subjects,
     whatsapp_webhook,
@@ -73,6 +75,8 @@ app.include_router(students.router)
 app.include_router(homework.router)
 app.include_router(attendance.router)
 app.include_router(cuotas.router)
+app.include_router(llm_stats.router)
+app.include_router(dev.router)
 app.include_router(whatsapp_webhook.router)
 
 

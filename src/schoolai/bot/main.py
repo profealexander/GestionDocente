@@ -46,6 +46,8 @@ from schoolai.bot.jornada_handler import (
     job_morning_notify,
     job_reconnect_resume,
 )
+import schoolai.skills.attendance.teacher_absence  # noqa: F401 — registra interceptor ausencias
+from schoolai.skills.attendance.teacher_absence import handle_ausencias_command
 from schoolai.skills.reminders.dispatcher import job_dispatch_reminders
 from schoolai.bot.mode import set_mode
 from schoolai.bot.notif_handler import handle_doc_notify_callback
@@ -382,6 +384,7 @@ def run(dev: bool = False) -> None:
 
     # ── Modo Jornada ──────────────────────────────────────────────────────────
     app.add_handler(CommandHandler("jornada", handle_jornada_command))
+    app.add_handler(CommandHandler("ausencias", handle_ausencias_command))
     app.add_handler(CallbackQueryHandler(handle_jornada_callback, pattern=r"^jor_"))
 
     # ── Broadcast ─────────────────────────────────────────────────────────────

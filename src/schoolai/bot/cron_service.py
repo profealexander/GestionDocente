@@ -25,6 +25,7 @@ import json
 from datetime import time as _time
 from pathlib import Path
 from typing import TYPE_CHECKING, Any, Callable
+from zoneinfo import ZoneInfo
 
 from loguru import logger
 
@@ -120,8 +121,15 @@ class CronService:
     # ── Internos ───────────────────────────────────────────────────────────────
 
     def _get_time(self, job_name: str) -> _time:
+        """Retorna el tiempo configurado como timezone-aware (America/Guayaquil por defecto).
+
+        Sin tzinfo, python-telegram-bot interpreta el time como UTC, lo que hace
+        que un job a las 06:30 Ecuador dispare a las 01:30 AM local (UTC-5).
+        """
+        from schoolai.config import settings
         cfg = self._jobs.get(job_name, {})
-        return _time(cfg.get("hour", 6), cfg.get("minute", 30))
+        tz = ZoneInfo(settings.school_timezone)
+        return _time(cfg.get("hour", 6), cfg.get("minute", 30), tzinfo=tz)
 
     def _save(self) -> None:
         if self._path is None:

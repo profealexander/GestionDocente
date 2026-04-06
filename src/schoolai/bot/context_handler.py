@@ -11,6 +11,7 @@ El caption de fotos/documentos actúa como pista (hint) para la categorización.
 
 from __future__ import annotations
 
+import asyncio
 import re
 
 from loguru import logger
@@ -154,43 +155,70 @@ async def _save_and_confirm(
     original_filename: str | None,
     fmt_label: str,
 ) -> None:
+    """Responde inmediatamente y categoriza + guarda en background."""
+    processing_msg = await update.message.reply_text("⏳ Categorizando y guardando...")
+    asyncio.get_event_loop().create_task(
+        _categorize_and_save(
+            telegram_id, content, hint, source_type,
+            original_filename, fmt_label, processing_msg,
+        )
+    )
+
+
+async def _categorize_and_save(
+    telegram_id: int,
+    content: str,
+    hint: str | None,
+    source_type: str,
+    original_filename: str | None,
+    fmt_label: str,
+    processing_msg,
+) -> None:
+    """Task en background: categoriza, guarda en BD y edita el mensaje de confirmación."""
     from schoolai.skills.context.categorizer import categorize
     from schoolai.skills.context.repository import save_document
 
-    meta = await categorize(content, hint=hint)
+    try:
+        meta = await categorize(content, hint=hint)
 
-    async with async_session() as session:
-        teacher = (
-            await session.execute(select(Teacher).where(Teacher.telegram_id == telegram_id))
-        ).scalar_one_or_none()
-        if not teacher:
-            await update.message.reply_text("No tienes un perfil de docente vinculado.")
-            return
+        async with async_session() as session:
+            teacher = (
+                await session.execute(select(Teacher).where(Teacher.telegram_id == telegram_id))
+            ).scalar_one_or_none()
+            if not teacher:
+                await processing_msg.edit_text("No tienes un perfil de docente vinculado.")
+                return
 
-        saved = await save_document(
-            session,
-            teacher_id=teacher.id,
-            scope=meta["scope"],
-            category=meta["category"],
-            title=meta["title"],
-            content=content,
-            source_type=source_type,
-            original_filename=original_filename,
-            hint=hint,
+            saved = await save_document(
+                session,
+                teacher_id=teacher.id,
+                scope=meta["scope"],
+                category=meta["category"],
+                title=meta["title"],
+                content=content,
+                source_type=source_type,
+                original_filename=original_filename,
+                hint=hint,
+            )
+
+        scope_icon = "🏫 Institucional" if meta["scope"] == "institution" else "👤 Personal"
+        cat_label = _CATEGORY_LABELS.get(meta["category"], meta["category"])
+
+        await processing_msg.edit_text(
+            f"✅ <b>Guardado</b> (#{saved.id})\n\n"
+            f"<b>Título:</b> {meta['title']}\n"
+            f"<b>Tipo:</b> {fmt_label} · {cat_label}\n"
+            f"<b>Alcance:</b> {scope_icon}\n\n"
+            f"<i>Ya puedo responder preguntas usando este contenido.</i>",
+            parse_mode=ParseMode.HTML,
+        )
+        logger.info(
+            f"[context] #{saved.id} teacher={teacher.id} "
+            f"scope={meta['scope']} cat={meta['category']} src={source_type}",
         )
 
-    scope_icon = "🏫 Institucional" if meta["scope"] == "institution" else "👤 Personal"
-    cat_label = _CATEGORY_LABELS.get(meta["category"], meta["category"])
-
-    await update.message.reply_text(
-        f"✅ <b>Guardado</b> (#{saved.id})\n\n"
-        f"<b>Título:</b> {meta['title']}\n"
-        f"<b>Tipo:</b> {fmt_label} · {cat_label}\n"
-        f"<b>Alcance:</b> {scope_icon}\n\n"
-        f"<i>Ya puedo responder preguntas usando este contenido.</i>",
-        parse_mode=ParseMode.HTML,
-    )
-    logger.info(
-        f"[context] #{saved.id} teacher={teacher.id} "
-        f"scope={meta['scope']} cat={meta['category']} src={source_type}",
-    )
+    except Exception as e:
+        logger.error(f"[context] error en background categorize+save: {e}")
+        await processing_msg.edit_text(
+            "❌ Error al guardar el documento. Intenta de nuevo.",
+        )

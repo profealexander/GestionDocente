@@ -36,13 +36,21 @@ _FILE_PROMPT = (
 )
 
 
+_MAX_FILE_BYTES = 10 * 1024 * 1024  # 10 MB
+
+
 async def extract_from_file(file_bytes: bytes, mime_type: str) -> str:
     """Envía cualquier archivo a Gemini para extracción de texto."""
     from schoolai.config import settings
     from schoolai.skills.llm.client import get_client
+    from schoolai.skills.llm.usage import fire_record_usage
 
     if not settings.google_api_key:
         return ""
+
+    if len(file_bytes) > _MAX_FILE_BYTES:
+        mb = len(file_bytes) / 1024 / 1024
+        raise ValueError(f"Archivo demasiado grande ({mb:.1f} MB). Máximo permitido: 10 MB.")
 
     b64 = base64.b64encode(file_bytes).decode()
     client = get_client("google", timeout=60.0)
@@ -66,6 +74,7 @@ async def extract_from_file(file_bytes: bytes, mime_type: str) -> str:
         )
 
     response = await asyncio.to_thread(_call)
+    fire_record_usage(provider="google", model="gemini-2.5-flash-lite", response=response, agent="context_extractor")
     return (response.choices[0].message.content or "").strip()
 
 

@@ -5,7 +5,7 @@ Cada SkillAgent es una unidad autónoma con:
   - Su lista de tools (3-5 tools en vez de todas)
   - El mismo loop ReAct (patrón NanoBot / ReAct)
 
-Uso en Fase 2+:
+Uso:
     class AttendanceAgent(SkillAgentBase):
         name = "attendance"
         system_prompt_template = "You are an attendance expert..."
@@ -21,6 +21,11 @@ Failover / Retry:
   - Por proveedor: hasta MAX_RETRIES intentos con backoff exponencial (1 s, 2 s)
   - Rate-limit (429) o auth (401): cambia proveedor inmediatamente
   - Error transitorio: reintenta en el mismo proveedor antes de cambiar
+
+Optimización de tokens:
+  - _TOOL_RESULT_KEEP=2: solo las últimas 2 rondas de tool results se envían completas
+  - Rondas anteriores se truncan a 120 chars — elimina amplificación O(n²) en sesiones largas
+  - El reasoning del asistente se preserva; solo se comprimen los datos de BD/herramientas
 """
 
 from __future__ import annotations
@@ -46,6 +51,55 @@ TELEGRAM_FORMAT = (
 MAX_ITER = 6       # máximo de rondas tool_call → resultado por conversación
 MAX_RETRIES = 2    # intentos por proveedor antes de cambiar al siguiente
 RETRY_DELAY = 1.0  # segundos base — backoff exponencial: 1 s, 2 s
+_TOOL_RESULT_KEEP = 2   # iteraciones recientes cuyos tool results se mandan completos
+
+
+# ── Token optimization ─────────────────────────────────────────────────────────
+
+
+def _compress_old_tool_results(messages: list[dict]) -> list[dict]:
+    """Comprime tool results de iteraciones antiguas para reducir tokens.
+
+    Estrategia:
+    - Cuenta los bloques assistant-con-tool_calls del más reciente al más antiguo.
+    - Los últimos _TOOL_RESULT_KEEP bloques se envían intactos.
+    - Los bloques más antiguos: el assistant_msg se conserva (tiene el reasoning),
+      pero cada tool result se trunca a 120 chars con sufijo "[truncado]".
+
+    Esto elimina la amplificación O(n²) de tokens manteniendo el razonamiento visible.
+    """
+    # Índices de mensajes assistant con tool_calls (más reciente primero)
+    assistant_idxs = [
+        i for i, m in enumerate(messages)
+        if m.get("role") == "assistant" and m.get("tool_calls")
+    ]
+
+    if len(assistant_idxs) <= _TOOL_RESULT_KEEP:
+        return messages  # nada que comprimir
+
+    # Bloques a comprimir: todos excepto los últimos _TOOL_RESULT_KEEP
+    old_blocks = set(assistant_idxs[: len(assistant_idxs) - _TOOL_RESULT_KEEP])
+
+    compressed = []
+    in_old_block = False
+    for i, msg in enumerate(messages):
+        if i in old_blocks:
+            in_old_block = True
+            compressed.append(msg)
+            continue
+
+        if msg.get("role") == "tool" and in_old_block:
+            # Truncar contenido largo de tool results antiguos
+            content = msg.get("content", "")
+            if len(content) > 120:
+                content = content[:120] + "… [truncado]"
+            compressed.append({**msg, "content": content})
+        else:
+            if msg.get("role") == "assistant":
+                in_old_block = False
+            compressed.append(msg)
+
+    return compressed
 
 
 # ── Helpers de failover ────────────────────────────────────────────────────────
@@ -87,6 +141,7 @@ async def _llm_call_with_failover(
     messages: list[dict],
     tool_defs: list[dict],
     providers_chain: list[str],
+    agent: str = "unknown",
 ) -> object:
     """Llama al LLM con failover automático entre proveedores.
 
@@ -127,6 +182,8 @@ async def _llm_call_with_failover(
                         f"[skill_agent] respondió {provider_model} "
                         f"(intento {attempt + 1}, primario={providers_chain[0]})"
                     )
+                from schoolai.skills.llm.usage import fire_record_usage
+                fire_record_usage(provider=provider, model=model, response=response, agent=agent)
                 return response
 
             except Exception as e:  # noqa: BLE001
@@ -276,8 +333,11 @@ class SkillAgentBase:
         )
 
         for iteration in range(MAX_ITER):
+            if iteration >= _TOOL_RESULT_KEEP:
+                messages = _compress_old_tool_results(messages)
+
             try:
-                response = await _llm_call_with_failover(messages, tool_defs, providers_chain)
+                response = await _llm_call_with_failover(messages, tool_defs, providers_chain, agent=self.name)
             except Exception as e:  # noqa: BLE001
                 logger.error(f"[{self.name}] todos los proveedores fallaron (iter {iteration}): {e}")
                 return (
@@ -298,7 +358,7 @@ class SkillAgentBase:
                 messages.append({"role": "assistant", "content": ""})
                 messages.append({"role": "user", "content": "Resume el resultado anterior en español, de forma breve."})
                 try:
-                    summary_resp = await _llm_call_with_failover(messages, [], providers_chain)
+                    summary_resp = await _llm_call_with_failover(messages, [], providers_chain, agent=self.name)
                     return (summary_resp.choices[0].message.content or "").strip() or "Operación completada."
                 except Exception as e:  # noqa: BLE001
                     return f"Operación completada. Error al generar resumen: {e}"
@@ -311,7 +371,7 @@ class SkillAgentBase:
             {"role": "user", "content": "Resume brevemente lo que hiciste hasta ahora."},
         )
         try:
-            final_resp = await _llm_call_with_failover(messages, [], providers_chain)
+            final_resp = await _llm_call_with_failover(messages, [], providers_chain, agent=self.name)
             return (final_resp.choices[0].message.content or "").strip()
         except Exception as e:  # noqa: BLE001
             return f"Operación parcialmente completada. Error al generar resumen: {e}"

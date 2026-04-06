@@ -75,6 +75,26 @@ def _active_keyboard(has_prev: bool) -> InlineKeyboardMarkup:
         rows.append([InlineKeyboardButton("⬅️ Clase anterior", callback_data="jor_back")])
     return InlineKeyboardMarkup(rows)
 
+_MORNING_KEYBOARD = InlineKeyboardMarkup(
+    [
+        [InlineKeyboardButton("🟢 Iniciar Modo Jornada", callback_data="jor_start")],
+        [InlineKeyboardButton("🔴 No asistiré hoy",      callback_data="jor_absent_day")],
+    ],
+)
+
+_ABSENT_DAY_REASON_KEYBOARD = InlineKeyboardMarkup(
+    [
+        [
+            InlineKeyboardButton("📋 Reunión delegada", callback_data="jor_absent_day_reason:meeting"),
+            InlineKeyboardButton("📝 Permiso",          callback_data="jor_absent_day_reason:permit"),
+        ],
+        [
+            InlineKeyboardButton("🤒 Enfermedad",       callback_data="jor_absent_day_reason:sick"),
+            InlineKeyboardButton("❓ Otro motivo",      callback_data="jor_absent_day_reason:other"),
+        ],
+    ],
+)
+
 _FINISHED_KEYBOARD = InlineKeyboardMarkup(
     [
         [
@@ -215,13 +235,7 @@ async def job_morning_notify(context: ContextTypes.DEFAULT_TYPE) -> None:
         )
         teacher_periods = list(zip(teachers, schedules))
 
-    _start_btn = InlineKeyboardMarkup(
-        [
-            [
-                InlineKeyboardButton("🟢 Iniciar Modo Jornada", callback_data="jor_start"),
-            ],
-        ],
-    )
+    _start_btn = _MORNING_KEYBOARD
 
     async def _notify(teacher, periods) -> None:
         if not periods:
@@ -338,10 +352,21 @@ async def handle_jornada_callback(update, context: ContextTypes.DEFAULT_TYPE) ->
         await _on_goto(query, user_id, int(data.split(":")[1]), context)
         return
 
-    # jor_absent_reason:{reason} — confirmación de razón de ausencia
+    # jor_absent_reason:{reason} — confirmación de razón de ausencia (período)
     if data.startswith("jor_absent_reason:"):
         reason = data.split(":", 1)[1]
         await _on_absent_reason(query, user_id, reason, context)
+        return
+
+    # jor_absent_day — ausencia de toda la jornada
+    if data == "jor_absent_day":
+        await _on_absent_day(query, user_id, context)
+        return
+
+    # jor_absent_day_reason:{reason} — razón de ausencia total
+    if data.startswith("jor_absent_day_reason:"):
+        reason = data.split(":", 1)[1]
+        await _on_absent_day_reason(query, user_id, reason, context)
         return
 
     # jor_report_send:{grade_id} — enviar reporte al representante
@@ -485,9 +510,19 @@ async def _on_absent_reason(
     if not jornada:
         return
 
+    # "Otro motivo" → pedir texto antes de continuar
+    if reason == "other":
+        jornada.awaiting_other_reason = "period"
+        set_jornada(user_id, jornada)
+        await query.edit_message_text(
+            "✏️ *¿Cuál es el motivo?*\n_Escribe una breve descripción:_",
+            parse_mode="Markdown",
+        )
+        return
+
     p = jornada.current_period
     if p:
-        reason_label = _ABSENT_REASONS.get(reason, "Otro motivo")
+        reason_label = _ABSENT_REASONS.get(reason, reason)
         jornada.absences.append(
             {
                 "period_num": p["period_num"],
@@ -514,6 +549,76 @@ async def _on_absent_reason(
         return
 
     await _send_period_card(context.bot, jornada, user_id)
+
+
+async def _on_absent_day(query, user_id: int, context: ContextTypes.DEFAULT_TYPE) -> None:
+    """Muestra el sub-menú de razones para ausencia de toda la jornada."""
+    await query.edit_message_text(
+        "🔴 *Ausencia — jornada completa*\n\n_¿Cuál es el motivo?_",
+        parse_mode="Markdown",
+        reply_markup=_ABSENT_DAY_REASON_KEYBOARD,
+    )
+
+
+async def _on_absent_day_reason(
+    query, user_id: int, reason: str, context: ContextTypes.DEFAULT_TYPE,
+) -> None:
+    """Marca todos los períodos del día como ausentes y cierra la jornada."""
+    today = date.today().weekday()
+
+    jornada = get_jornada(user_id)
+    if jornada is None:
+        # Aún no hay sesión (docente respondió desde la notificación matutina)
+        async with async_session() as session:
+            teacher = await get_teacher_by_telegram(session, user_id)
+            if not teacher:
+                await query.edit_message_text("Perfil de docente no encontrado.")
+                return
+            periods = await get_schedule_for_day(session, teacher.id, today)
+
+        period_list = _build_period_list(periods)
+        jornada = JornadaSession(
+            teacher_id=teacher.id,
+            chat_id=query.message.chat_id,
+            day_of_week=today,
+            periods=period_list,
+            current_index=0,
+        )
+
+    # "Otro motivo" → pedir texto antes de cerrar
+    if reason == "other":
+        jornada.awaiting_other_reason = "day"
+        set_jornada(user_id, jornada)
+        await query.edit_message_text(
+            "✏️ *¿Cuál es el motivo?*\n_Escribe una breve descripción:_",
+            parse_mode="Markdown",
+        )
+        return
+
+    reason_label = _ABSENT_REASONS.get(reason, reason)
+    _apply_day_absences(jornada, reason, reason_label)
+    set_jornada(user_id, jornada)
+
+    await query.edit_message_reply_markup(reply_markup=None)
+    logger.info(f"[jornada] ausencia total user={user_id} reason={reason} periods={len(jornada.periods)}")
+    await _finish_jornada(context.bot, user_id, jornada)
+
+
+def _apply_day_absences(jornada: "JornadaSession", reason: str, reason_label: str) -> None:
+    """Marca todos los períodos del día como ausentes."""
+    jornada.absences = [
+        {
+            "period_num": p["period_num"],
+            "grade_name": p["grade_name"],
+            "subject_name": p["subject_name"],
+            "reason": reason,
+            "reason_label": reason_label,
+        }
+        for p in jornada.periods
+    ]
+    jornada.current_index = len(jornada.periods)
+    jornada.status = "done"
+    jornada.awaiting_other_reason = None
 
 
 async def _on_next(query, user_id: int, context: ContextTypes.DEFAULT_TYPE) -> None:
@@ -665,13 +770,25 @@ async def _send_period_card(bot, jornada: JornadaSession, user_id: int) -> None:
     ]
     if jornada.current_index > 0:
         buttons.append([InlineKeyboardButton("⬅️ Clase anterior", callback_data="jor_back")])
-    buttons.append([InlineKeyboardButton("🔴 Finalizar Jornada", callback_data="jor_end")])
+    buttons.append([
+        InlineKeyboardButton("🔴 No asistiré hoy", callback_data="jor_absent_day"),
+        InlineKeyboardButton("⏹ Finalizar",        callback_data="jor_end"),
+    ])
 
     await bot.send_message(
         chat_id=jornada.chat_id,
         text=text,
         parse_mode=ParseMode.MARKDOWN,
         reply_markup=InlineKeyboardMarkup(buttons),
+    )
+
+
+async def _save_teacher_absences(jornada: JornadaSession) -> None:
+    from schoolai.skills.attendance.teacher_absence import save_teacher_absences
+    await save_teacher_absences(jornada)
+    logger.info(
+        f"[jornada] {len(jornada.absences)} ausencias docente guardadas "
+        f"teacher={jornada.teacher_id}",
     )
 
 
@@ -690,6 +807,12 @@ async def _finish_jornada(bot, user_id: int, jornada: JornadaSession) -> None:
             )
     else:
         lines.append("\n_Buen trabajo. Hasta mañana._")
+
+    # Persistir ausencias del docente en BD antes de limpiar la sesión
+    try:
+        await _save_teacher_absences(jornada)
+    except Exception as exc:
+        logger.error(f"[jornada] error guardando ausencias docente en BD: {exc}")
 
     clear_jornada(user_id)
     await bot.send_message(
@@ -731,6 +854,23 @@ async def _finish_jornada(bot, user_id: int, jornada: JornadaSession) -> None:
                 )
     except Exception as exc:
         logger.error(f"[jornada] error generando reportes: {exc}")
+
+    # Si el docente es tutor y tuvo ausencias → notificar al inspector
+    if jornada.absences:
+        try:
+            from schoolai.skills.whatsapp.tutor_notify import notify_inspector_tutor_absent
+            from datetime import date as _date2
+
+            reason_labels = list({a["reason_label"] for a in jornada.absences})
+            reason_label = reason_labels[0] if reason_labels else "Ausencia"
+            await notify_inspector_tutor_absent(
+                bot,
+                jornada.teacher_id,
+                reason_label,
+                _date2.today(),
+            )
+        except Exception as exc:
+            logger.error(f"[jornada] error notificando inspector: {exc}")
 
 
 async def _on_back(query, user_id: int, context: ContextTypes.DEFAULT_TYPE) -> None:
@@ -1002,7 +1142,63 @@ async def _on_report_send(query, grade_id: int, context) -> None:
     )
 
 
+# ── Interceptor: texto libre para "Otro motivo" de ausencia ──────────────────
+
+async def _absent_other_reason_interceptor(update, user_id: int) -> bool:
+    """Captura el texto cuando el docente eligió 'Otro motivo' y espera descripción."""
+    jornada = get_jornada(user_id)
+    if not jornada or not jornada.awaiting_other_reason:
+        return False
+
+    mode = jornada.awaiting_other_reason  # "period" | "day"
+    custom_label = update.message.text.strip()
+    if not custom_label:
+        return False
+
+    bot = update.get_bot()
+
+    if mode == "period":
+        p = jornada.current_period
+        if p:
+            jornada.absences.append({
+                "period_num": p["period_num"],
+                "grade_name": p["grade_name"],
+                "subject_name": p["subject_name"],
+                "reason": "other",
+                "reason_label": custom_label,
+            })
+            logger.info(
+                f"[jornada] ausencia docente user={user_id} "
+                f"grade={p['grade_name']} reason=other custom={custom_label!r}",
+            )
+        jornada.current_index += 1
+        jornada.status = "waiting"
+        jornada.clear_context()
+        jornada.awaiting_other_reason = None
+        set_jornada(user_id, jornada)
+
+        await update.message.reply_text("✅ Motivo registrado.")
+        if not jornada.current_period:
+            await _finish_jornada(bot, user_id, jornada)
+        else:
+            await _send_period_card(bot, jornada, user_id)
+
+    else:  # "day"
+        _apply_day_absences(jornada, "other", custom_label)
+        set_jornada(user_id, jornada)
+        logger.info(
+            f"[jornada] ausencia total user={user_id} reason=other custom={custom_label!r} "
+            f"periods={len(jornada.periods)}",
+        )
+        await update.message.reply_text("✅ Motivo registrado.")
+        await _finish_jornada(bot, user_id, jornada)
+
+    return True
+
+
 # Auto-registro al importar este módulo (aplica a bots Libre y Jornada)
 from schoolai.bot.text_interceptors import text_interceptors  # noqa: E402
 
+text_interceptors.register(priority=5, name="jornada_absent_other")(_absent_other_reason_interceptor)
 text_interceptors.register(priority=8, name="horario_natural")(_horario_interceptor)
+

@@ -33,8 +33,8 @@ class Settings(BaseSettings):
     llm_extractor: str = "groq/llama-3.1-8b-instant"  # extractor JSON — rápido
     llm_chat: str = "groq/llama-3.3-70b-versatile"  # asistente IA
     llm_router: str = "groq/llama-3.1-8b-instant"  # clasificador de mensajes
-    llm_orchestrator: str = "google/gemini-2.5-flash-lite"  # orquestador multi-tool — más rápido y 1,000 RPD gratis
-    llm_orchestrator_fallback: str = "google/gemini-2.5-flash,zai/glm-4.7-flash,groq/llama-3.3-70b-versatile"  # cadena: 2.5-flash (250 RPD gratis) → GLM → Groq
+    llm_orchestrator: str = "zai/glm-4.7-flash"  # orquestador multi-tool — GLM recomendado; sobreescribir en .env
+    llm_orchestrator_fallback: str = "zai/glm-4.7-flash,groq/llama-3.3-70b-versatile"  # cadena de failover: GLM → Groq (sin Gemini — evita cargos Google Cloud)
 
     # ── API keys ───────────────────────────────────────────────────────────────
     groq_api_key: str = ""  # Groq — transcripción Whisper + LLM extractor/chat (otras skills)
@@ -71,6 +71,9 @@ class Settings(BaseSettings):
     # Logging
     log_dir: str = "logs"
     admin_telegram_id: int | None = None
+
+    # Zona horaria de la institución (IANA name, e.g. "America/Guayaquil")
+    school_timezone: str = "America/Guayaquil"
 
     # Autonomía: si True, el bot pide confirmación antes de toda escritura en DB
     supervised_mode: bool = False

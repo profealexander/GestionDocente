@@ -44,14 +44,20 @@ async def chat(user_id: int, text: str, send_chunk) -> str:
                 stream=True,
             )
 
+        from schoolai.skills.llm.usage import fire_record_usage
         stream = await asyncio.to_thread(_stream)
 
         full_reply = []
+        last_chunk = None
         for chunk in stream:
             delta = chunk.choices[0].delta.content
             if delta:
                 full_reply.append(delta)
                 await send_chunk(delta)
+            last_chunk = chunk
+
+        if last_chunk is not None:
+            fire_record_usage(provider=provider, model=model, response=last_chunk, agent="ia_chat")
 
         reply = "".join(full_reply).strip()
         history.append(user_id, "assistant", reply)

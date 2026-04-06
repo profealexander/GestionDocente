@@ -69,6 +69,9 @@ async def call_groq_tools(
         logger.warning(f"[tool_caller] error en llamada: {e}")
         return None
 
+    from schoolai.skills.llm.usage import fire_record_usage
+    fire_record_usage(provider=provider, model=model, response=response, agent="extractor")
+
     choice = response.choices[0]
     if not choice.message.tool_calls:
         logger.debug("[tool_caller] Groq no llamó ninguna tool")

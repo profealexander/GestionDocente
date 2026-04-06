@@ -22,6 +22,7 @@ from schoolai.db.models.student import Student
 from schoolai.db.models.attendance import Attendance
 from schoolai.db.models.homework import Homework
 from schoolai.db.models.homework_submission import HomeworkSubmission
+from schoolai.db.models.teacher import Teacher, TeacherPosition
 
 
 # ── Data classes ──────────────────────────────────────────────────────────────
@@ -311,6 +312,117 @@ async def send_report_to_representatives(grade_id: int, today: date) -> tuple[in
 
     logger.info(f"[tutor_notify] grade={grade_id} rep_sent={sent} failed={failed}")
     return sent, failed
+
+
+async def get_tutor_grade_ids(teacher_id: int) -> list[int]:
+    """Grade IDs para los que este docente es tutor activo."""
+    async with async_session() as session:
+        rows = (await session.execute(
+            select(TeacherPosition).where(
+                TeacherPosition.teacher_id == teacher_id,
+                TeacherPosition.position_type == "tutor",
+                TeacherPosition.grade_id.isnot(None),
+                TeacherPosition.is_active.is_(True),
+            )
+        )).scalars().all()
+        return [r.grade_id for r in rows]
+
+
+async def get_inspector_telegram_ids() -> list[int]:
+    """Telegram IDs de todos los inspectores activos."""
+    async with async_session() as session:
+        positions = (await session.execute(
+            select(TeacherPosition).where(
+                TeacherPosition.position_type == "cargo",
+                TeacherPosition.detail == "inspector",
+                TeacherPosition.is_active.is_(True),
+            )
+        )).scalars().all()
+        if not positions:
+            return []
+        teacher_ids = [p.teacher_id for p in positions]
+        teachers = (await session.execute(
+            select(Teacher).where(
+                Teacher.id.in_(teacher_ids),
+                Teacher.telegram_id.isnot(None),
+                Teacher.is_active.is_(True),
+            )
+        )).scalars().all()
+        return [t.telegram_id for t in teachers]
+
+
+async def notify_inspector_tutor_absent(
+    bot,
+    teacher_id: int,
+    reason_label: str,
+    today: date,
+) -> None:
+    """Envía al inspector el reporte del curso tutorado cuando el tutor está ausente."""
+    tutor_grade_ids = await get_tutor_grade_ids(teacher_id)
+    if not tutor_grade_ids:
+        return
+
+    inspector_ids = await get_inspector_telegram_ids()
+    if not inspector_ids:
+        logger.warning("[tutor_notify] tutor ausente pero no hay inspectores con telegram_id")
+        return
+
+    # Nombre del tutor
+    async with async_session() as session:
+        teacher = await session.get(Teacher, teacher_id)
+        tutor_name = (
+            f"{teacher.person.first_name} {teacher.person.last_name}"
+            if teacher and teacher.person
+            else f"Docente #{teacher_id}"
+        )
+
+        # Nombres de los cursos tutorados
+        grade_names: dict[int, str] = {}
+        if tutor_grade_ids:
+            grades = (await session.execute(
+                select(Grade).where(Grade.id.in_(tutor_grade_ids))
+            )).scalars().all()
+            grade_names = {g.id: g.name for g in grades}
+
+    # Reporte de estudiantes del día
+    all_reports = await build_daily_reports(today)
+    reports_by_grade = {r.grade_id: r for r in all_reports}
+
+    from telegram.constants import ParseMode
+
+    for grade_id in tutor_grade_ids:
+        grade_name = grade_names.get(grade_id, f"Curso {grade_id}")
+        report = reports_by_grade.get(grade_id)
+
+        lines = [
+            f"⚠️ <b>AVISO — Tutor ausente</b>",
+            f"Curso: <b>{grade_name}</b>",
+            f"Tutor: <b>{tutor_name}</b>",
+            f"Motivo: {reason_label}",
+            f"Fecha: {today.strftime('%d/%m/%Y')}",
+            "",
+        ]
+        if report and report.has_issues:
+            lines.append(format_telegram_report(report, today))
+        else:
+            lines.append("Sin novedades de estudiantes registradas hoy.")
+
+        text = "\n".join(lines)
+        for inspector_id in inspector_ids:
+            try:
+                await bot.send_message(
+                    chat_id=inspector_id,
+                    text=text,
+                    parse_mode=ParseMode.HTML,
+                )
+                logger.info(
+                    f"[tutor_notify] inspector={inspector_id} notificado "
+                    f"tutor={teacher_id} grade={grade_id}",
+                )
+            except Exception as e:
+                logger.warning(
+                    f"[tutor_notify] no se pudo notificar inspector={inspector_id}: {e}",
+                )
 
 
 def _build_rep_message(sr: StudentReport, grade_name: str, today: date) -> str:
