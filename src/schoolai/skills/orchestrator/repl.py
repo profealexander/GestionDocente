@@ -31,14 +31,16 @@ _SAFE_BUILTINS: dict[str, Any] = {
     "abs": abs, "all": all, "any": any, "bin": bin, "bool": bool,
     "chr": chr, "dict": dict, "divmod": divmod,
     "enumerate": enumerate, "filter": filter, "float": float,
-    "format": format, "frozenset": frozenset, "getattr": getattr,
-    "hasattr": hasattr, "hash": hash, "hex": hex, "int": int,
-    "isinstance": isinstance, "issubclass": issubclass, "iter": iter,
+    "format": format, "frozenset": frozenset,
+    # getattr / hasattr / type / isinstance / issubclass EXCLUIDOS intencionalmente:
+    # permiten sandbox escape via __class__.__bases__[0].__subclasses__()
+    "hash": hash, "hex": hex, "int": int,
+    "iter": iter,
     "len": len, "list": list, "map": map, "max": max, "min": min,
     "next": next, "oct": oct, "ord": ord, "pow": pow,
     "range": range, "repr": repr, "reversed": reversed, "round": round,
     "set": set, "slice": slice, "sorted": sorted, "str": str, "sum": sum,
-    "tuple": tuple, "type": type, "zip": zip,
+    "tuple": tuple, "zip": zip,
     "True": True, "False": False, "None": None,
     # Excepciones comunes
     "Exception": Exception, "ValueError": ValueError, "KeyError": KeyError,

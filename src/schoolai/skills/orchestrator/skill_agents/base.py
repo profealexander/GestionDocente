@@ -276,11 +276,14 @@ class SkillAgentBase:
             result = await self._execute_tool(tc.function.name, args)
             logger.debug(f"[{self.name}] tool={tc.function.name} → {result[:120]!r}")
 
+            # Anti-injection: delimita el resultado para que el LLM lo trate
+            # como datos estructurados, no como instrucciones adicionales.
+            safe_result = f"[TOOL_RESULT]\n{result}\n[/TOOL_RESULT]"
             messages.append(
                 {
                     "role": "tool",
                     "tool_call_id": tc.id,
-                    "content": result,
+                    "content": safe_result,
                 }
             )
 

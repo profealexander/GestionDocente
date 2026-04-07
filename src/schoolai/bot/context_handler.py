@@ -157,12 +157,14 @@ async def _save_and_confirm(
 ) -> None:
     """Responde inmediatamente y categoriza + guarda en background."""
     processing_msg = await update.message.reply_text("⏳ Categorizando y guardando...")
-    asyncio.get_event_loop().create_task(
+    # Guardar referencia al task para evitar que el GC lo recoja antes de terminar
+    task = asyncio.get_running_loop().create_task(
         _categorize_and_save(
             telegram_id, content, hint, source_type,
             original_filename, fmt_label, processing_msg,
         )
     )
+    task.add_done_callback(lambda t: t.exception() and logger.error(f"[context] background task falló: {t.exception()}"))
 
 
 async def _categorize_and_save(

@@ -475,6 +475,7 @@ async def _on_skip(query, user_id: int, context: ContextTypes.DEFAULT_TYPE) -> N
     jornada.current_index += 1
     jornada.status = "waiting"
     jornada.clear_context()
+    jornada.awaiting_other_reason = None  # cancelar cualquier espera de texto pendiente
     set_jornada(user_id, jornada)
 
     await query.edit_message_reply_markup(reply_markup=None)
@@ -684,6 +685,14 @@ async def _on_resume(query, user_id: int, context: ContextTypes.DEFAULT_TYPE) ->
 async def _on_end(query, user_id: int, context=None) -> None:
     jornada = get_jornada(user_id)
     completed = jornada.current_index if jornada else 0
+
+    # Persistir ausencias registradas antes de limpiar la sesión
+    if jornada and jornada.absences:
+        try:
+            await _save_teacher_absences(jornada)
+        except Exception as exc:
+            logger.error(f"[jornada:end] error guardando ausencias: {exc}")
+
     clear_jornada(user_id)
     await query.edit_message_text(
         f"🔴 *Modo Jornada finalizado.*\n"
@@ -712,7 +721,9 @@ def _current_period_index(periods: list[dict]) -> int:
     - Si ya pasaron todos → len(periods)
     - Si no ha empezado ninguno → 0
     """
-    now = datetime.now().time()
+    from zoneinfo import ZoneInfo
+    from schoolai.config import settings as _s
+    now = datetime.now(ZoneInfo(_s.school_timezone)).time()
 
     for i, p in enumerate(periods):
         start = _parse_time(p["start_time"])
@@ -809,10 +820,15 @@ async def _finish_jornada(bot, user_id: int, jornada: JornadaSession) -> None:
         lines.append("\n_Buen trabajo. Hasta mañana._")
 
     # Persistir ausencias del docente en BD antes de limpiar la sesión
+    saved_absences = False
     try:
         await _save_teacher_absences(jornada)
+        saved_absences = True
     except Exception as exc:
         logger.error(f"[jornada] error guardando ausencias docente en BD: {exc}")
+
+    if not saved_absences and absences:
+        lines.append("\n⚠️ _Las ausencias no pudieron guardarse. Contacta al administrador._")
 
     clear_jornada(user_id)
     await bot.send_message(
@@ -1153,7 +1169,11 @@ async def _absent_other_reason_interceptor(update, user_id: int) -> bool:
     mode = jornada.awaiting_other_reason  # "period" | "day"
     custom_label = update.message.text.strip()
     if not custom_label:
-        return False
+        # Texto vacío o solo espacios — recordar al docente que debe escribir el motivo
+        await update.message.reply_text(
+            "✏️ Por favor escribe el motivo de tu ausencia (no puede estar vacío):",
+        )
+        return True
 
     bot = update.get_bot()
 

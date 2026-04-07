@@ -36,8 +36,18 @@ REMOVE_KEYBOARD = ReplyKeyboardRemove()
 
 
 def is_allowed(user_id: int) -> bool:
+    """Retorna True si el usuario está autorizado.
+
+    Si TELEGRAM_ALLOWED_USERS está vacío Y no hay ADMIN_TELEGRAM_ID, el bot
+    deniega todo acceso (deny-by-default) para evitar exposición pública accidental.
+    El ADMIN siempre tiene acceso aunque la lista esté vacía.
+    """
+    if settings.admin_telegram_id and user_id == settings.admin_telegram_id:
+        return True
     allowed = settings.allowed_user_ids
-    return not allowed or user_id in allowed
+    if not allowed:
+        return False  # lista vacía → deny-by-default
+    return user_id in allowed
 
 
 async def handle_text(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:

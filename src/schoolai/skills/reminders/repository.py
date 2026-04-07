@@ -32,13 +32,13 @@ async def create_reminder(
     return r
 
 
-async def get_due_reminders(session: AsyncSession) -> list[Reminder]:
-    """Recordatorios pendientes cuya hora ya llegó."""
+async def get_due_reminders(session: AsyncSession, limit: int = 50) -> list[Reminder]:
+    """Recordatorios pendientes cuya hora ya llegó. Máximo `limit` por corrida."""
     now = datetime.now(tz=timezone.utc)
     result = await session.execute(
         select(Reminder).where(
             and_(Reminder.status == "pending", Reminder.scheduled_at <= now),
-        ).order_by(Reminder.scheduled_at),
+        ).order_by(Reminder.scheduled_at).limit(limit),
     )
     return list(result.scalars().all())
 

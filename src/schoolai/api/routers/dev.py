@@ -13,7 +13,7 @@ from typing import AsyncIterator
 
 from fastapi import APIRouter, Depends
 from fastapi.responses import StreamingResponse
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 
 from schoolai.api.auth import get_current_user
 from schoolai.skills.llm.client import get_client, parse_model
@@ -76,7 +76,7 @@ async def list_models(_user=Depends(get_current_user)):
 class BenchmarkRequest(BaseModel):
     models: list[str]
     prompt: str = "Responde solo con 'ok'."
-    runs: int = 3
+    runs: int = Field(3, ge=1, le=10)
 
 
 def _sse(data: dict) -> str:

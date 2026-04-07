@@ -130,6 +130,16 @@ async def _post_init(app) -> None:
     init_redis(settings.redis_url)
     await load_course_map()
     app.job_queue.run_repeating(job_dispatch_reminders, interval=300, first=60)
+
+    # Cleanup de StateStores en RAM (mismo intervalo que bot principal)
+    from schoolai.bot.state import cleanup_stale, clear_jornada_all_stale
+    async def _run_cleanup(ctx):
+        removed = cleanup_stale()
+        removed += clear_jornada_all_stale()
+        if removed:
+            logger.debug(f"[agente:cleanup] {removed} estados expirados eliminados")
+    app.job_queue.run_repeating(_run_cleanup, interval=600, first=600)
+
     logger.info("[agente] listo — OrchestratorSkill activo")
 
 
