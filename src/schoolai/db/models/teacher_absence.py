@@ -38,7 +38,7 @@ class TeacherAbsence(Base):
     reason_label: Mapped[str] = mapped_column(String(300), nullable=False)
     created_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now())
 
-    teacher: Mapped["Teacher"] = relationship("Teacher", lazy="select")  # noqa: F821
+    teacher: Mapped["Teacher"] = relationship("Teacher", lazy="joined")  # noqa: F821
 
     def __repr__(self) -> str:
         return (

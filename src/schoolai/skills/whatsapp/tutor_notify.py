@@ -10,6 +10,7 @@ Flujo:
 
 from __future__ import annotations
 
+import time
 from dataclasses import dataclass, field
 from datetime import date, timezone
 
@@ -23,6 +24,12 @@ from schoolai.db.models.attendance import Attendance
 from schoolai.db.models.homework import Homework
 from schoolai.db.models.homework_submission import HomeworkSubmission
 from schoolai.db.models.teacher import Teacher, TeacherPosition
+
+# ── Cache para build_daily_reports ────────────────────────────────────────────
+# Evita repetir la query costosa cuando la función se llama varias veces en la
+# misma jornada (ej: generar tarjetas + envío por curso tras aprobación del tutor).
+_REPORTS_CACHE: dict[date, tuple[list, float]] = {}  # date → (reports, expires_at)
+_REPORTS_CACHE_TTL = 300  # 5 minutos
 
 
 # ── Data classes ──────────────────────────────────────────────────────────────
@@ -54,7 +61,15 @@ class GradeReport:
 # ── Query principal ───────────────────────────────────────────────────────────
 
 async def build_daily_reports(today: date) -> list[GradeReport]:
-    """Construye reportes del día por curso combinando asistencia y tareas."""
+    """Construye reportes del día por curso combinando asistencia y tareas.
+
+    Resultado cacheado 5 minutos para que múltiples llamadas en la misma jornada
+    (generar tarjetas + envíos por curso) no repitan la query costosa.
+    """
+    cached = _REPORTS_CACHE.get(today)
+    if cached and time.monotonic() < cached[1]:
+        return cached[0]
+
     async with async_session() as session:
         reports: dict[int, GradeReport] = {}
 
@@ -189,7 +204,9 @@ async def build_daily_reports(today: date) -> list[GradeReport]:
                     subject_name = hw.subject.name if hw and hw.subject else "Materia"
                     sr.missing_hw.append(subject_name)
 
-    return [r for r in reports.values() if r.has_issues]
+    result = [r for r in reports.values() if r.has_issues]
+    _REPORTS_CACHE[today] = (result, time.monotonic() + _REPORTS_CACHE_TTL)
+    return result
 
 
 # ── Formato del reporte para Telegram ────────────────────────────────────────

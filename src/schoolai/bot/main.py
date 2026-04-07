@@ -132,10 +132,14 @@ async def _handle_cancel(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
 
 
 async def _run_cleanup(context: ContextTypes.DEFAULT_TYPE) -> None:
+    from schoolai.skills.orchestrator.session import cleanup_stale_sessions
+    from schoolai.skills.utils.courses import load_course_map as _reload_courses
     removed = cleanup_stale()
     removed += clear_jornada_all_stale()
+    removed += cleanup_stale_sessions()
     if removed:
         logger.info(f"[TTL] cleanup removed {removed} stale states")
+    await _reload_courses()  # no-op si el mapa tiene menos de 1 h
 
 
 class _DbFlowFilter(filters.MessageFilter):

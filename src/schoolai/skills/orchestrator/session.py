@@ -55,6 +55,15 @@ def _memory_set(key: str, val: list, ttl: int) -> None:
     _MEMORY_STORE[key] = (val, time.monotonic() + ttl)
 
 
+def cleanup_stale_sessions() -> int:
+    """Elimina entradas expiradas de _MEMORY_STORE. Llamar desde el job periódico de limpieza."""
+    now = time.monotonic()
+    expired = [k for k, (_, exp) in _MEMORY_STORE.items() if now > exp]
+    for k in expired:
+        _MEMORY_STORE.pop(k, None)
+    return len(expired)
+
+
 # ── Redis ──────────────────────────────────────────────────────────────────────
 
 
