@@ -168,6 +168,18 @@ class StateStore(Generic[T]):
             self._timestamps.pop(uid, None)
         return len(expired)
 
+    def cleanup_where(self, predicate: Callable[[T], bool]) -> int:
+        """Elimina entradas en memoria donde predicate(value) es True.
+
+        Útil para limpiar entradas de acuerdo a criterios de dominio
+        (ej: sesiones de jornada de otro día).
+        """
+        stale = [uid for uid, val in self._data.items() if predicate(val)]
+        for uid in stale:
+            self._data.pop(uid, None)
+            self._timestamps.pop(uid, None)
+        return len(stale)
+
 
 def clear_all_user_state(user_id: int) -> None:
     """Clear ALL state for a user. Used by /cancelar command."""

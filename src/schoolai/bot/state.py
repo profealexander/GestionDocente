@@ -324,11 +324,7 @@ def iter_all_jornada() -> list[tuple[int, "JornadaSession"]]:
 def clear_jornada_all_stale() -> int:
     """Limpia sesiones de jornada del día anterior."""
     today = date.today().weekday()  # 0-4
-    stale = [uid for uid, s in _jornada_store._data.items() if s.day_of_week != today]
-    for uid in stale:
-        _jornada_store._data.pop(uid, None)
-        _jornada_store._timestamps.pop(uid, None)
-    return len(stale)
+    return _jornada_store.cleanup_where(lambda s: s.day_of_week != today)
 
 
 # ── Pending course context ────────────────────────────────────────────────────
