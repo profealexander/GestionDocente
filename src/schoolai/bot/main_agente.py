@@ -123,27 +123,9 @@ async def _error_handler(update: object, context: ContextTypes.DEFAULT_TYPE) -> 
 
 
 async def _post_init(app) -> None:
-    from schoolai.bot.state import init_redis
-    from schoolai.skills.reminders.dispatcher import job_dispatch_reminders
-    from schoolai.skills.utils.courses import load_course_map
+    from schoolai.bot.startup import common_post_init
 
-    init_redis(settings.redis_url)
-    await load_course_map()
-    app.job_queue.run_repeating(job_dispatch_reminders, interval=300, first=60)
-
-    # Cleanup de StateStores en RAM (mismo intervalo que bot principal)
-    from schoolai.bot.state import cleanup_stale, clear_jornada_all_stale
-    from schoolai.skills.orchestrator.session import cleanup_stale_sessions
-    from schoolai.skills.utils.courses import load_course_map as _reload_courses
-    async def _run_cleanup(ctx):
-        removed = cleanup_stale()
-        removed += clear_jornada_all_stale()
-        removed += cleanup_stale_sessions()
-        if removed:
-            logger.debug(f"[agente:cleanup] {removed} estados expirados eliminados")
-        await _reload_courses()  # no-op si el mapa tiene menos de 1 h
-    app.job_queue.run_repeating(_run_cleanup, interval=600, first=600)
-
+    await common_post_init(app, register_reminders=True, log_label="agente")
     logger.info("[agente] listo — OrchestratorSkill activo")
 
 

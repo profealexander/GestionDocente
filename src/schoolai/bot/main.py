@@ -48,13 +48,11 @@ from schoolai.bot.jornada_handler import (
 )
 import schoolai.skills.attendance.teacher_absence  # noqa: F401 — registra interceptor ausencias
 from schoolai.skills.attendance.teacher_absence import handle_ausencias_command
-from schoolai.skills.reminders.dispatcher import job_dispatch_reminders
 from schoolai.bot.mode import set_mode
 from schoolai.bot.notif_handler import handle_doc_notify_callback
 from schoolai.bot.position_handler import handle_position_callback, handle_position_text
 from schoolai.bot.schedule_handler import handle_schedule_callback, handle_schedule_text
 from schoolai.bot.state import (
-    cleanup_stale,
     clear_attendance,
     clear_course_context,
     clear_cuota_create,
@@ -63,7 +61,6 @@ from schoolai.bot.state import (
     clear_db_flow,
     clear_hw_edit_field,
     clear_jornada,
-    clear_jornada_all_stale,
     clear_pending_confirm,
     clear_position_flow,
     clear_schedule_flow,
@@ -131,15 +128,6 @@ async def _handle_cancel(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
         await update.message.reply_text("Operación cancelada.")
 
 
-async def _run_cleanup(context: ContextTypes.DEFAULT_TYPE) -> None:
-    from schoolai.skills.orchestrator.session import cleanup_stale_sessions
-    from schoolai.skills.utils.courses import load_course_map as _reload_courses
-    removed = cleanup_stale()
-    removed += clear_jornada_all_stale()
-    removed += cleanup_stale_sessions()
-    if removed:
-        logger.info(f"[TTL] cleanup removed {removed} stale states")
-    await _reload_courses()  # no-op si el mapa tiene menos de 1 h
 
 
 class _DbFlowFilter(filters.MessageFilter):
@@ -207,12 +195,10 @@ async def _post_init(app) -> None:
     from importlib.metadata import entry_points as _eps
 
     from schoolai.bot.mode import is_jornada
-    from schoolai.bot.state import init_redis
+    from schoolai.bot.startup import common_post_init
     from schoolai.skills.registry import registry
-    from schoolai.skills.utils.courses import load_course_map
 
-    init_redis(settings.redis_url)
-    await load_course_map()
+    await common_post_init(app, register_reminders=True, log_label="bot")
 
     cron_service.load(settings.log_dir)
     cron_service.register_callback("morning_notify", job_morning_notify)
@@ -349,11 +335,6 @@ def run(dev: bool = False) -> None:
         .post_init(_post_init)
         .build()
     )
-
-    # TTL cleanup cada 10 minutos
-    app.job_queue.run_repeating(_run_cleanup, interval=600, first=600)
-    # Dispatcher de recordatorios cada 5 minutos
-    app.job_queue.run_repeating(job_dispatch_reminders, interval=300, first=60)
 
     app.add_error_handler(_error_handler)
 

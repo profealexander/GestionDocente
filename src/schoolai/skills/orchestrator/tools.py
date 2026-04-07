@@ -380,20 +380,16 @@ async def _create_activity(
 ) -> str:
     """Creates a new school activity or fee."""
     from schoolai.db.connection import async_session
-    from schoolai.skills.cuotas.service import create_actividad
+    from schoolai.skills.cuotas.service import add_participantes, create_actividad, get_students_in_grade
+    from schoolai.skills.homework.repository import find_grade
 
     async with async_session() as session:
         actividad = await create_actividad(session, name, amount)
         act_id = actividad.id
 
-    lines = [f"Actividad creada: '{name}' — ${amount:.2f} (ID: {act_id})"]
+        lines = [f"Actividad creada: '{name}' — ${amount:.2f} (ID: {act_id})"]
 
-    if course:
-        from schoolai.db.connection import async_session as _session
-        from schoolai.skills.cuotas.service import add_participantes, get_students_in_grade
-        from schoolai.skills.homework.repository import find_grade
-
-        async with _session() as session:
+        if course:
             grade = await find_grade(session, course)
             if grade:
                 students = await get_students_in_grade(session, grade.id)
