@@ -9,7 +9,7 @@ If Redis is not configured or unavailable the system silently uses RAM only.
 
 from dataclasses import dataclass, field
 from datetime import date
-from typing import Any, Literal
+from typing import Any, Callable, Literal
 
 from loguru import logger
 
@@ -72,7 +72,10 @@ class DbFlow:
     target_teacher_name: str | None = None
 
 
-_db_store: StateStore[DbFlow] = StateStore("db", use_redis=True, ttl=_REDIS_TTL_SHORT)
+_db_store: StateStore[DbFlow] = StateStore(
+    "db", use_redis=True, ttl=_REDIS_TTL_SHORT,
+    decode=lambda d: DbFlow(**d),
+)
 
 
 def set_db_flow(user_id: int, flow: DbFlow) -> None:
@@ -122,6 +125,7 @@ class PositionFlow:
 
 _position_store: StateStore[PositionFlow] = StateStore(
     "position", use_redis=True, ttl=_REDIS_TTL_SHORT,
+    decode=lambda d: PositionFlow(**d),
 )
 
 
@@ -151,6 +155,7 @@ class ScheduleFlow:
 
 _schedule_store: StateStore[ScheduleFlow] = StateStore(
     "schedule", use_redis=True, ttl=_REDIS_TTL_SHORT,
+    decode=lambda d: ScheduleFlow(**d),
 )
 
 
@@ -182,6 +187,7 @@ class PendingSelection:
 
 _selection_store: StateStore[PendingSelection] = StateStore(
     "sel", use_redis=True, ttl=_REDIS_TTL_SHORT,
+    decode=lambda d: PendingSelection(**d),
 )
 
 
@@ -213,8 +219,16 @@ class PendingAttendance:
     ambiguous: list = field(default_factory=list)  # list[MatchResult] pending resolution
 
 
+def _decode_attendance(d: dict) -> "PendingAttendance":
+    from schoolai.skills.attendance.matcher import MatchResult
+    # attendance_date is reconstructed by _date_hook in _rget; ambiguous items need MatchResult
+    d["ambiguous"] = [MatchResult(**m) if isinstance(m, dict) else m for m in d.get("ambiguous", [])]
+    return PendingAttendance(**d)
+
+
 _attendance_store: StateStore[PendingAttendance] = StateStore(
     "attendance", use_redis=True, ttl=_REDIS_TTL_SHORT,
+    decode=_decode_attendance,
 )
 
 
@@ -272,6 +286,7 @@ class JornadaSession:
 
 _jornada_store: StateStore[JornadaSession] = StateStore(
     "jornada", use_redis=True, ttl=_REDIS_TTL_JORNADA,
+    decode=lambda d: JornadaSession(**d),
 )
 
 
@@ -329,6 +344,7 @@ class PendingCourseContext:
 
 _course_store: StateStore[PendingCourseContext] = StateStore(
     "course", use_redis=True, ttl=_REDIS_TTL_SHORT,
+    decode=lambda d: PendingCourseContext(**d),
 )
 
 
@@ -373,9 +389,11 @@ class PendingWhatsAppSetup:
 
 _wa_notification_store: StateStore[PendingWhatsAppNotification] = StateStore(
     "wan", use_redis=True, ttl=_REDIS_TTL_SHORT,
+    decode=lambda d: PendingWhatsAppNotification(**d),
 )
 _wa_setup_store: StateStore[PendingWhatsAppSetup] = StateStore(
     "was", use_redis=True, ttl=_REDIS_TTL_SHORT,
+    decode=lambda d: PendingWhatsAppSetup(**d),
 )
 
 
@@ -525,6 +543,7 @@ class PendingCuotaCreate:
 
 _cuota_create_store: StateStore[PendingCuotaCreate] = StateStore(
     "cuota", use_redis=True, ttl=_REDIS_TTL_SHORT,
+    decode=lambda d: PendingCuotaCreate(**d),
 )
 
 
@@ -596,7 +615,10 @@ class BroadcastFlow:
     teacher_count: int = 0      # cuántos docentes recibirán el mensaje
 
 
-_broadcast_store: StateStore[BroadcastFlow] = StateStore("broadcast", use_redis=True, ttl=_REDIS_TTL_SHORT)
+_broadcast_store: StateStore[BroadcastFlow] = StateStore(
+    "broadcast", use_redis=True, ttl=_REDIS_TTL_SHORT,
+    decode=lambda d: BroadcastFlow(**d),
+)
 
 
 def set_broadcast_flow(user_id: int, flow: BroadcastFlow) -> None:

@@ -1,9 +1,11 @@
 """Generic per-user state store with optional Redis persistence and TTL cleanup."""
 from __future__ import annotations
 
-import pickle
+import dataclasses
+import json
 import time
-from typing import Any, Generic, TypeVar
+from datetime import date, datetime
+from typing import Any, Callable, Generic, TypeVar
 
 T = TypeVar("T")
 
@@ -18,11 +20,40 @@ def init_redis(client: Any) -> None:
     _redis_client = client
 
 
+# ── JSON codec — replaces pickle to prevent RCE from tampered Redis data ───────
+
+class _DateEncoder(json.JSONEncoder):
+    """Encodes date/datetime as {"__type__": "date", "value": "YYYY-MM-DD"} so
+    that the object_hook decoder in _rget can reconstruct them without eval/exec."""
+
+    def default(self, obj: object) -> object:
+        if isinstance(obj, datetime):
+            return {"__type__": "datetime", "value": obj.isoformat()}
+        if isinstance(obj, date):
+            return {"__type__": "date", "value": obj.isoformat()}
+        return super().default(obj)
+
+
+def _date_hook(d: dict) -> Any:
+    """object_hook for json.loads — reconstructs date/datetime from sentinel dicts."""
+    t = d.get("__type__")
+    if t == "date":
+        return date.fromisoformat(d["value"])
+    if t == "datetime":
+        return datetime.fromisoformat(d["value"])
+    return d
+
+
 def _rset(key: str, obj: object, ttl: int) -> None:
     if _redis_client is None:
         return
     try:
-        _redis_client.setex(key, ttl, pickle.dumps(obj))
+        if dataclasses.is_dataclass(obj) and not isinstance(obj, type):
+            payload = dataclasses.asdict(obj)
+        else:
+            payload = obj
+        raw = json.dumps(payload, cls=_DateEncoder).encode()
+        _redis_client.setex(key, ttl, raw)
     except Exception:
         pass
 
@@ -32,8 +63,11 @@ def _rget(key: str) -> Any:
         return None
     try:
         raw = _redis_client.get(key)
-        return pickle.loads(raw) if raw else None  # nosec B301
+        if not raw:
+            return None
+        return json.loads(raw, object_hook=_date_hook)
     except Exception:
+        # Covers JSONDecodeError (old pickle data after migration) and any other error.
         return None
 
 
@@ -47,12 +81,30 @@ def _rdel(key: str) -> None:
 
 
 class StateStore(Generic[T]):
-    """Per-user state store. Auto-registers for global cleanup."""
+    """Per-user state store. Auto-registers for global cleanup.
 
-    def __init__(self, key: str, *, use_redis: bool = False, ttl: int = _REDIS_TTL_DEFAULT):
+    Args:
+        key:        Redis key prefix (e.g. "db", "jornada").
+        use_redis:  Persist to Redis so state survives bot restarts.
+        ttl:        TTL in seconds (both RAM eviction and Redis expiry).
+        decode:     Optional callable ``(dict) -> T`` to reconstruct the stored
+                    object from its JSON-decoded dict form.  Required when the
+                    store uses Redis and the value is a dataclass — without it
+                    Redis cache misses will return ``None`` (fresh state).
+    """
+
+    def __init__(
+        self,
+        key: str,
+        *,
+        use_redis: bool = False,
+        ttl: int = _REDIS_TTL_DEFAULT,
+        decode: Callable[[Any], T] | None = None,
+    ):
         self._key = key
         self._ttl = ttl
         self._use_redis = use_redis
+        self._decode = decode
         self._data: dict[int, T] = {}
         self._timestamps: dict[int, float] = {}
         _ALL_STORES.append(self)
@@ -65,10 +117,14 @@ class StateStore(Generic[T]):
 
     def get(self, user_id: int) -> T | None:
         if user_id not in self._data and self._use_redis:
-            obj = _rget(f"{self._key}:{user_id}")
-            if obj is not None:
-                self._data[user_id] = obj
-                self._timestamps[user_id] = time.monotonic()
+            raw = _rget(f"{self._key}:{user_id}")
+            if raw is not None and self._decode is not None:
+                try:
+                    obj = self._decode(raw)
+                    self._data[user_id] = obj
+                    self._timestamps[user_id] = time.monotonic()
+                except Exception:
+                    pass  # corrupt or schema-changed data — start fresh
         return self._data.get(user_id)
 
     def clear(self, user_id: int) -> None:
@@ -94,9 +150,12 @@ class StateStore(Generic[T]):
                     except (ValueError, IndexError):
                         continue
                     if uid not in results:
-                        obj = _rget(key_str)
-                        if obj is not None:
-                            results[uid] = obj
+                        raw = _rget(key_str)
+                        if raw is not None and self._decode is not None:
+                            try:
+                                results[uid] = self._decode(raw)
+                            except Exception:
+                                pass
             except Exception:
                 pass
         return list(results.items())
