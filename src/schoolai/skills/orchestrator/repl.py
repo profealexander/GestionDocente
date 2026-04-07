@@ -19,6 +19,7 @@ from __future__ import annotations
 import asyncio
 import builtins
 import io
+import re
 import textwrap
 from datetime import date, datetime
 from typing import Any
@@ -49,6 +50,33 @@ _SAFE_BUILTINS: dict[str, Any] = {
 }
 
 _ALLOWED_MODULES = frozenset({"datetime", "math", "collections", "re", "json", "decimal"})
+
+# Tablas que el REPL puede consultar — las demás contienen datos sensibles
+_ALLOWED_TABLES = frozenset({
+    "people",
+    "students",
+    "grades",
+    "subjects",
+    "attendance",
+    "homework",
+    "homework_submissions",
+    "actividades",
+    "actividad_participantes",
+    "actividad_pagos",
+})
+
+
+def _check_tables(sql: str) -> None:
+    """Verifica que solo se referencien tablas permitidas en la consulta."""
+    # Extrae identificadores que siguen a FROM, JOIN, INTO, UPDATE, TABLE
+    found = re.findall(
+        r"(?:FROM|JOIN|INTO|UPDATE|TABLE)\s+([a-zA-Z_][a-zA-Z0-9_]*)",
+        sql,
+        re.IGNORECASE,
+    )
+    for table in found:
+        if table.lower() not in _ALLOWED_TABLES:
+            raise PermissionError(f"REPL: tabla '{table}' no permitida")
 
 
 def _safe_import(name: str, *args: Any, **kwargs: Any) -> Any:
@@ -98,6 +126,7 @@ async def _exec_code(code: str) -> str:
         upper = sql.strip().upper()
         if not (upper.startswith("SELECT") or upper.startswith("WITH")):
             raise PermissionError("REPL: solo se permiten consultas SELECT/WITH")
+        _check_tables(sql)
 
         async with async_session() as session:
             result = await session.execute(sa_text(sql), params or {})

@@ -1,9 +1,12 @@
 """SchoolAI REST API."""
 
+from contextlib import asynccontextmanager
+
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.openapi.docs import get_redoc_html, get_swagger_ui_html
 from fastapi.openapi.utils import get_openapi
+from loguru import logger
 
 from schoolai.api.routers import (
     attendance,
@@ -20,9 +23,28 @@ from schoolai.api.routers import (
 )
 from schoolai.config import settings as _settings
 
+
+# ── Startup validation ────────────────────────────────────────────────────────
+
+@asynccontextmanager
+async def lifespan(app: FastAPI):  # noqa: ARG001
+    if not _settings.jwt_secret_key:
+        if _settings.debug:
+            logger.warning(
+                "JWT_SECRET_KEY no configurado — tokens firmados con clave vacía. "
+                "Establece JWT_SECRET_KEY en .env antes de usar en producción."
+            )
+        else:
+            raise RuntimeError(
+                "JWT_SECRET_KEY está vacío. Configura esta variable en .env antes de iniciar la API."
+            )
+    yield
+
+
 # ── App ───────────────────────────────────────────────────────────────────────
 
 app = FastAPI(
+    lifespan=lifespan,
     title="SchoolAI API",
     version="1.0.0",
     swagger_ui_init_oauth={"usePkceWithAuthorizationCodeGrant": True},

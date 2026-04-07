@@ -969,7 +969,7 @@ def jornada_context_banner(user_id: int) -> str | None:
     s = get_jornada(user_id)
     if not s or s.status != "active":
         return None
-    return f"\n\n📌 _Modo Jornada: {s.grade_name} — {s.subject_name}_  [▶️ Siguiente](jor_next)"
+    return f"\n\n📌 _Modo Jornada: {s.grade_name} — {s.subject_name}_"
 
 
 # ── /horario ──────────────────────────────────────────────────────────────────
