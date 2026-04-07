@@ -259,7 +259,16 @@ async def job_morning_notify(context: ContextTypes.DEFAULT_TYPE) -> None:
         except Exception as e:
             logger.warning(f"[jornada] could not notify teacher={teacher.id}: {e}")
 
-    await asyncio.gather(*[_notify(t, p) for t, p in teacher_periods])
+    # Enviar en lotes de 25 con pausa de 1 s entre lotes para respetar el límite
+    # de Telegram (30 mensajes/s por bot). asyncio.gather sin límite en escuelas
+    # grandes puede disparar floods y bloqueos temporales de la API.
+    _BATCH = 25
+    pairs = [(t, p) for t, p in teacher_periods]
+    for i in range(0, len(pairs), _BATCH):
+        batch = pairs[i : i + _BATCH]
+        await asyncio.gather(*[_notify(t, p) for t, p in batch])
+        if i + _BATCH < len(pairs):
+            await asyncio.sleep(1)
 
 
 # ── Comando /jornada ───────────────────────────────────────────────────────────

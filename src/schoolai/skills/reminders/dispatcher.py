@@ -29,16 +29,19 @@ async def job_dispatch_reminders(context: ContextTypes.DEFAULT_TYPE) -> None:
 
 async def _dispatch_one(reminder, bot) -> None:
     ok_tg = True
-    ok_wa = True
+    ok_wa = None  # None = canal no aplicable para este recordatorio
 
     if reminder.target in ("teacher", "both"):
         ok_tg = await _send_telegram(reminder, bot)
 
     if reminder.target in ("parents", "both"):
         ok_wa = await _send_whatsapp_to_parents(reminder)
+        # None = WhatsApp no configurado en este entorno (no es fallo del envío)
 
+    # Éxito si Telegram fue OK y WhatsApp fue OK o no aplica/no configurado
+    overall_ok = ok_tg and (ok_wa is None or ok_wa is True)
     async with async_session() as session:
-        await mark_sent(session, reminder.id, ok=ok_tg and ok_wa)
+        await mark_sent(session, reminder.id, ok=overall_ok)
 
 
 async def _send_telegram(reminder, bot) -> bool:
@@ -70,14 +73,13 @@ async def _send_whatsapp_to_parents(reminder) -> bool:
 
     from schoolai.config import settings
     from schoolai.db.connection import async_session
-    from schoolai.db.models.person import Person
     from schoolai.db.models.student import Student
     from schoolai.db.models.whatsapp_contact import WhatsAppContact
     from schoolai.skills.whatsapp.sender import send_whatsapp
 
     if not settings.green_api_instance or not settings.green_api_token:
         logger.warning("[reminders] WhatsApp no configurado (GREEN_API_INSTANCE/TOKEN ausentes)")
-        return False
+        return None  # no configurado — no cuenta como fallo
 
     async with async_session() as session:
         students = (
@@ -93,27 +95,24 @@ async def _send_whatsapp_to_parents(reminder) -> bool:
             .all()
         )
 
+        # Collect representative person_ids in one pass to avoid N+1
+        person_ids = [
+            rep.person_id
+            for s in students
+            if (rep := s.primary_representative) is not None
+        ]
+
         phones: list[str] = []
-        for student in students:
-            rep = student.primary_representative
-            if not rep:
-                continue
-            guardian: Person | None = await session.get(Person, rep.person_id)
-            if not guardian:
-                continue
-            contacts = (
-                (
-                    await session.execute(
-                        select(WhatsAppContact).where(
-                            WhatsAppContact.person_id == guardian.id,
-                            WhatsAppContact.status == "active",
-                        ),
+        if person_ids:
+            contacts_all = (
+                await session.execute(
+                    select(WhatsAppContact).where(
+                        WhatsAppContact.person_id.in_(person_ids),
+                        WhatsAppContact.status == "active",
                     )
                 )
-                .scalars()
-                .all()
-            )
-            phones.extend(c.phone for c in contacts)
+            ).scalars().all()
+            phones = [c.phone for c in contacts_all]
 
     if not phones:
         logger.warning(

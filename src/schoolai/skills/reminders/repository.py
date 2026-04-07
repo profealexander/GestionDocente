@@ -33,14 +33,24 @@ async def create_reminder(
 
 
 async def get_due_reminders(session: AsyncSession, limit: int = 50) -> list[Reminder]:
-    """Recordatorios pendientes cuya hora ya llegó. Máximo `limit` por corrida."""
+    """Recordatorios pendientes cuya hora ya llegó — marca como 'sending' de forma atómica.
+
+    El status 'sending' impide que un segundo dispatcher (ej: bot agente corriendo
+    en paralelo) procese el mismo lote.  Si el proceso muere antes de marcar
+    'sent'/'failed', los recordatorios quedan en 'sending' y no se reenvían.
+    Máximo `limit` por corrida.
+    """
     now = datetime.now(tz=timezone.utc)
     result = await session.execute(
         select(Reminder).where(
             and_(Reminder.status == "pending", Reminder.scheduled_at <= now),
         ).order_by(Reminder.scheduled_at).limit(limit),
     )
-    return list(result.scalars().all())
+    reminders = list(result.scalars().all())
+    for r in reminders:
+        r.status = "sending"
+    await session.commit()
+    return reminders
 
 
 async def list_teacher_reminders(
@@ -68,7 +78,7 @@ async def mark_sent(session: AsyncSession, reminder_id: int, ok: bool) -> None:
 async def cancel_reminder(session: AsyncSession, reminder_id: int, teacher_id: int) -> bool:
     """Cancela un recordatorio. Solo el docente dueño puede cancelarlo. Retorna True si ok."""
     r = await session.get(Reminder, reminder_id)
-    if not r or r.teacher_id != teacher_id or r.status != "pending":
+    if not r or r.teacher_id != teacher_id or r.status not in ("pending",):
         return False
     r.status = "cancelled"
     await session.commit()
