@@ -9,7 +9,7 @@ If Redis is not configured or unavailable the system silently uses RAM only.
 
 from dataclasses import dataclass, field
 from datetime import date
-from typing import Any, Callable, Literal
+from typing import Any, Literal
 
 from loguru import logger
 

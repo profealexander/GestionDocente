@@ -412,7 +412,7 @@ async def notify_inspector_tutor_absent(
         report = reports_by_grade.get(grade_id)
 
         lines = [
-            f"⚠️ <b>AVISO — Tutor ausente</b>",
+            "⚠️ <b>AVISO — Tutor ausente</b>",
             f"Curso: <b>{grade_name}</b>",
             f"Tutor: <b>{tutor_name}</b>",
             f"Motivo: {reason_label}",
