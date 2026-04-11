@@ -15,6 +15,7 @@ from __future__ import annotations
 
 import io
 import os
+from html import escape as html_escape
 
 from loguru import logger
 from sqlalchemy import select
@@ -39,7 +40,9 @@ _DOCS_ROOT = os.path.abspath(
 
 
 def doc_notify_keyboard(
-    hw_id: int, student_ids: list[int], student_names: list[str],
+    hw_id: int,
+    student_ids: list[int],
+    student_names: list[str],
 ) -> InlineKeyboardMarkup:
     """Inline keyboard with one [📄 Notificar] button per student."""
     rows = []
@@ -96,7 +99,9 @@ async def handle_doc_notify_callback(update: Update, context: ContextTypes.DEFAU
             num_doc = notif_record.num_doc
         except Exception as exc:
             logger.error(f"[doc_notify] register_notification failed: {exc}")
-            await context.bot.send_message(chat_id, f"❌ Error al registrar la notificación: {exc}")
+            await context.bot.send_message(
+                chat_id, f"❌ Error al registrar la notificación. Intente nuevamente."
+            )
             return
 
         # Build document context
@@ -110,7 +115,9 @@ async def handle_doc_notify_callback(update: Update, context: ContextTypes.DEFAU
             )
         except Exception as exc:
             logger.error(f"[doc_notify] get_notificacion_context failed: {exc}")
-            await context.bot.send_message(chat_id, f"❌ Error al obtener datos: {exc}")
+            await context.bot.send_message(
+                chat_id, f"❌ Error al obtener datos: {html_escape(str(exc))}"
+            )
             return
 
         # Get representative's WhatsApp phone
@@ -141,7 +148,9 @@ async def handle_doc_notify_callback(update: Update, context: ContextTypes.DEFAU
         pdf_bytes = generate_pdf(ctx)
     except Exception as exc:
         logger.error(f"[doc_notify] document generation failed: {exc}")
-        await context.bot.send_message(chat_id, f"❌ Error al generar documentos: {exc}")
+        await context.bot.send_message(
+            chat_id, f"❌ Error al generar documentos: {html_escape(str(exc))}"
+        )
         return
 
     # Save Word to teacher folder (for future frontend)

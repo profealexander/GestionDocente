@@ -20,6 +20,7 @@ import asyncio
 import builtins
 import io
 import re
+import resource
 import textwrap
 from datetime import date, datetime
 from typing import Any
@@ -29,41 +30,105 @@ from loguru import logger
 # ── Builtins permitidos ────────────────────────────────────────────────────────
 
 _SAFE_BUILTINS: dict[str, Any] = {
-    "abs": abs, "all": all, "any": any, "bin": bin, "bool": bool,
-    "chr": chr, "dict": dict, "divmod": divmod,
-    "enumerate": enumerate, "filter": filter, "float": float,
-    "format": format, "frozenset": frozenset,
+    "abs": abs,
+    "all": all,
+    "any": any,
+    "bin": bin,
+    "bool": bool,
+    "chr": chr,
+    "dict": dict,
+    "divmod": divmod,
+    "enumerate": enumerate,
+    "filter": filter,
+    "float": float,
+    "format": _safe_format,
+    "frozenset": frozenset,
     # getattr / hasattr / type / isinstance / issubclass EXCLUIDOS intencionalmente:
     # permiten sandbox escape via __class__.__bases__[0].__subclasses__()
-    "hash": hash, "hex": hex, "int": int,
+    "hash": hash,
+    "hex": hex,
+    "int": int,
     "iter": iter,
-    "len": len, "list": list, "map": map, "max": max, "min": min,
-    "next": next, "oct": oct, "ord": ord, "pow": pow,
-    "range": range, "repr": repr, "reversed": reversed, "round": round,
-    "set": set, "slice": slice, "sorted": sorted, "str": str, "sum": sum,
-    "tuple": tuple, "zip": zip,
-    "True": True, "False": False, "None": None,
+    "len": len,
+    "list": list,
+    "map": map,
+    "max": max,
+    "min": min,
+    "next": next,
+    "oct": oct,
+    "ord": ord,
+    "pow": _safe_pow,
+    "range": range,
+    "repr": _safe_repr,
+    "reversed": reversed,
+    "round": round,
+    "set": set,
+    "slice": slice,
+    "sorted": sorted,
+    "str": str,
+    "sum": sum,
+    "tuple": tuple,
+    "zip": zip,
+    "True": True,
+    "False": False,
+    "None": None,
     # Excepciones comunes
-    "Exception": Exception, "ValueError": ValueError, "KeyError": KeyError,
-    "IndexError": IndexError, "TypeError": TypeError, "AttributeError": AttributeError,
+    "Exception": Exception,
+    "ValueError": ValueError,
+    "KeyError": KeyError,
+    "IndexError": IndexError,
+    "TypeError": TypeError,
+    "AttributeError": AttributeError,
     "StopIteration": StopIteration,
 }
+
+# ── Límites de recursos ─────────────────────────────────────────────────────────
+
+_MAX_POW_EXPONENT = 10_000
+_MAX_STR_LEN = 50_000
+_MAX_MEMORY_BYTES = 256 * 1024 * 1024  # 256 MB
+
+
+def _safe_pow(base: Any, exp: Any, mod: Any = None) -> Any:
+    """pow() que rechaza exponentes enormes para prevenir agotamiento de CPU."""
+    if isinstance(exp, int) and abs(exp) > _MAX_POW_EXPONENT:
+        raise ValueError(f"exponente {exp} excede el límite de {_MAX_POW_EXPONENT}")
+    return builtins.pow(base, exp, mod)
+
+
+def _safe_repr(obj: Any) -> str:
+    """repr() con límite de longitud para prevenir agotamiento de memoria."""
+    s = builtins.repr(obj)
+    if len(s) > _MAX_STR_LEN:
+        return s[:_MAX_STR_LEN] + f"... (truncado, {len(s)} chars)"
+    return s
+
+
+def _safe_format(value: Any, fmt: str = "") -> str:
+    """format() con límite de longitud."""
+    s = builtins.format(value, fmt)
+    if len(s) > _MAX_STR_LEN:
+        return s[:_MAX_STR_LEN] + f"... (truncado, {len(s)} chars)"
+    return s
+
 
 _ALLOWED_MODULES = frozenset({"datetime", "math", "collections", "re", "json", "decimal"})
 
 # Tablas que el REPL puede consultar — las demás contienen datos sensibles
-_ALLOWED_TABLES = frozenset({
-    "people",
-    "students",
-    "grades",
-    "subjects",
-    "attendance",
-    "homework",
-    "homework_submissions",
-    "actividades",
-    "actividad_participantes",
-    "actividad_pagos",
-})
+_ALLOWED_TABLES = frozenset(
+    {
+        "people",
+        "students",
+        "grades",
+        "subjects",
+        "attendance",
+        "homework",
+        "homework_submissions",
+        "actividades",
+        "actividad_participantes",
+        "actividad_pagos",
+    }
+)
 
 
 def _check_tables(sql: str) -> None:
@@ -97,6 +162,7 @@ async def _exec_code(code: str) -> str:
     def _print(*args: Any, **kwargs: Any) -> None:
         """print() con auto-serialización JSON para listas y dicts."""
         import json as _json
+
         formatted = []
         for a in args:
             if isinstance(a, (list, dict)):
@@ -153,7 +219,13 @@ async def _exec_code(code: str) -> str:
     wrapped = f"async def __main__():\n{indented}\n"
 
     try:
-        exec(compile(wrapped, "<repl>", "exec"), safe_globals)  # noqa: S102
+        # Limitar memoria del proceso hijo para prevenir agotamiento
+        soft, hard = resource.getrlimit(resource.RLIMIT_AS)
+        resource.setrlimit(resource.RLIMIT_AS, (_MAX_MEMORY_BYTES, hard))
+        try:
+            exec(compile(wrapped, "<repl>", "exec"), safe_globals)  # noqa: S102
+        finally:
+            resource.setrlimit(resource.RLIMIT_AS, (soft, hard))
     except SyntaxError as e:
         return f"SyntaxError: {e}"
 
@@ -169,6 +241,7 @@ async def _exec_code(code: str) -> str:
     # Fallback: si el LLM generó `await query(...)` sin print(), devolver el último resultado
     if not output and _last_query:
         import json as _json
+
         output = _json.dumps(_last_query, ensure_ascii=False, default=str)
 
     return output or "(sin output)"
