@@ -48,10 +48,10 @@ TELEGRAM_FORMAT = (
     "- Keep responses short. Do not use emoji."
 )
 
-MAX_ITER = 6       # máximo de rondas tool_call → resultado por conversación
-MAX_RETRIES = 2    # intentos por proveedor antes de cambiar al siguiente
+MAX_ITER = 6  # máximo de rondas tool_call → resultado por conversación
+MAX_RETRIES = 2  # intentos por proveedor antes de cambiar al siguiente
 RETRY_DELAY = 1.0  # segundos base — backoff exponencial: 1 s, 2 s
-_TOOL_RESULT_KEEP = 2   # iteraciones recientes cuyos tool results se mandan completos
+_TOOL_RESULT_KEEP = 2  # iteraciones recientes cuyos tool results se mandan completos
 
 
 # ── Token optimization ─────────────────────────────────────────────────────────
@@ -70,8 +70,7 @@ def _compress_old_tool_results(messages: list[dict]) -> list[dict]:
     """
     # Índices de mensajes assistant con tool_calls (más reciente primero)
     assistant_idxs = [
-        i for i, m in enumerate(messages)
-        if m.get("role") == "assistant" and m.get("tool_calls")
+        i for i, m in enumerate(messages) if m.get("role") == "assistant" and m.get("tool_calls")
     ]
 
     if len(assistant_idxs) <= _TOOL_RESULT_KEEP:
@@ -183,6 +182,7 @@ async def _llm_call_with_failover(
                         f"(intento {attempt + 1}, primario={providers_chain[0]})"
                     )
                 from schoolai.skills.llm.usage import fire_record_usage
+
                 fire_record_usage(provider=provider, model=model, response=response, agent=agent)
                 return response
 
@@ -204,9 +204,7 @@ async def _llm_call_with_failover(
                     )
                     await asyncio.sleep(delay)
                 else:
-                    logger.warning(
-                        f"[skill_agent] {provider} agotó {MAX_RETRIES} intentos: {e}"
-                    )
+                    logger.warning(f"[skill_agent] {provider} agotó {MAX_RETRIES} intentos: {e}")
 
     raise last_error or RuntimeError("Todos los proveedores LLM fallaron sin error registrado.")
 
@@ -309,7 +307,9 @@ class SkillAgentBase:
         base_chain = _build_providers_chain(settings)
         if self.llm_override:
             # Override es primario; el resto de la cadena queda como fallback
-            providers_chain = [self.llm_override] + [p for p in base_chain if p != self.llm_override]
+            providers_chain = [self.llm_override] + [
+                p for p in base_chain if p != self.llm_override
+            ]
         else:
             providers_chain = base_chain
         tool_defs = [t.to_tool_dict() for t in self.tools]
@@ -320,8 +320,8 @@ class SkillAgentBase:
                 f"\n\nCurrent teacher Telegram ID: {teacher_id}. "
                 "When calling 'my_courses', 'my_schedule', 'create_assignment', "
                 "'query_assignments', 'record_attendance', 'search_context', 'list_context_docs', "
-                "'delete_context_doc', 'create_reminder', 'list_reminders', or "
-                f"'cancel_reminder', always pass telegram_id={teacher_id} exactly."
+                "'delete_context_doc', 'create_reminder', 'list_reminders', 'list_activities', "
+                f"or 'cancel_reminder', always pass telegram_id={teacher_id} exactly."
             )
 
         messages: list[dict] = (
@@ -340,9 +340,13 @@ class SkillAgentBase:
                 messages = _compress_old_tool_results(messages)
 
             try:
-                response = await _llm_call_with_failover(messages, tool_defs, providers_chain, agent=self.name)
+                response = await _llm_call_with_failover(
+                    messages, tool_defs, providers_chain, agent=self.name
+                )
             except Exception as e:  # noqa: BLE001
-                logger.error(f"[{self.name}] todos los proveedores fallaron (iter {iteration}): {e}")
+                logger.error(
+                    f"[{self.name}] todos los proveedores fallaron (iter {iteration}): {e}"
+                )
                 return (
                     "No se pudo conectar con el servicio de IA. "
                     "Verifica ZAI_API_KEY / GROQ_API_KEY en .env."
@@ -357,12 +361,23 @@ class SkillAgentBase:
                     return reply
                 # Gemini a veces devuelve content=None tras un tool call.
                 # Pedimos resumen explícito sin tools.
-                logger.debug(f"[{self.name}] content vacío en iter={iteration}, solicitando resumen")
+                logger.debug(
+                    f"[{self.name}] content vacío en iter={iteration}, solicitando resumen"
+                )
                 messages.append({"role": "assistant", "content": ""})
-                messages.append({"role": "user", "content": "Resume el resultado anterior en español, de forma breve."})
+                messages.append(
+                    {
+                        "role": "user",
+                        "content": "Resume el resultado anterior en español, de forma breve.",
+                    }
+                )
                 try:
-                    summary_resp = await _llm_call_with_failover(messages, [], providers_chain, agent=self.name)
-                    return (summary_resp.choices[0].message.content or "").strip() or "Operación completada."
+                    summary_resp = await _llm_call_with_failover(
+                        messages, [], providers_chain, agent=self.name
+                    )
+                    return (
+                        summary_resp.choices[0].message.content or ""
+                    ).strip() or "Operación completada."
                 except Exception as e:  # noqa: BLE001
                     return f"Operación completada. Error al generar resumen: {e}"
 
@@ -374,7 +389,9 @@ class SkillAgentBase:
             {"role": "user", "content": "Resume brevemente lo que hiciste hasta ahora."},
         )
         try:
-            final_resp = await _llm_call_with_failover(messages, [], providers_chain, agent=self.name)
+            final_resp = await _llm_call_with_failover(
+                messages, [], providers_chain, agent=self.name
+            )
             return (final_resp.choices[0].message.content or "").strip()
         except Exception as e:  # noqa: BLE001
             return f"Operación parcialmente completada. Error al generar resumen: {e}"

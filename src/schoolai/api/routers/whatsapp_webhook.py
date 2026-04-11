@@ -18,6 +18,8 @@ Requisitos:
 
 from __future__ import annotations
 
+import asyncio
+
 from fastapi import APIRouter, Request
 from loguru import logger
 from sqlalchemy import select
@@ -30,6 +32,7 @@ router = APIRouter(prefix="/webhook", tags=["Webhook"])
 # ── Registry lazy-init (solo la primera vez que llega un webhook) ─────────────
 
 _registry_ready = False
+_registry_lock = asyncio.Lock()
 
 
 async def _ensure_registry() -> None:
@@ -38,19 +41,23 @@ async def _ensure_registry() -> None:
     if _registry_ready:
         return
 
-    from schoolai.skills.registry import registry
-    from schoolai.skills.utils.courses import load_course_map
+    async with _registry_lock:
+        if _registry_ready:
+            return
 
-    await load_course_map()
+        from schoolai.skills.registry import registry
+        from schoolai.skills.utils.courses import load_course_map
 
-    if not registry._skills:
-        from importlib.metadata import entry_points as _eps
+        await load_course_map()
 
-        skill_classes = [ep.load() for ep in _eps(group="schoolai.skills")]
-        for skill_cls in sorted(skill_classes, key=lambda c: getattr(c, "priority", 50)):
-            registry.register(skill_cls())
+        if not registry._skills:
+            from importlib.metadata import entry_points as _eps
 
-    _registry_ready = True
+            skill_classes = [ep.load() for ep in _eps(group="schoolai.skills")]
+            for skill_cls in sorted(skill_classes, key=lambda c: getattr(c, "priority", 50)):
+                registry.register(skill_cls())
+
+        _registry_ready = True
 
 
 # ── Endpoint ──────────────────────────────────────────────────────────────────

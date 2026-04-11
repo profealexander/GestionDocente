@@ -133,14 +133,31 @@ _ALLOWED_TABLES = frozenset(
 
 def _check_tables(sql: str) -> None:
     """Verifica que solo se referencien tablas permitidas en la consulta."""
-    # Extrae identificadores que siguen a FROM, JOIN, INTO, UPDATE, TABLE
+    # Strip SQL comments before analysis
+    cleaned = re.sub(r"--[^\n]*", "", sql)
+    cleaned = re.sub(r"/\*.*?\*/", "", cleaned, flags=re.DOTALL)
+
+    # Extract CTE names defined in WITH clause to exclude them
+    cte_names = set(
+        m.group(1).lower()
+        for m in re.finditer(
+            r"\b(\w+)\s*\bas\b\s*\(",
+            cleaned,
+            re.IGNORECASE,
+        )
+    )
+
+    # Extract table identifiers after FROM, JOIN, INTO, UPDATE
     found = re.findall(
-        r"(?:FROM|JOIN|INTO|UPDATE|TABLE)\s+([a-zA-Z_][a-zA-Z0-9_]*)",
-        sql,
+        r"(?:FROM|JOIN|INTO|UPDATE)\s+([a-zA-Z_][a-zA-Z0-9_]*)",
+        cleaned,
         re.IGNORECASE,
     )
     for table in found:
-        if table.lower() not in _ALLOWED_TABLES:
+        tlower = table.lower()
+        if tlower in cte_names:
+            continue
+        if tlower not in _ALLOWED_TABLES:
             raise PermissionError(f"REPL: tabla '{table}' no permitida")
 
 

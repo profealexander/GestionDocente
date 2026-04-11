@@ -12,9 +12,11 @@ from __future__ import annotations
 
 import re
 from datetime import date, timedelta
+from datetime import datetime
 
 from loguru import logger
 
+from schoolai.config import settings
 from schoolai.skills.cuotas.tools import ToolDef
 
 # ── Helpers ───────────────────────────────────────────────────────────────────
@@ -25,8 +27,14 @@ def _strip_tags(text: str) -> str:
     return re.sub(r"<[^>]+>", "", text)
 
 
+def _today() -> date:
+    """Return today's date in the school's timezone."""
+    tz = ZoneInfo(settings.school_timezone) if settings.school_timezone else None
+    return datetime.now(tz).date()
+
+
 def _parse_date(value: str) -> date:
-    today = date.today()  # noqa: DTZ011
+    today = _today()
     if value in ("today", "hoy"):
         return today
     if value in ("yesterday", "ayer"):
@@ -34,6 +42,7 @@ def _parse_date(value: str) -> date:
     try:
         return date.fromisoformat(value)
     except ValueError:
+        logger.warning(f"[tools] fecha inválida: {value!r}, usando hoy")
         return today
 
 
@@ -41,7 +50,7 @@ def _period_to_dates(period: str, qtype: str):
     """Convert a period string to a QueryIntent."""
     from schoolai.skills.query.detector import QueryIntent, get_current_trimester
 
-    today = date.today()  # noqa: DTZ011
+    today = _today()
     p = period.lower().strip()
 
     if p in ("today", "hoy"):
@@ -120,7 +129,10 @@ async def _record_attendance(
         student_ids = [m.matched_id for m in resolved]
         statuses = {m.matched_id: m.status for m in resolved}
         await save_absences(
-            student_ids, statuses, att_date, session,
+            student_ids,
+            statuses,
+            att_date,
+            session,
             subject_name=_subject_name,
             period_start=_period_start,
             period_end=_period_end,
@@ -221,8 +233,12 @@ async def _create_assignment(
                 subject_name = subject.name if subject else subjects[0]
 
             hw = await save_homework(
-                session, homework=description, grade_id=grade.id,
-                subject_id=subject_id, delivery_date=delivery, teacher_id=teacher_id,
+                session,
+                homework=description,
+                grade_id=grade.id,
+                subject_id=subject_id,
+                delivery_date=delivery,
+                teacher_id=teacher_id,
             )
             subject_str = f" | {subject_name}" if subject_name else ""
             return (
@@ -240,8 +256,12 @@ async def _create_assignment(
             subject_id = subject.id if subject else None
             subject_display = subject.name if subject else subject_name
             hw = await save_homework(
-                session, homework=description, grade_id=grade.id,
-                subject_id=subject_id, delivery_date=delivery, teacher_id=teacher_id,
+                session,
+                homework=description,
+                grade_id=grade.id,
+                subject_id=subject_id,
+                delivery_date=delivery,
+                teacher_id=teacher_id,
             )
             lines.append(f"  #{hw.sequence_num} {subject_display}")
 
@@ -357,13 +377,21 @@ async def _list_courses(level: str | None = None) -> str:
     return "\n".join(lines)
 
 
-async def _list_activities() -> str:
-    """Lists all active school activities and fees (cuotas)."""
+async def _list_activities(telegram_id: int) -> str:
+    """Lists active school activities filtered by the requesting teacher."""
+    from sqlalchemy import select
+
     from schoolai.db.connection import async_session
+    from schoolai.db.models.teacher import Teacher
     from schoolai.skills.cuotas.service import get_actividades
 
     async with async_session() as session:
-        actividades = await get_actividades(session, only_active=True)
+        teacher = (
+            await session.execute(select(Teacher).where(Teacher.telegram_id == telegram_id))
+        ).scalar_one_or_none()
+        if not teacher:
+            return "No se encontró tu registro de docente."
+        actividades = await get_actividades(session, teacher_id=teacher.id, only_active=True)
 
     if not actividades:
         return "No hay actividades activas."
@@ -380,7 +408,11 @@ async def _create_activity(
 ) -> str:
     """Creates a new school activity or fee."""
     from schoolai.db.connection import async_session
-    from schoolai.skills.cuotas.service import add_participantes, create_actividad, get_students_in_grade
+    from schoolai.skills.cuotas.service import (
+        add_participantes,
+        create_actividad,
+        get_students_in_grade,
+    )
     from schoolai.skills.homework.repository import find_grade
 
     async with async_session() as session:
@@ -501,13 +533,17 @@ async def _my_courses(telegram_id: int) -> str:
             return "No se encontró tu perfil de docente en el sistema."
 
         schedules = (
-            await session.execute(
-                select(Schedule).where(
-                    Schedule.teacher_id == teacher.id,
-                    Schedule.is_active.is_(True),
+            (
+                await session.execute(
+                    select(Schedule).where(
+                        Schedule.teacher_id == teacher.id,
+                        Schedule.is_active.is_(True),
+                    )
                 )
             )
-        ).scalars().all()
+            .scalars()
+            .all()
+        )
 
     if not schedules:
         return "No tienes cursos asignados en el horario."
@@ -526,9 +562,17 @@ async def _my_courses(telegram_id: int) -> str:
 
 
 _DAYS_MAP = {
-    "lunes": 0, "martes": 1, "miércoles": 2, "miercoles": 2,
-    "jueves": 3, "viernes": 4,
-    "monday": 0, "tuesday": 1, "wednesday": 2, "thursday": 3, "friday": 4,
+    "lunes": 0,
+    "martes": 1,
+    "miércoles": 2,
+    "miercoles": 2,
+    "jueves": 3,
+    "viernes": 4,
+    "monday": 0,
+    "tuesday": 1,
+    "wednesday": 2,
+    "thursday": 3,
+    "friday": 4,
 }
 _DAYS_NAME = ["Lunes", "Martes", "Miércoles", "Jueves", "Viernes"]
 
@@ -549,10 +593,14 @@ async def _my_schedule(telegram_id: int, day: str | None = None) -> str:
         if not teacher:
             return "No se encontró tu perfil de docente en el sistema."
 
-        stmt = select(Schedule).where(
-            Schedule.teacher_id == teacher.id,
-            Schedule.is_active.is_(True),
-        ).order_by(Schedule.day_of_week, Schedule.period_num)
+        stmt = (
+            select(Schedule)
+            .where(
+                Schedule.teacher_id == teacher.id,
+                Schedule.is_active.is_(True),
+            )
+            .order_by(Schedule.day_of_week, Schedule.period_num)
+        )
 
         if day:
             day_num = _DAYS_MAP.get(day.lower().strip())
@@ -599,6 +647,7 @@ async def _search_context(
 ) -> str:
     """Searches the teacher's context documents (personal + institutional)."""
     from schoolai.skills.context.tools import search_context
+
     return await search_context(telegram_id=telegram_id, query=query, category=category)
 
 
@@ -609,24 +658,28 @@ async def _list_context_docs(
 ) -> str:
     """Lists available context documents for the teacher."""
     from schoolai.skills.context.tools import list_context_docs
+
     return await list_context_docs(telegram_id=telegram_id, category=category, scope=scope)
 
 
 async def _delete_context_doc(telegram_id: int, doc_id: int) -> str:
     """Deletes a context document by ID."""
     from schoolai.skills.context.tools import delete_context_doc
+
     return await delete_context_doc(telegram_id=telegram_id, doc_id=doc_id)
 
 
 async def _web_search(query: str) -> str:
     """Searches the internet via DuckDuckGo and returns top results."""
     from schoolai.skills.context.tools import web_search
+
     return await web_search(query=query)
 
 
 async def _save_web_page(telegram_id: int, url: str, hint: str | None = None) -> str:
     """Downloads a web page and saves it as a context document."""
     from schoolai.skills.context.tools import save_web_page
+
     return await save_web_page(telegram_id=telegram_id, url=url, hint=hint)
 
 
@@ -840,11 +893,16 @@ TOOLS: list[ToolDef] = [
     ),
     ToolDef(
         name="list_activities",
-        description="Lists all active school activities and fees (cuotas).",
+        description="Lists active school activities and fees (cuotas) for the current teacher.",
         parameters={
             "type": "object",
-            "properties": {},
-            "required": [],
+            "properties": {
+                "telegram_id": {
+                    "type": "integer",
+                    "description": "Telegram ID of the teacher (injected automatically)",
+                },
+            },
+            "required": ["telegram_id"],
         },
         fn=_list_activities,
     ),

@@ -1,5 +1,6 @@
 """Endpoints REST para cuotas y actividades escolares."""
 
+import re
 from datetime import datetime
 from typing import Optional
 
@@ -233,7 +234,8 @@ async def add_grade_participantes(
     session: AsyncSession = Depends(get_session),
 ):
     actividad = await session.get(
-        __import__("schoolai.db.models.cuota", fromlist=["Actividad"]).Actividad, actividad_id,
+        __import__("schoolai.db.models.cuota", fromlist=["Actividad"]).Actividad,
+        actividad_id,
     )
     if not actividad:
         raise HTTPException(status_code=404, detail="Actividad no encontrada")
@@ -303,7 +305,9 @@ async def export_actividad(
         raise HTTPException(status_code=422, detail="La actividad no tiene participantes aún")
 
     xlsx_bytes = export_actividad_excel(actividad, participantes)
-    filename = f"cuotas_{actividad.nombre.lower().replace(' ', '_')}.xlsx"
+    safe_name = re.sub(r"[^\w\s-]", "", actividad.nombre.lower()).strip().replace(" ", "_")
+    safe_name = safe_name[:64] or "actividad"
+    filename = f"cuotas_{safe_name}.xlsx"
     return Response(
         content=xlsx_bytes,
         media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
