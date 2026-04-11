@@ -12,6 +12,7 @@ El caption de fotos/documentos actúa como pista (hint) para la categorización.
 from __future__ import annotations
 
 import asyncio
+import html
 import re
 
 from loguru import logger
@@ -24,6 +25,8 @@ from schoolai.db.connection import async_session
 from schoolai.db.models.teacher import Teacher
 
 _URL_RE = re.compile(r"^https?://\S+", re.IGNORECASE)
+
+_MAX_FILE_BYTES = 20 * 1024 * 1024  # 20 MB
 
 # MIME types que Telegram reporta para documentos comunes
 _MIME_LABELS = {
@@ -38,12 +41,12 @@ _MIME_LABELS = {
 }
 
 _CATEGORY_LABELS = {
-    "schedule":  "Horario",
-    "calendar":  "Calendario escolar",
-    "policies":  "Reglamentos / Normas",
-    "contacts":  "Contactos",
-    "notes":     "Apuntes",
-    "other":     "General",
+    "schedule": "Horario",
+    "calendar": "Calendario escolar",
+    "policies": "Reglamentos / Normas",
+    "contacts": "Contactos",
+    "notes": "Apuntes",
+    "other": "General",
 }
 
 
@@ -70,6 +73,12 @@ async def handle_context_upload(update: Update, context: ContextTypes.DEFAULT_TY
 
     elif message.document:
         doc = message.document
+        if doc.file_size and doc.file_size > _MAX_FILE_BYTES:
+            await message.reply_text(
+                f"❌ Archivo demasiado grande ({doc.file_size / 1024 / 1024:.1f} MB). "
+                f"Límite: {_MAX_FILE_BYTES / 1024 / 1024:.0f} MB.",
+            )
+            return
         original_filename = doc.file_name or "documento"
         mime_type = doc.mime_type or "application/octet-stream"
         tg_file = await context.bot.get_file(doc.file_id)
@@ -97,7 +106,9 @@ async def handle_context_upload(update: Update, context: ContextTypes.DEFAULT_TY
         return
 
     fmt_label = _MIME_LABELS.get(mime_type, "Archivo")
-    await _save_and_confirm(update, user.id, content, hint, source_type, original_filename, fmt_label)
+    await _save_and_confirm(
+        update, user.id, content, hint, source_type, original_filename, fmt_label
+    )
 
 
 async def handle_context_text_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
@@ -118,12 +129,13 @@ async def handle_context_text_command(update: Update, context: ContextTypes.DEFA
 
     if _URL_RE.match(body):
         from schoolai.skills.context.extractor import extract_from_url
+
         try:
             content = await extract_from_url(body)
         except Exception as e:
             logger.error(f"[context] error cargando URL {body!r}: {e}")
             await update.message.reply_text(
-                f"No se pudo cargar la página: <code>{e}</code>",
+                f"No se pudo cargar la página: <code>{html.escape(str(e))}</code>",
                 parse_mode=ParseMode.HTML,
             )
             return
@@ -140,7 +152,9 @@ async def handle_context_text_command(update: Update, context: ContextTypes.DEFA
         await update.message.reply_text("No se encontró contenido en esa fuente.")
         return
 
-    await _save_and_confirm(update, update.effective_user.id, content, hint, source_type, None, fmt_label)
+    await _save_and_confirm(
+        update, update.effective_user.id, content, hint, source_type, None, fmt_label
+    )
 
 
 # ── Helpers ───────────────────────────────────────────────────────────────────
@@ -160,11 +174,20 @@ async def _save_and_confirm(
     # Guardar referencia al task para evitar que el GC lo recoja antes de terminar
     task = asyncio.get_running_loop().create_task(
         _categorize_and_save(
-            telegram_id, content, hint, source_type,
-            original_filename, fmt_label, processing_msg,
+            telegram_id,
+            content,
+            hint,
+            source_type,
+            original_filename,
+            fmt_label,
+            processing_msg,
         )
     )
-    task.add_done_callback(lambda t: t.exception() and logger.error(f"[context] background task falló: {t.exception()}"))
+    task.add_done_callback(
+        lambda t: (
+            t.exception() and logger.error(f"[context] background task falló: {t.exception()}")
+        )
+    )
 
 
 async def _categorize_and_save(

@@ -19,6 +19,9 @@ from schoolai.bot.state_store import (
     clear_all_user_state,  # re-export
 )
 from schoolai.bot.state_store import (
+    close_redis as _ss_close_redis,
+)
+from schoolai.bot.state_store import (
     init_redis as _ss_init_redis,
 )
 
@@ -30,7 +33,7 @@ __all__ = [
 
 # ── Redis TTL constants (kept for backward compat) ────────────────────────────
 
-_REDIS_TTL_SHORT = 3600   # 60 min
+_REDIS_TTL_SHORT = 3600  # 60 min
 _REDIS_TTL_JORNADA = 86400  # 24 h
 
 
@@ -39,10 +42,14 @@ def init_redis(url: str) -> None:
     if not url:
         return
     try:
+        import atexit
+
         import redis as _redis_lib
+
         client = _redis_lib.Redis.from_url(url, socket_timeout=2, decode_responses=False)
         client.ping()
         _ss_init_redis(client)
+        atexit.register(_ss_close_redis)
         logger.info(f"[state] Redis connected: {url}")
     except ImportError:
         logger.warning("[state] redis package not installed — using in-memory only")
@@ -53,8 +60,13 @@ def init_redis(url: str) -> None:
 # ── DB Skill state ────────────────────────────────────────────────────────────
 
 DbStep = Literal[
-    "await_list", "await_grade", "await_section", "await_confirm", "await_link_student",
-    "wa_search_teacher", "wa_await_phone",
+    "await_list",
+    "await_grade",
+    "await_section",
+    "await_confirm",
+    "await_link_student",
+    "wa_search_teacher",
+    "wa_await_phone",
 ]
 
 
@@ -73,7 +85,9 @@ class DbFlow:
 
 
 _db_store: StateStore[DbFlow] = StateStore(
-    "db", use_redis=True, ttl=_REDIS_TTL_SHORT,
+    "db",
+    use_redis=True,
+    ttl=_REDIS_TTL_SHORT,
     decode=lambda d: DbFlow(**d),
 )
 
@@ -124,7 +138,9 @@ class PositionFlow:
 
 
 _position_store: StateStore[PositionFlow] = StateStore(
-    "position", use_redis=True, ttl=_REDIS_TTL_SHORT,
+    "position",
+    use_redis=True,
+    ttl=_REDIS_TTL_SHORT,
     decode=lambda d: PositionFlow(**d),
 )
 
@@ -154,7 +170,9 @@ class ScheduleFlow:
 
 
 _schedule_store: StateStore[ScheduleFlow] = StateStore(
-    "schedule", use_redis=True, ttl=_REDIS_TTL_SHORT,
+    "schedule",
+    use_redis=True,
+    ttl=_REDIS_TTL_SHORT,
     decode=lambda d: ScheduleFlow(**d),
 )
 
@@ -186,7 +204,9 @@ class PendingSelection:
 
 
 _selection_store: StateStore[PendingSelection] = StateStore(
-    "sel", use_redis=True, ttl=_REDIS_TTL_SHORT,
+    "sel",
+    use_redis=True,
+    ttl=_REDIS_TTL_SHORT,
     decode=lambda d: PendingSelection(**d),
 )
 
@@ -221,13 +241,18 @@ class PendingAttendance:
 
 def _decode_attendance(d: dict) -> "PendingAttendance":
     from schoolai.skills.attendance.matcher import MatchResult
+
     # attendance_date is reconstructed by _date_hook in _rget; ambiguous items need MatchResult
-    d["ambiguous"] = [MatchResult(**m) if isinstance(m, dict) else m for m in d.get("ambiguous", [])]
+    d["ambiguous"] = [
+        MatchResult(**m) if isinstance(m, dict) else m for m in d.get("ambiguous", [])
+    ]
     return PendingAttendance(**d)
 
 
 _attendance_store: StateStore[PendingAttendance] = StateStore(
-    "attendance", use_redis=True, ttl=_REDIS_TTL_SHORT,
+    "attendance",
+    use_redis=True,
+    ttl=_REDIS_TTL_SHORT,
     decode=_decode_attendance,
 )
 
@@ -285,7 +310,9 @@ class JornadaSession:
 
 
 _jornada_store: StateStore[JornadaSession] = StateStore(
-    "jornada", use_redis=True, ttl=_REDIS_TTL_JORNADA,
+    "jornada",
+    use_redis=True,
+    ttl=_REDIS_TTL_JORNADA,
     decode=lambda d: JornadaSession(**d),
 )
 
@@ -339,7 +366,9 @@ class PendingCourseContext:
 
 
 _course_store: StateStore[PendingCourseContext] = StateStore(
-    "course", use_redis=True, ttl=_REDIS_TTL_SHORT,
+    "course",
+    use_redis=True,
+    ttl=_REDIS_TTL_SHORT,
     decode=lambda d: PendingCourseContext(**d),
 )
 
@@ -384,11 +413,15 @@ class PendingWhatsAppSetup:
 
 
 _wa_notification_store: StateStore[PendingWhatsAppNotification] = StateStore(
-    "wan", use_redis=True, ttl=_REDIS_TTL_SHORT,
+    "wan",
+    use_redis=True,
+    ttl=_REDIS_TTL_SHORT,
     decode=lambda d: PendingWhatsAppNotification(**d),
 )
 _wa_setup_store: StateStore[PendingWhatsAppSetup] = StateStore(
-    "was", use_redis=True, ttl=_REDIS_TTL_SHORT,
+    "was",
+    use_redis=True,
+    ttl=_REDIS_TTL_SHORT,
     decode=lambda d: PendingWhatsAppSetup(**d),
 )
 
@@ -427,7 +460,8 @@ class PendingCuotaParticipante:
 
 
 _cuota_participante_store: StateStore[PendingCuotaParticipante] = StateStore(
-    "cuota_part", ttl=_REDIS_TTL_SHORT,
+    "cuota_part",
+    ttl=_REDIS_TTL_SHORT,
 )
 
 
@@ -453,7 +487,8 @@ class PendingCuotaNombre:
 
 
 _cuota_nombre_store: StateStore[PendingCuotaNombre] = StateStore(
-    "cuota_nombre", ttl=_REDIS_TTL_SHORT,
+    "cuota_nombre",
+    ttl=_REDIS_TTL_SHORT,
 )
 
 
@@ -481,7 +516,8 @@ class PendingHwEditField:
 
 
 _hw_edit_store: StateStore[PendingHwEditField] = StateStore(
-    "hw_edit", ttl=_REDIS_TTL_SHORT,
+    "hw_edit",
+    ttl=_REDIS_TTL_SHORT,
 )
 
 
@@ -508,7 +544,8 @@ class PendingCuotaEditField:
 
 
 _cuota_edit_store: StateStore[PendingCuotaEditField] = StateStore(
-    "cuota_edit", ttl=_REDIS_TTL_SHORT,
+    "cuota_edit",
+    ttl=_REDIS_TTL_SHORT,
 )
 
 
@@ -538,7 +575,9 @@ class PendingCuotaCreate:
 
 
 _cuota_create_store: StateStore[PendingCuotaCreate] = StateStore(
-    "cuota", use_redis=True, ttl=_REDIS_TTL_SHORT,
+    "cuota",
+    use_redis=True,
+    ttl=_REDIS_TTL_SHORT,
     decode=lambda d: PendingCuotaCreate(**d),
 )
 
@@ -606,13 +645,15 @@ BroadcastStep = Literal["await_recipients", "await_message", "await_attachment",
 @dataclass
 class BroadcastFlow:
     step: BroadcastStep
-    filter_type: str = ""       # all | bachillerato | basica | grade:<id> | ids:1,2,3
+    filter_type: str = ""  # all | bachillerato | basica | grade:<id> | ids:1,2,3
     message: str = ""
-    teacher_count: int = 0      # cuántos docentes recibirán el mensaje
+    teacher_count: int = 0  # cuántos docentes recibirán el mensaje
 
 
 _broadcast_store: StateStore[BroadcastFlow] = StateStore(
-    "broadcast", use_redis=True, ttl=_REDIS_TTL_SHORT,
+    "broadcast",
+    use_redis=True,
+    ttl=_REDIS_TTL_SHORT,
     decode=lambda d: BroadcastFlow(**d),
 )
 
@@ -630,6 +671,7 @@ def clear_broadcast_flow(user_id: int) -> None:
 
 
 # ── Legacy cleanup_stale (backward compat for callers) ────────────────────────
+
 
 def cleanup_stale() -> int:
     """Backward compat wrapper — delegates to cleanup_all_stale()."""

@@ -1,6 +1,11 @@
 """Auth router — issue JWT tokens."""
 
-from fastapi import APIRouter, HTTPException, status
+import hmac
+import time
+from collections import defaultdict
+from dataclasses import dataclass, field
+
+from fastapi import APIRouter, HTTPException, Request, status
 from loguru import logger
 from pydantic import BaseModel
 
@@ -8,6 +13,33 @@ from schoolai.api.auth import create_access_token, create_access_token_for_teach
 from schoolai.config import settings
 
 router = APIRouter(prefix="/auth", tags=["Auth"])
+
+# ── Rate limiting (in-memory, per IP) ──────────────────────────────────────────
+
+_RATE_LIMIT_WINDOW = 60  # seconds
+_RATE_LIMIT_MAX = 10  # attempts per window
+
+
+@dataclass
+class _Bucket:
+    attempts: list[float] = field(default_factory=list)
+
+
+_rate_buckets: dict[str, _Bucket] = defaultdict(_Bucket)
+
+
+def _check_rate_limit(ip: str) -> None:
+    """Raise 429 if IP exceeded the rate limit window."""
+    now = time.monotonic()
+    bucket = _rate_buckets[ip]
+    # prune expired
+    bucket.attempts = [t for t in bucket.attempts if t > now - _RATE_LIMIT_WINDOW]
+    if len(bucket.attempts) >= _RATE_LIMIT_MAX:
+        raise HTTPException(
+            status_code=status.HTTP_429_TOO_MANY_REQUESTS,
+            detail=f"Demasiadas solicitudes. Intenta de nuevo en {_RATE_LIMIT_WINDOW}s.",
+        )
+    bucket.attempts.append(now)
 
 
 class TokenRequest(BaseModel):
@@ -32,7 +64,8 @@ class TokenResponse(BaseModel):
         "Incluir el token en el header: `Authorization: Bearer <token>`"
     ),
 )
-async def get_token(body: TokenRequest) -> TokenResponse:
+async def get_token(request: Request, body: TokenRequest) -> TokenResponse:
+    _check_rate_limit(request.client.host if request.client else "unknown")
     if not settings.api_secret:
         raise HTTPException(
             status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
@@ -43,7 +76,7 @@ async def get_token(body: TokenRequest) -> TokenResponse:
             status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
             detail="JWT secret no configurado en el servidor.",
         )
-    if body.api_key != settings.api_secret:
+    if not hmac.compare_digest(body.api_key, settings.api_secret):
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="API key inválida.",
@@ -71,7 +104,8 @@ class LoginRequest(BaseModel):
     summary="Login con usuario y contraseña (PWA)",
     description="Autentica con `username` + `password` y devuelve un JWT.",
 )
-async def login(body: LoginRequest) -> TokenResponse:
+async def login(request: Request, body: LoginRequest) -> TokenResponse:
+    _check_rate_limit(request.client.host if request.client else "unknown")
     if not settings.jwt_secret_key:
         raise HTTPException(
             status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
@@ -92,12 +126,14 @@ async def login(body: LoginRequest) -> TokenResponse:
 
     if not teacher or not teacher.password_hash:
         raise HTTPException(
-            status_code=status.HTTP_401_UNAUTHORIZED, detail="Credenciales inválidas.",
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Credenciales inválidas.",
         )
 
     if not _bcrypt.checkpw(body.password.encode(), teacher.password_hash.encode()):
         raise HTTPException(
-            status_code=status.HTTP_401_UNAUTHORIZED, detail="Credenciales inválidas.",
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Credenciales inválidas.",
         )
 
     role = await _resolve_role(teacher.telegram_id) if teacher.telegram_id else "teacher"

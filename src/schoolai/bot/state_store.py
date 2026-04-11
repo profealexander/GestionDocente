@@ -1,4 +1,5 @@
 """Generic per-user state store with optional Redis persistence and TTL cleanup."""
+
 from __future__ import annotations
 
 import dataclasses
@@ -6,6 +7,8 @@ import json
 import time
 from datetime import date, datetime
 from typing import Any, Callable, Generic, TypeVar
+
+from loguru import logger
 
 T = TypeVar("T")
 
@@ -20,7 +23,20 @@ def init_redis(client: Any) -> None:
     _redis_client = client
 
 
+def close_redis() -> None:
+    """Cierra la conexión Redis si existe."""
+    global _redis_client
+    if _redis_client is not None:
+        try:
+            _redis_client.close()
+            logger.info("[state_store] Redis connection closed")
+        except Exception as exc:
+            logger.warning(f"[state_store] Redis close error: {exc}")
+        _redis_client = None
+
+
 # ── JSON codec — replaces pickle to prevent RCE from tampered Redis data ───────
+
 
 class _DateEncoder(json.JSONEncoder):
     """Encodes date/datetime as {"__type__": "date", "value": "YYYY-MM-DD"} so
@@ -54,8 +70,8 @@ def _rset(key: str, obj: object, ttl: int) -> None:
             payload = obj
         raw = json.dumps(payload, cls=_DateEncoder).encode()
         _redis_client.setex(key, ttl, raw)
-    except Exception:
-        pass
+    except Exception as exc:
+        logger.warning(f"[state_store] redis setex error key={key}: {exc}")
 
 
 def _rget(key: str) -> Any:
@@ -66,8 +82,8 @@ def _rget(key: str) -> Any:
         if not raw:
             return None
         return json.loads(raw, object_hook=_date_hook)
-    except Exception:
-        # Covers JSONDecodeError (old pickle data after migration) and any other error.
+    except Exception as exc:
+        logger.warning(f"[state_store] redis get error key={key}: {exc}")
         return None
 
 
@@ -76,8 +92,8 @@ def _rdel(key: str) -> None:
         return
     try:
         _redis_client.delete(key)
-    except Exception:
-        pass
+    except Exception as exc:
+        logger.warning(f"[state_store] redis del error key={key}: {exc}")
 
 
 class StateStore(Generic[T]):
@@ -123,8 +139,8 @@ class StateStore(Generic[T]):
                     obj = self._decode(raw)
                     self._data[user_id] = obj
                     self._timestamps[user_id] = time.monotonic()
-                except Exception:
-                    pass  # corrupt or schema-changed data — start fresh
+                except Exception as exc:
+                    logger.warning(f"[state_store] decode error user_id={user_id}: {exc}")
         return self._data.get(user_id)
 
     def clear(self, user_id: int) -> None:
@@ -154,10 +170,10 @@ class StateStore(Generic[T]):
                         if raw is not None and self._decode is not None:
                             try:
                                 results[uid] = self._decode(raw)
-                            except Exception:
-                                pass
-            except Exception:
-                pass
+                            except Exception as exc:
+                                logger.debug(f"[state_store] scan decode error uid={uid}: {exc}")
+            except Exception as exc:
+                logger.warning(f"[state_store] scan_iter error: {exc}")
         return list(results.items())
 
     def cleanup_stale(self) -> int:
