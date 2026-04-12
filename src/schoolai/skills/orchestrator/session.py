@@ -30,8 +30,8 @@ from typing import Any
 from loguru import logger
 
 _SESSION_KEY_PREFIX = "agent_sess"
-_SESSION_TTL = 1800   # 30 minutos — pausa entre clases = sesión nueva
-_MAX_PAIRS = 6        # 6 pares = 12 mensajes — suficiente para continuidad sin inflar el prompt
+_SESSION_TTL = 1800  # 30 minutos — pausa entre clases = sesión nueva
+_MAX_PAIRS = 6  # 6 pares = 12 mensajes — suficiente para continuidad sin inflar el prompt
 
 # ── Fallback en memoria ────────────────────────────────────────────────────────
 # Usado automáticamente cuando Redis no está disponible.
@@ -71,6 +71,7 @@ def _get_redis():
     """Retorna el cliente Redis síncrono si está disponible, None si no."""
     try:
         from schoolai.bot.state_store import _redis_client
+
         return _redis_client
     except ImportError:
         return None
@@ -82,8 +83,8 @@ def _redis_get(key: str) -> Any:
         try:
             raw = client.get(key)
             return json.loads(raw) if raw else None
-        except Exception:  # noqa: BLE001
-            pass
+        except Exception as exc:  # noqa: BLE001
+            logger.warning(f"[session] Redis GET failed, falling back to memory: {exc}")
     return _memory_get(key)
 
 
@@ -93,8 +94,8 @@ def _redis_set(key: str, val: Any, ttl: int) -> None:
         try:
             client.setex(key, ttl, json.dumps(val, ensure_ascii=False))
             return
-        except Exception:  # noqa: BLE001
-            pass
+        except Exception as exc:  # noqa: BLE001
+            logger.warning(f"[session] Redis SET failed, falling back to memory: {exc}")
     _memory_set(key, val, ttl)
 
 

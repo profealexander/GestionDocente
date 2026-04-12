@@ -50,8 +50,11 @@ class OrchestratorSkill(BaseSkill):
         # Intentar con HTML primero (la respuesta puede incluir markdown del LLM)
         try:
             await sent.edit_text(reply, parse_mode="HTML")
-        except Exception:
+        except Exception as exc:
+            logger.warning(
+                f"[orchestrator] HTML parse failed for reply, retrying plain text: {exc}"
+            )
             try:
                 await sent.edit_text(reply)
-            except Exception:
-                pass
+            except Exception as exc2:
+                logger.warning(f"[orchestrator] plain text reply also failed: {exc2}")

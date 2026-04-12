@@ -4,6 +4,8 @@ from __future__ import annotations
 
 import re
 
+from loguru import logger
+
 from schoolai.skills.base import BaseSkill
 
 
@@ -36,6 +38,7 @@ class ChatSkill(BaseSkill):
                 await _show_course_action_menu(update, course_info)
                 return
             from schoolai.bot.handlers import _detect_course_group, _show_course_group_menu
+
             group_courses = _detect_course_group(text)
             if group_courses:
                 await _show_course_group_menu(update, group_courses)
@@ -53,8 +56,8 @@ class ChatSkill(BaseSkill):
                 last_len = len(current)
                 try:
                     await sent.edit_text(current)
-                except Exception:
-                    pass
+                except Exception as exc:
+                    logger.warning(f"[chat] failed to edit streaming message: {exc}")
 
         await chat(user_id, text, send_chunk)
 
@@ -62,5 +65,5 @@ class ChatSkill(BaseSkill):
         if final:
             try:
                 await sent.edit_text(final)
-            except Exception:
-                pass
+            except Exception as exc:
+                logger.warning(f"[chat] failed to edit final message: {exc}")

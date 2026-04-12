@@ -1,8 +1,7 @@
 """ReplAgent — agente especializado en consultas analíticas via Python REPL.
 
-Usa GLM-4.7-Flash como modelo primario porque genera código Python correcto
-(await query(...) sin default_api). Gemini Flash-Lite tiene un artefacto de
-entrenamiento que produce default_api.query() en su lugar.
+Usa Qwen3-Coder 480B Cloud (via Ollama) para análisis/SQL/código.
+Ollama CLI debe estar logueado (ollama signin) para acceso cloud.
 """
 
 from __future__ import annotations
@@ -30,21 +29,21 @@ _SYSTEM_PROMPT = (
     "    actividades(id, nombre, monto, is_active)\n"
     "    actividad_participantes(id, actividad_id, student_id, total_pagado, is_complete)\n"
     "- SQL rules: use >= and < for date ranges (NOT LIKE). Strings in single quotes.\n"
-    "- Always reply in Spanish, concisely.\n"
-    + TELEGRAM_FORMAT
+    "- Always reply in Spanish, concisely.\n" + TELEGRAM_FORMAT
 )
 
 
 class ReplAgent(SkillAgentBase):
-    """Agente analítico — usa GLM para generación de código Python/SQL."""
+    """Agente analítico — usa Qwen3-Coder 480B Cloud para código Python/SQL."""
 
     name = "repl"
     system_prompt_template = _SYSTEM_PROMPT
-    llm_override = "zai/glm-4.7-flash"  # GLM genera código Python correcto
+    llm_override = "ollama/qwen3-coder:480b-cloud"
 
     @property
     def tools(self):
         from schoolai.skills.orchestrator.tools import TOOLS_BY_NAME
+
         return [
             TOOLS_BY_NAME["python_repl"],
             TOOLS_BY_NAME["list_courses"],
@@ -52,4 +51,5 @@ class ReplAgent(SkillAgentBase):
 
     async def _execute_tool(self, name: str, args: dict) -> str:
         from schoolai.skills.orchestrator.tools import execute_tool
+
         return await execute_tool(name, args)

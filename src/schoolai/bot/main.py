@@ -1,10 +1,14 @@
+import html
 import sys
 from pathlib import Path
 
 try:
+    import asyncio
+
     import uvloop
 
     uvloop.install()
+    asyncio.set_event_loop(asyncio.new_event_loop())
 except ImportError:
     pass  # uvloop no disponible (Windows/CI)
 
@@ -99,7 +103,8 @@ async def _handle_start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> N
         from schoolai.bot.handlers import REMOVE_KEYBOARD
 
         await update.message.reply_text(
-            "¡Hola! ¿En qué te puedo ayudar?", reply_markup=REMOVE_KEYBOARD,
+            "¡Hola! ¿En qué te puedo ayudar?",
+            reply_markup=REMOVE_KEYBOARD,
         )
 
 
@@ -126,8 +131,6 @@ async def _handle_cancel(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
         await update.message.reply_text("Operación cancelada.", reply_markup=JORNADA_KEYBOARD)
     else:
         await update.message.reply_text("Operación cancelada.")
-
-
 
 
 class _DbFlowFilter(filters.MessageFilter):
@@ -166,15 +169,16 @@ async def _error_handler(update: object, context: ContextTypes.DEFAULT_TYPE) -> 
         try:
             user = getattr(update, "effective_user", None)
             msg = getattr(getattr(update, "message", None), "text", "—")
+            err = html.escape(str(context.error))
             text = (
                 f"⚠️ <b>Error en SchoolAI</b>\n"
-                f"Usuario: {user.id if user else '?'} (@{user.username if user else '?'})\n"
-                f"Mensaje: <code>{msg[:200]}</code>\n"
-                f"Error: <code>{context.error}</code>"
+                f"Usuario: {user.id if user else '?'} (@{html.escape(user.username or '?') if user else '?'})\n"
+                f"Mensaje: <code>{html.escape(msg[:200])}</code>\n"
+                f"Error: <code>{err}</code>"
             )
             await context.bot.send_message(settings.admin_telegram_id, text, parse_mode="HTML")
-        except Exception:
-            pass
+        except Exception as exc:
+            logger.warning(f"[bot] failed to send error notification to admin: {exc}")
 
 
 async def _handle_db_or_schedule_text(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
@@ -314,6 +318,7 @@ def run(dev: bool = False) -> None:
     _setup_logging()
 
     from schoolai.bot.singleton import singleton_guard
+
     singleton_guard("jornada" if dev and settings.telegram_bot_token_jornada else "libre")
 
     if dev and settings.telegram_bot_token_jornada:
@@ -331,7 +336,7 @@ def run(dev: bool = False) -> None:
         ApplicationBuilder()
         .token(token)
         .request(request)
-        .concurrent_updates(32)   # hasta 32 updates en paralelo — asyncio, no threads
+        .concurrent_updates(32)  # hasta 32 updates en paralelo — asyncio, no threads
         .post_init(_post_init)
         .build()
     )
@@ -388,7 +393,8 @@ def run(dev: bool = False) -> None:
     # ── Mensajes de texto ─────────────────────────────────────────────────────
     app.add_handler(
         MessageHandler(
-            filters.TEXT & ~filters.COMMAND & _DbFlowFilter(), _handle_db_or_schedule_text,
+            filters.TEXT & ~filters.COMMAND & _DbFlowFilter(),
+            _handle_db_or_schedule_text,
         ),
     )
     app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_text))
@@ -398,6 +404,7 @@ def run(dev: bool = False) -> None:
     # Modo Jornada: conservar mensajes en cola para procesar asistencia/tareas
     # enviadas mientras el bot estaba caído. Modo Libre: descartar actualizaciones viejas.
     from schoolai.bot.mode import is_jornada as _is_jornada
+
     app.run_polling(
         drop_pending_updates=not _is_jornada(),
         allowed_updates=["message", "callback_query"],

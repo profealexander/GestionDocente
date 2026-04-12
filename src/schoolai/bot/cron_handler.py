@@ -9,6 +9,8 @@ Solo disponible para ADMIN_TELEGRAM_ID.
 
 from __future__ import annotations
 
+import html
+
 from telegram import Update
 from telegram.constants import ParseMode
 from telegram.ext import ContextTypes
@@ -67,7 +69,7 @@ async def handle_cron_command(update: Update, context: ContextTypes.DEFAULT_TYPE
     try:
         cron_service.set_time(job_name, hour, minute)
     except ValueError as e:
-        await update.message.reply_text(f"Error: {e}", parse_mode=ParseMode.HTML)
+        await update.message.reply_text(f"Error: {html.escape(str(e))}", parse_mode=ParseMode.HTML)
         return
 
     await update.message.reply_text(

@@ -57,7 +57,8 @@ def _keyboard_to_text(markup) -> str:
                 lines.append(f"{n}. {btn.text}")
                 n += 1
         return ("\n\n" + "\n".join(lines)) if lines else ""
-    except Exception:
+    except Exception as exc:
+        logger.warning(f"[whatsapp] failed to convert keyboard markup to text: {exc}")
         return ""
 
 

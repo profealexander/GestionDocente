@@ -9,6 +9,8 @@ import asyncio
 import json
 import re
 
+from loguru import logger
+
 _CATEGORIES = ["schedule", "calendar", "policies", "contacts", "notes", "other"]
 _SCOPES = ["personal", "institution"]
 
@@ -62,24 +64,31 @@ async def categorize(content: str, hint: str | None = None) -> dict[str, str]:
 
     try:
         from schoolai.skills.llm.usage import fire_record_usage
+
         response = await asyncio.to_thread(_call)
-        fire_record_usage(provider=provider, model=model, response=response, agent="context_categorizer")
+        fire_record_usage(
+            provider=provider, model=model, response=response, agent="context_categorizer"
+        )
         raw = (response.choices[0].message.content or "").strip()
         # Extraer JSON aunque venga envuelto en ```json ... ```
         match = re.search(r"\{.*\}", raw, re.DOTALL)
         if match:
             data = json.loads(match.group())
             return {
-                "title":    str(data.get("title", "Documento"))[:120],
-                "category": data.get("category", "other") if data.get("category") in _CATEGORIES else "other",
-                "scope":    data.get("scope", "personal") if data.get("scope") in _SCOPES else "personal",
+                "title": str(data.get("title", "Documento"))[:120],
+                "category": data.get("category", "other")
+                if data.get("category") in _CATEGORIES
+                else "other",
+                "scope": data.get("scope", "personal")
+                if data.get("scope") in _SCOPES
+                else "personal",
             }
-    except Exception:
-        pass
+    except Exception as exc:
+        logger.warning(f"[categorizer] LLM categorization failed, using defaults: {exc}")
 
     # Fallback: title desde hint o genérico
     return {
-        "title":    (hint[:70] if hint else "Documento sin título"),
+        "title": (hint[:70] if hint else "Documento sin título"),
         "category": "other",
-        "scope":    "personal",
+        "scope": "personal",
     }

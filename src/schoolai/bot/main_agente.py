@@ -8,13 +8,17 @@ Token: TELEGRAM_BOT_TOKEN_AGENTE en .env
 
 from __future__ import annotations
 
+import html
 import sys
 from pathlib import Path
 
 try:
+    import asyncio
+
     import uvloop
 
     uvloop.install()
+    asyncio.set_event_loop(asyncio.new_event_loop())
 except ImportError:
     pass
 
@@ -111,12 +115,12 @@ async def _error_handler(update: object, context: ContextTypes.DEFAULT_TYPE) -> 
                 settings.admin_telegram_id,
                 f"⚠️ <b>Error en SchoolAI Agente</b>\n"
                 f"Usuario: {user.id if user else '?'}\n"
-                f"Mensaje: <code>{msg[:200]}</code>\n"
-                f"Error: <code>{context.error}</code>",
+                f"Mensaje: <code>{html.escape(msg[:200])}</code>\n"
+                f"Error: <code>{html.escape(str(context.error))}</code>",
                 parse_mode="HTML",
             )
-        except Exception:  # noqa: BLE001
-            pass
+        except Exception as exc:  # noqa: BLE001
+            logger.warning(f"[agente] failed to send error notification to admin: {exc}")
 
 
 # ── Post-init ─────────────────────────────────────────────────────────────────
@@ -159,6 +163,7 @@ def run_agente() -> None:
     _setup_logging()
 
     from schoolai.bot.singleton import singleton_guard
+
     singleton_guard("agente")
 
     token = settings.telegram_bot_token_agente

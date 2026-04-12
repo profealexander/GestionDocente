@@ -9,6 +9,7 @@ from datetime import date
 
 from docxtpl import DocxTemplate
 from fpdf import FPDF
+from loguru import logger
 
 TEMPLATES_DIR = os.path.join(os.path.dirname(__file__), "templates")
 SIGNATURES_DIR = os.path.join(os.path.dirname(__file__), "signatures")
@@ -185,7 +186,10 @@ def generate_pdf(ctx: NotificacionContext) -> bytes:
     ln(1)
     pdf.set_x(25)
     pdf.multi_cell(
-        W, 6, _safe(f"  Actividad: {ctx.descripcion}  |  Fecha: {ctx.fecha_programada}"), fill=True,
+        W,
+        6,
+        _safe(f"  Actividad: {ctx.descripcion}  |  Fecha: {ctx.fecha_programada}"),
+        fill=True,
     )
     ln(3)
 
@@ -218,7 +222,8 @@ def generate_pdf(ctx: NotificacionContext) -> bytes:
         try:
             pdf.image(ctx.firma_path, x=pdf.get_x(), y=pdf.get_y(), h=20)
             ln(22)
-        except Exception:
+        except Exception as exc:
+            logger.warning(f"[generator] failed to embed signature image: {exc}")
             ln(20)
     else:
         ln(20)

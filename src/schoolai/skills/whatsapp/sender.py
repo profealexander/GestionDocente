@@ -11,6 +11,8 @@ Sending requires only the recipient's phone number — no activation needed on t
 Phone format: international without '+', e.g. 593962385813 (Ecuador).
 """
 
+import atexit
+
 import httpx
 from loguru import logger
 
@@ -19,6 +21,25 @@ _BASE = "https://api.green-api.com"
 # Cliente compartido por proceso — evita handshake TCP/TLS por cada mensaje
 _client = httpx.AsyncClient(timeout=15.0)
 _client_pdf = httpx.AsyncClient(timeout=30.0)
+
+
+def _cleanup() -> None:
+    """Close httpx clients on process exit to release connection pools."""
+    import asyncio
+
+    try:
+        loop = asyncio.get_event_loop()
+        if loop.is_running():
+            loop.create_task(_client.aclose())
+            loop.create_task(_client_pdf.aclose())
+        else:
+            loop.run_until_complete(_client.aclose())
+            loop.run_until_complete(_client_pdf.aclose())
+    except Exception as exc:
+        logger.warning(f"[sender] error during httpx client cleanup: {exc}")
+
+
+atexit.register(_cleanup)
 
 
 def _chat_id(phone: str) -> str:

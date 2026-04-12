@@ -50,4 +50,10 @@ PROVIDERS: dict[str, dict] = {
         "base_url": "https://generativelanguage.googleapis.com/v1beta/openai/",
         "key": "google_api_key",
     },
+    # Ollama — cloud (https://ollama.com) o local (http://localhost:11434)
+    # Cloud: usa modelo "qwen3-coder:480b-cloud" y CLI auth automática si está signin
+    "ollama": {
+        "base_url": "http://127.0.0.1:11434/v1",
+        "key": "ollama_api_key",
+    },
 }
