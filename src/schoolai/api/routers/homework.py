@@ -6,12 +6,14 @@ from typing import Optional
 from fastapi import APIRouter, Depends, HTTPException, Query
 from pydantic import BaseModel
 from sqlalchemy import select
+from sqlalchemy.dialects.postgresql import insert
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from schoolai.api.auth import get_current_user
 from schoolai.api.schemas import HomeworkClose, HomeworkOut, MessageOut
 from schoolai.db.connection import get_session
 from schoolai.db.models.homework import Homework
+from schoolai.db.models.homework_submission import HomeworkSubmission
 
 
 class HomeworkCreate(BaseModel):
@@ -19,6 +21,16 @@ class HomeworkCreate(BaseModel):
     grade_id: int
     subject_id: Optional[int] = None
     delivery_date: Optional[datetime.date] = None
+
+
+class ReportRecord(BaseModel):
+    student_id: int
+    status: str  # "missing" | "delivered"
+
+
+class SubmissionOut(BaseModel):
+    student_id: int
+    status: str
 
 
 router = APIRouter(
@@ -132,3 +144,56 @@ async def close_homework(
     await session.commit()
     status = "abierta" if body.is_open else "cerrada"
     return MessageOut(message=f"Tarea {homework_id} marcada como {status}.")
+
+
+@router.get(
+    "/{homework_id}/submissions",
+    response_model=list[SubmissionOut],
+    summary="Get submission statuses for a homework",
+)
+async def get_submissions(
+    homework_id: int,
+    session: AsyncSession = Depends(get_session),
+):
+    """Returns all recorded submission statuses for a homework assignment."""
+    rows = (
+        await session.execute(
+            select(HomeworkSubmission).where(HomeworkSubmission.homework_id == homework_id)
+        )
+    ).scalars().all()
+    return [SubmissionOut(student_id=r.student_id, status=r.status) for r in rows]
+
+
+@router.post(
+    "/{homework_id}/report",
+    response_model=MessageOut,
+    summary="Bulk upsert homework submission statuses",
+)
+async def report_homework(
+    homework_id: int,
+    records: list[ReportRecord],
+    session: AsyncSession = Depends(get_session),
+):
+    """Inserts or updates submission statuses for a list of students."""
+    if not records:
+        return MessageOut(message="Sin registros.")
+
+    hw = (await session.execute(select(Homework).where(Homework.id == homework_id))).scalars().first()
+    if not hw:
+        raise HTTPException(status_code=404, detail="Homework not found")
+
+    values = [
+        {"homework_id": homework_id, "student_id": r.student_id, "status": r.status}
+        for r in records
+    ]
+    stmt = (
+        insert(HomeworkSubmission)
+        .values(values)
+        .on_conflict_do_update(
+            index_elements=["homework_id", "student_id"],
+            set_={"status": insert(HomeworkSubmission).excluded.status},
+        )
+    )
+    await session.execute(stmt)
+    await session.commit()
+    return MessageOut(message=f"{len(records)} registros guardados.")
