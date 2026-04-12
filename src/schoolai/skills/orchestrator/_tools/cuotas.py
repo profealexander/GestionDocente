@@ -8,13 +8,13 @@ from schoolai.db.connection import get_db_session
 from schoolai.db.models.teacher import Teacher
 from schoolai.skills.attendance.matcher import match_names
 from schoolai.skills.cuotas.service import (
-    add_participantes,
-    create_actividad,
-    get_actividad_by_nombre,
-    get_actividades,
-    get_estado_actividad,
+    add_participants,
+    create_activity,
+    get_activities,
+    get_activity_by_name,
+    get_activity_status,
     get_students_in_grade,
-    register_pago,
+    register_payment,
 )
 from schoolai.skills.homework.repository import find_grade
 
@@ -27,7 +27,7 @@ async def _list_activities(telegram_id: int) -> str:
         ).scalar_one_or_none()
         if not teacher:
             return "No se encontró tu registro de docente."
-        actividades = await get_actividades(session, teacher_id=teacher.id, only_active=True)
+        actividades = await get_activities(session, teacher_id=teacher.id, only_active=True)
 
     if not actividades:
         return "No hay actividades activas."
@@ -44,7 +44,7 @@ async def _create_activity(
 ) -> str:
     """Creates a new school activity or fee."""
     async with get_db_session() as session:
-        actividad = await create_actividad(session, name, amount)
+        actividad = await create_activity(session, name, amount)
         act_id = actividad.id
 
         lines = [f"Actividad creada: '{name}' — ${amount:.2f} (ID: {act_id})"]
@@ -53,7 +53,7 @@ async def _create_activity(
             grade = await find_grade(session, course)
             if grade:
                 students = await get_students_in_grade(session, grade.id)
-                count = await add_participantes(session, act_id, [s.id for s in students])
+                count = await add_participants(session, act_id, [s.id for s in students])
                 lines.append(
                     f"  {count} estudiantes de {grade.name} agregados como participantes.",
                 )
@@ -68,10 +68,10 @@ async def _create_activity(
 async def _activity_status(name: str) -> str:
     """Queries the payment status of an activity by name."""
     async with get_db_session() as session:
-        actividad = await get_actividad_by_nombre(session, name)
+        actividad = await get_activity_by_name(session, name)
         if not actividad:
             return f"Actividad '{name}' no encontrada."
-        act, participantes = await get_estado_actividad(session, actividad.id)
+        act, participantes = await get_activity_status(session, actividad.id)
 
     if not act:
         return f"Actividad '{name}' no encontrada."
@@ -105,7 +105,7 @@ async def _register_payment(
         return "Se requiere el curso para identificar a los estudiantes."
 
     async with get_db_session() as session:
-        act = await get_actividad_by_nombre(session, activity)
+        act = await get_activity_by_name(session, activity)
         if not act:
             return f"Actividad '{activity}' no encontrada."
 
@@ -122,7 +122,7 @@ async def _register_payment(
 
         registered = []
         for m in resolved:
-            await register_pago(session, act.id, m.matched_id, amount)
+            await register_payment(session, act.id, m.matched_id, amount)
             registered.append(m.matched_name)
 
     lines = [f"Pagos registrados — {act.nombre} — ${amount:.2f} c/u:"]

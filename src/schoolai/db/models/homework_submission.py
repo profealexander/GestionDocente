@@ -18,4 +18,4 @@ class HomeworkSubmission(Base):
     reported_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now())
 
     homework: Mapped["Homework"] = relationship("Homework", back_populates="submissions")  # noqa: F821
-    student: Mapped["Student"] = relationship("Student")  # noqa: F821
+    student: Mapped["Student"] = relationship("Student", lazy="joined")  # noqa: F821

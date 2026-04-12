@@ -26,7 +26,7 @@ class StudentRepresentative(Base):
     is_primary_notify: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
     status: Mapped[str] = mapped_column(String, nullable=False, default="active")
 
-    student: Mapped["Student"] = relationship("Student", back_populates="representatives")  # noqa: F821
+    student: Mapped["Student"] = relationship("Student", back_populates="representatives", lazy="joined")  # noqa: F821
     person: Mapped["Person"] = relationship("Person", lazy="joined")  # noqa: F821
 
     def __repr__(self) -> str:

@@ -11,7 +11,7 @@ from schoolai.db.models.student import Student
 # ── Actividades ───────────────────────────────────────────────────────────────
 
 
-async def create_actividad(
+async def create_activity(
     session: AsyncSession,
     nombre: str,
     monto: float,
@@ -31,7 +31,7 @@ async def create_actividad(
     return actividad
 
 
-async def get_actividades(
+async def get_activities(
     session: AsyncSession,
     teacher_id: int | None = None,
     only_active: bool = True,
@@ -44,7 +44,7 @@ async def get_actividades(
     return (await session.execute(stmt.order_by(Actividad.created_at.desc()))).scalars().all()
 
 
-async def update_actividad(
+async def update_activity(
     session: AsyncSession,
     actividad_id: int,
     nombre: str | None = None,
@@ -68,7 +68,7 @@ async def update_actividad(
     return actividad
 
 
-async def get_actividad_by_nombre(
+async def get_activity_by_name(
     session: AsyncSession,
     nombre: str,
 ) -> Actividad | None:
@@ -83,7 +83,7 @@ async def get_actividad_by_nombre(
 # ── Participantes ─────────────────────────────────────────────────────────────
 
 
-async def add_participantes(
+async def add_participants(
     session: AsyncSession,
     actividad_id: int,
     student_ids: list[int],
@@ -114,7 +114,7 @@ async def add_participantes(
     return len(to_add)
 
 
-async def get_participantes(
+async def get_participants(
     session: AsyncSession,
     actividad_id: int,
 ) -> list[ActividadParticipante]:
@@ -144,7 +144,7 @@ async def get_students_in_grade(session: AsyncSession, grade_id: int) -> list[St
 # ── Pagos ─────────────────────────────────────────────────────────────────────
 
 
-async def register_pago(
+async def register_payment(
     session: AsyncSession,
     actividad_id: int,
     student_id: int,
@@ -248,7 +248,7 @@ async def find_or_create_student(
     return student.id, True
 
 
-async def get_estado_actividad(
+async def get_activity_status(
     session: AsyncSession,
     actividad_id: int,
 ) -> tuple[Actividad | None, list[ActividadParticipante]]:
@@ -256,5 +256,5 @@ async def get_estado_actividad(
     actividad = await session.get(Actividad, actividad_id)
     if not actividad:
         return None, []
-    participantes = await get_participantes(session, actividad_id)
+    participantes = await get_participants(session, actividad_id)
     return actividad, participantes

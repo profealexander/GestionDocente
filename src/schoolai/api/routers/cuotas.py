@@ -10,14 +10,15 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from schoolai.api.auth import get_current_user
 from schoolai.db.connection import get_session
-from schoolai.db.models.cuota import Actividad
+from schoolai.db.models.cuota import Actividad, ActividadParticipante
+from schoolai.db.models.student import Student
 from schoolai.skills.cuotas.service import (
-    add_participantes,
-    create_actividad,
-    get_actividades,
-    get_estado_actividad,
+    add_participants,
+    create_activity,
+    get_activities,
+    get_activity_status,
     get_students_in_grade,
-    register_pago,
+    register_payment,
 )
 
 router = APIRouter(
@@ -109,13 +110,13 @@ class PagoOut2(BaseModel):
 # ── Helpers ───────────────────────────────────────────────────────────────────
 
 
-def _student_display(student) -> str:
+def _student_display(student: Student) -> str:
     last = getattr(student, "last_name", "") or ""
     first = getattr(student, "first_name", "") or ""
     return f"{last.title()} {first.title()}".strip()
 
 
-def _to_participante(p) -> ParticipanteOut:
+def _to_participante(p: ActividadParticipante) -> ParticipanteOut:
     return ParticipanteOut(
         id=p.id,
         student_id=p.student_id,
@@ -134,7 +135,7 @@ def _to_participante(p) -> ParticipanteOut:
     )
 
 
-def _to_detalle(actividad, participantes) -> ActividadDetalle:
+def _to_detalle(actividad: Actividad, participantes: list[ActividadParticipante]) -> ActividadDetalle:
     recaudado = sum(float(p.total_pagado or 0) for p in participantes)
     completos = sum(1 for p in participantes if p.is_complete)
     pendientes = len(participantes) - completos
@@ -166,7 +167,7 @@ async def list_actividades(
     current_user=Depends(get_current_user),
 ):
     teacher_id = current_user.get("teacher_id") or current_user.get("id")
-    actividades = await get_actividades(session, teacher_id=teacher_id, only_active=only_active)
+    actividades = await get_activities(session, teacher_id=teacher_id, only_active=only_active)
     return [
         ActividadOut(
             id=a.id,
@@ -186,13 +187,13 @@ async def list_actividades(
     status_code=201,
     summary="Crear actividad",
 )
-async def create_actividad_endpoint(
+async def create_activity_endpoint(
     body: ActividadCreate,
     session: AsyncSession = Depends(get_session),
     current_user=Depends(get_current_user),
 ):
     teacher_id = current_user.get("teacher_id") or current_user.get("id")
-    actividad = await create_actividad(
+    actividad = await create_activity(
         session,
         nombre=body.nombre,
         monto=body.monto,
@@ -218,7 +219,7 @@ async def get_actividad(
     actividad_id: int,
     session: AsyncSession = Depends(get_session),
 ):
-    actividad, participantes = await get_estado_actividad(session, actividad_id)
+    actividad, participantes = await get_activity_status(session, actividad_id)
     if not actividad:
         raise HTTPException(status_code=404, detail="Actividad no encontrada")
     return _to_detalle(actividad, participantes)
@@ -242,7 +243,7 @@ async def add_grade_participantes(
     if not students:
         raise HTTPException(status_code=404, detail="No hay estudiantes en ese curso")
 
-    added = await add_participantes(session, actividad_id, [s.id for s in students])
+    added = await add_participants(session, actividad_id, [s.id for s in students])
     return {"added": added, "total_in_grade": len(students)}
 
 
@@ -263,7 +264,7 @@ async def create_pago(
     if not actividad:
         raise HTTPException(status_code=404, detail="Actividad no encontrada")
 
-    pago, participante = await register_pago(
+    pago, participante = await register_payment(
         session,
         actividad_id=actividad_id,
         student_id=body.student_id,
@@ -296,7 +297,7 @@ async def export_actividad(
 ):
     from schoolai.skills.cuotas.exporter import export_actividad_excel
 
-    actividad, participantes = await get_estado_actividad(session, actividad_id)
+    actividad, participantes = await get_activity_status(session, actividad_id)
     if not actividad:
         raise HTTPException(status_code=404, detail="Actividad no encontrada")
     if not participantes:

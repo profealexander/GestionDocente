@@ -12,9 +12,9 @@ from schoolai.skills.attendance.matcher import match_names
 from schoolai.skills.cuotas._helpers import _get_teacher_id
 from schoolai.skills.cuotas.extractor import CuotaExtract
 from schoolai.skills.cuotas.service import (
-    get_actividad_by_nombre,
-    get_actividades,
-    register_pago,
+    get_activities,
+    get_activity_by_name,
+    register_payment,
 )
 
 
@@ -69,7 +69,7 @@ async def _send_pago_result(
     lines = [f"💰 *Pago registrado — {actividad.nombre}*\n"]
 
     for r in resolved:
-        _pago, participante = await register_pago(
+        _pago, participante = await register_payment(
             session,
             actividad_id=actividad.id,
             student_id=r.matched_id,
@@ -111,9 +111,9 @@ async def handle_pago(update, user_id: int, data: CuotaExtract) -> None:
 
     async with async_session() as session:
         if data.nombre:
-            actividad = await get_actividad_by_nombre(session, data.nombre)
+            actividad = await get_activity_by_name(session, data.nombre)
         else:
-            actividades = await get_actividades(session, teacher_id=teacher_id)
+            actividades = await get_activities(session, teacher_id=teacher_id)
             if not actividades:
                 await update.message.reply_text("No hay actividades activas para registrar pagos.")
                 return
@@ -153,9 +153,9 @@ async def handle_cuota_pago_callback(update, context) -> None:
         return
 
     async with async_session() as session:
-        from schoolai.skills.cuotas.service import get_estado_actividad
+        from schoolai.skills.cuotas.service import get_activity_status
 
-        actividad, _ = await get_estado_actividad(session, actividad_id)
+        actividad, _ = await get_activity_status(session, actividad_id)
         if not actividad:
             await query.edit_message_text("Actividad no encontrada.")
             return

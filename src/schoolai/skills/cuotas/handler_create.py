@@ -12,9 +12,9 @@ from schoolai.db.models.grade import Grade
 from schoolai.skills.cuotas._helpers import _get_teacher_id
 from schoolai.skills.cuotas.extractor import CuotaExtract
 from schoolai.skills.cuotas.service import (
-    add_participantes,
-    create_actividad,
-    get_participantes,
+    add_participants,
+    create_activity,
+    get_participants,
     get_students_in_grade,
 )
 
@@ -89,7 +89,7 @@ async def handle_create(update, user_id: int, data: CuotaExtract) -> None:
     teacher_id = await _get_teacher_id(user_id)
 
     async with get_db_session() as session:
-        actividad = await create_actividad(
+        actividad = await create_activity(
             session, nombre=data.nombre, monto=data.monto, teacher_id=teacher_id,
         )
 
@@ -105,7 +105,7 @@ async def handle_create(update, user_id: int, data: CuotaExtract) -> None:
             grade = await find_grade(session, data.course)
             if grade:
                 students = await get_students_in_grade(session, grade.id)
-                added = await add_participantes(session, actividad.id, [s.id for s in students])
+                added = await add_participants(session, actividad.id, [s.id for s in students])
                 added_msg = f"\n✅ {added} estudiantes de {grade.name} agregados."
 
     from schoolai.bot.state import PendingCuotaParticipante, set_cuota_participante
@@ -219,7 +219,7 @@ async def handle_cuota_addall_callback(update, context) -> None:
 
     async with get_db_session() as session:
         students = await get_students_in_grade(session, grade_id)
-        added = await add_participantes(session, actividad_id, [s.id for s in students])
+        added = await add_participants(session, actividad_id, [s.id for s in students])
 
     await context.bot.send_message(
         update.effective_chat.id,
@@ -244,7 +244,7 @@ async def handle_cuota_done_callback(update, context) -> None:
 
     async with get_db_session() as session:
         actividad = await session.get(Actividad, actividad_id)
-        participantes = await get_participantes(session, actividad_id)
+        participantes = await get_participants(session, actividad_id)
 
     nombre = actividad.nombre if actividad else "Actividad"
     total = len(participantes)
@@ -289,7 +289,7 @@ async def handle_cuota_names_text(update, user_id: int) -> bool:
         return True
 
     async with get_db_session() as session:
-        added = await add_participantes(
+        added = await add_participants(
             session, state.actividad_id, [s["student_id"] for s in selected],
         )
 
@@ -322,7 +322,7 @@ async def handle_cuota_participante_text(update, user_id: int) -> bool:
 
     from schoolai.bot.state import get_cuota_participante
     from schoolai.db.connection import get_db_session
-    from schoolai.skills.cuotas.service import add_participantes, find_or_create_student
+    from schoolai.skills.cuotas.service import add_participants, find_or_create_student
     from schoolai.skills.utils.courses import course_abbrev_map
     from schoolai.skills.utils.extract_rules import _extract_course
 
@@ -376,7 +376,7 @@ async def handle_cuota_participante_text(update, user_id: int) -> bool:
                 return True
 
             student_id, was_created = await find_or_create_student(session, name, grade_id)
-            await add_participantes(session, state.actividad_id, [student_id])
+            await add_participants(session, state.actividad_id, [student_id])
 
             if was_created:
                 created_lines.append(name.title())
@@ -439,7 +439,7 @@ async def handle_add_grade_callback(update, context) -> None:
 
     async with get_db_session() as session:
         students = await get_students_in_grade(session, grade_id)
-        added = await add_participantes(session, actividad_id, [s.id for s in students])
+        added = await add_participants(session, actividad_id, [s.id for s in students])
 
     await query.edit_message_text(
         f"✅ Se agregaron *{added}* estudiantes de {grade_name} como participantes.",

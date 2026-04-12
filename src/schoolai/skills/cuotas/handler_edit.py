@@ -12,10 +12,10 @@ from schoolai.db.connection import get_db_session
 from schoolai.db.models.cuota import Actividad
 from schoolai.skills.cuotas.extractor import CuotaExtract
 from schoolai.skills.cuotas.service import (
-    get_actividad_by_nombre,
-    get_actividades,
-    get_participantes,
-    update_actividad,
+    get_activities,
+    get_activity_by_name,
+    get_participants,
+    update_activity,
 )
 
 # ── Teclados ──────────────────────────────────────────────────────────────────
@@ -98,7 +98,7 @@ async def handle_edit(update, user_id: int, data: CuotaExtract) -> None:
 
     async with get_db_session() as session:
         if data.nombre:
-            actividad = await get_actividad_by_nombre(session, data.nombre)
+            actividad = await get_activity_by_name(session, data.nombre)
             if not actividad:
                 # Try including inactive
                 from sqlalchemy import select
@@ -126,7 +126,7 @@ async def handle_edit(update, user_id: int, data: CuotaExtract) -> None:
             return
 
         # No nombre — listar actividades para elegir
-        actividades = await get_actividades(session, teacher_id=teacher_id, only_active=False)
+        actividades = await get_activities(session, teacher_id=teacher_id, only_active=False)
 
     if not actividades:
         await update.message.reply_text("No hay actividades registradas.")
@@ -217,7 +217,7 @@ async def handle_cuota_edit_toggle_callback(update, context) -> None:
             return
 
         new_state = not actividad.is_active
-        actividad = await update_actividad(session, actividad_id, is_active=new_state)
+        actividad = await update_activity(session, actividad_id, is_active=new_state)
 
     estado = "activada" if new_state else "desactivada"
     logger.info(
@@ -274,7 +274,7 @@ async def handle_cuota_edit_rm_part_callback(update, context) -> None:
 
     async with get_db_session() as session:
         actividad = await session.get(Actividad, actividad_id)
-        participantes = await get_participantes(session, actividad_id)
+        participantes = await get_participants(session, actividad_id)
 
         if not participantes:
             await query.edit_message_text(
@@ -380,7 +380,7 @@ async def handle_cuota_edit_text(update, user_id: int) -> bool:
     clear_cuota_edit_field(user_id)
 
     async with get_db_session() as session:
-        actividad = await update_actividad(session, state.actividad_id, **kwargs)
+        actividad = await update_activity(session, state.actividad_id, **kwargs)
 
     if not actividad:
         await update.message.reply_text("No se pudo actualizar la actividad.")

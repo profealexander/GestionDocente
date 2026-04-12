@@ -12,9 +12,9 @@ from schoolai.db.connection import async_session
 from schoolai.skills.cuotas._helpers import _get_teacher_id
 from schoolai.skills.cuotas.extractor import CuotaExtract
 from schoolai.skills.cuotas.service import (
-    get_actividad_by_nombre,
-    get_actividades,
-    get_estado_actividad,
+    get_activities,
+    get_activity_by_name,
+    get_activity_status,
 )
 
 
@@ -32,7 +32,7 @@ def _actividad_keyboard(actividades) -> InlineKeyboardMarkup:
 
 
 async def _send_estado(target, actividad_id: int, session, *, use_edit: bool = False) -> None:
-    actividad, participantes = await get_estado_actividad(session, actividad_id)
+    actividad, participantes = await get_activity_status(session, actividad_id)
     if not actividad:
         msg = "Actividad no encontrada."
         if use_edit:
@@ -78,7 +78,7 @@ async def _send_estado(target, actividad_id: int, session, *, use_edit: bool = F
 async def handle_list(update, user_id: int) -> None:
     teacher_id = await _get_teacher_id(user_id)
     async with async_session() as session:
-        actividades = await get_actividades(session, teacher_id=teacher_id)
+        actividades = await get_activities(session, teacher_id=teacher_id)
 
     if not actividades:
         await update.message.reply_text("No hay actividades activas registradas.")
@@ -94,7 +94,7 @@ async def handle_query(update, user_id: int, data: CuotaExtract) -> None:
 
     async with async_session() as session:
         if data.nombre:
-            actividad = await get_actividad_by_nombre(session, data.nombre)
+            actividad = await get_activity_by_name(session, data.nombre)
             if not actividad:
                 await update.message.reply_text(
                     f"No encontré ninguna actividad con nombre *{data.nombre}*.",
@@ -104,7 +104,7 @@ async def handle_query(update, user_id: int, data: CuotaExtract) -> None:
             await _send_estado(update, actividad.id, session)
             return
 
-        actividades = await get_actividades(session, teacher_id=teacher_id)
+        actividades = await get_activities(session, teacher_id=teacher_id)
 
     if not actividades:
         await update.message.reply_text("No hay actividades activas.")
@@ -128,7 +128,7 @@ async def handle_export(update, user_id: int, data: CuotaExtract) -> None:
 
     async with async_session() as session:
         if data.nombre:
-            actividad = await get_actividad_by_nombre(session, data.nombre)
+            actividad = await get_activity_by_name(session, data.nombre)
             if not actividad:
                 await update.message.reply_text(
                     f"No encontré la actividad *{data.nombre}*.",
@@ -136,7 +136,7 @@ async def handle_export(update, user_id: int, data: CuotaExtract) -> None:
                 )
                 return
         else:
-            actividades = await get_actividades(session, teacher_id=teacher_id)
+            actividades = await get_activities(session, teacher_id=teacher_id)
             if not actividades:
                 await update.message.reply_text("No hay actividades activas.")
                 return
@@ -150,7 +150,7 @@ async def handle_export(update, user_id: int, data: CuotaExtract) -> None:
                 return
 
         actividad_id = actividad.id
-        _act, participantes = await get_estado_actividad(session, actividad_id)
+        _act, participantes = await get_activity_status(session, actividad_id)
         if not participantes:
             await update.message.reply_text(
                 f"La actividad *{actividad.nombre}* no tiene participantes aún.",
