@@ -30,11 +30,13 @@ Optimización de tokens:
 
 from __future__ import annotations
 
-import asyncio
 import json
-from datetime import date
+import time
+from typing import TYPE_CHECKING, Any
 
 from loguru import logger
+
+from schoolai.constants import TRUNCATE_TOOL_RESULT
 
 # Instrucciones de formato Telegram HTML — compartidas por todos los SkillAgents
 TELEGRAM_FORMAT = (
@@ -90,8 +92,8 @@ def _compress_old_tool_results(messages: list[dict]) -> list[dict]:
         if msg.get("role") == "tool" and in_old_block:
             # Truncar contenido largo de tool results antiguos
             content = msg.get("content", "")
-            if len(content) > 120:
-                content = content[:120] + "… [truncado]"
+            if len(content) > TRUNCATE_TOOL_RESULT:
+                content = content[:TRUNCATE_TOOL_RESULT] + "… [truncado]"
             compressed.append({**msg, "content": content})
         else:
             if msg.get("role") == "assistant":
@@ -272,7 +274,9 @@ class SkillAgentBase:
                 )
 
             result = await self._execute_tool(tc.function.name, args)
-            logger.debug(f"[{self.name}] tool={tc.function.name} → {result[:120]!r}")
+            logger.debug(
+                f"[{self.name}] tool={tc.function.name} → {result[:TRUNCATE_TOOL_RESULT]!r}"
+            )
 
             # Anti-injection: delimita el resultado para que el LLM lo trate
             # como datos estructurados, no como instrucciones adicionales.

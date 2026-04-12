@@ -5,12 +5,17 @@ import time
 from collections import defaultdict
 from dataclasses import dataclass, field
 
+import bcrypt as _bcrypt
 from fastapi import APIRouter, HTTPException, Request, status
 from loguru import logger
 from pydantic import BaseModel
+from sqlalchemy import select
 
 from schoolai.api.auth import create_access_token, create_access_token_for_teacher
 from schoolai.config import settings
+from schoolai.db.connection import async_session
+from schoolai.db.models.teacher import Teacher
+from schoolai.skills.db.position_service import get_admin_cargo
 
 router = APIRouter(prefix="/auth", tags=["Auth"])
 
@@ -112,12 +117,6 @@ async def login(request: Request, body: LoginRequest) -> TokenResponse:
             detail="JWT secret no configurado en el servidor.",
         )
 
-    import bcrypt as _bcrypt
-    from sqlalchemy import select
-
-    from schoolai.db.connection import async_session
-    from schoolai.db.models.teacher import Teacher
-
     async with async_session() as session:
         result = await session.execute(
             select(Teacher).where(Teacher.username == body.username, Teacher.is_active.is_(True)),
@@ -154,9 +153,6 @@ async def _resolve_role(telegram_id: int) -> str:
         return "superadmin"
 
     try:
-        from schoolai.db.connection import async_session
-        from schoolai.skills.db.position_service import get_admin_cargo
-
         async with async_session() as session:
             cargo = await get_admin_cargo(session, telegram_id)
         if cargo in ADMIN_CARGOS:

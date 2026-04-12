@@ -15,6 +15,7 @@ from schoolai.bot.mode import is_jornada
 from schoolai.bot.transcription import transcribe
 from schoolai.bot.whatsapp_handler import handle_wa_setup_text
 from schoolai.config import settings
+from schoolai.constants import TRUNCATE_DESCRIPTION, TRUNCATE_LOG_PREVIEW
 from schoolai.skills.registry import registry
 from schoolai.skills.utils.courses import (
     _ABBREV_TO_NAME,
@@ -57,7 +58,7 @@ async def handle_text(update: Update, context: ContextTypes.DEFAULT_TYPE) -> Non
         return
 
     text = update.message.text.strip()
-    logger.info(f"[text] user={user.id} (@{user.username}): {text[:200]}")
+    logger.info(f"[text] user={user.id} (@{user.username}): {text[:TRUNCATE_LOG_PREVIEW]}")
     logger.debug(f"[text:full] user={user.id}: {text}")
 
     await _dispatch(update, user.id, text, context)
@@ -81,7 +82,7 @@ async def handle_voice(update: Update, context: ContextTypes.DEFAULT_TYPE) -> No
 
     try:
         text = await transcribe(bytes(audio_bytes), "audio.ogg", settings.groq_api_key)
-        logger.info(f"[voice] {user.id}: {text[:80]}")
+        logger.info(f"[voice] {user.id}: {text[:TRUNCATE_DESCRIPTION]}")
     except Exception as e:
         logger.error(f"Transcription error: {e}")
         await update.message.reply_text(
@@ -118,23 +119,28 @@ async def _show_course_action_menu(update: Update, course_info: tuple) -> None:
         [
             [
                 InlineKeyboardButton(
-                    "📝 Registrar tarea", callback_data=f"course_action:hw:{abbrev}",
+                    "📝 Registrar tarea",
+                    callback_data=f"course_action:hw:{abbrev}",
                 ),
                 InlineKeyboardButton(
-                    "✅ Registrar asistencia", callback_data=f"course_action:att:{abbrev}",
-                ),
-            ],
-            [
-                InlineKeyboardButton(
-                    "📋 Ver tareas", callback_data=f"course_action:query_hw:{abbrev}",
-                ),
-                InlineKeyboardButton(
-                    "📊 Cumplimiento", callback_data=f"course_action:compliance:{abbrev}",
+                    "✅ Registrar asistencia",
+                    callback_data=f"course_action:att:{abbrev}",
                 ),
             ],
             [
                 InlineKeyboardButton(
-                    "📈 Ver asistencia hoy", callback_data=f"course_action:query_att:{abbrev}",
+                    "📋 Ver tareas",
+                    callback_data=f"course_action:query_hw:{abbrev}",
+                ),
+                InlineKeyboardButton(
+                    "📊 Cumplimiento",
+                    callback_data=f"course_action:compliance:{abbrev}",
+                ),
+            ],
+            [
+                InlineKeyboardButton(
+                    "📈 Ver asistencia hoy",
+                    callback_data=f"course_action:query_att:{abbrev}",
                 ),
             ],
         ],
@@ -156,11 +162,7 @@ def _detect_course_group(text: str) -> list[tuple[str, str]] | None:
     abbrevs = COURSE_GROUP_ALIASES.get(key)
     if not abbrevs:
         return None
-    courses = [
-        (a, _ABBREV_TO_NAME.get(a, a.upper()))
-        for a in abbrevs
-        if a in course_abbrev_map
-    ]
+    courses = [(a, _ABBREV_TO_NAME.get(a, a.upper())) for a in abbrevs if a in course_abbrev_map]
     return courses or None
 
 
@@ -176,7 +178,9 @@ async def _show_course_group_menu(update: Update, courses: list[tuple[str, str]]
     )
 
 
-async def _dispatch(update: Update, user_id: int, text: str, context: ContextTypes.DEFAULT_TYPE = None) -> None:
+async def _dispatch(
+    update: Update, user_id: int, text: str, context: ContextTypes.DEFAULT_TYPE = None
+) -> None:
     """Despacha el mensaje al skill correcto a través de capas de intercepción.
 
     Capas (en orden):
@@ -204,6 +208,7 @@ async def _dispatch(update: Update, user_id: int, text: str, context: ContextTyp
         return
 
     from schoolai.bot.broadcast_handler import handle_broadcast_text
+
     if await handle_broadcast_text(update, context):
         return
 

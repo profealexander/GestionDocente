@@ -1,3 +1,5 @@
+from functools import cached_property
+
 from pydantic import field_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
@@ -11,7 +13,7 @@ class Settings(BaseSettings):
     )
 
     # Database
-    database_url: str = "postgresql+asyncpg://schoolai:1234@localhost:5432/schoolai"
+    database_url: str = ""  # REQUIRED — set via DATABASE_URL env var
 
     @field_validator("database_url", mode="before")
     @classmethod
@@ -26,21 +28,30 @@ class Settings(BaseSettings):
     # Telegram
     telegram_bot_token: str
     telegram_bot_token_jornada: str = ""  # segundo token — Modo Jornada
-    telegram_bot_token_agente: str = "" # tercer token — Bot Agente (GLM directo)
-    telegram_allowed_users: str = ""    # comma-separated user IDs
+    telegram_bot_token_agente: str = ""  # tercer token — Bot Agente (GLM directo)
+    telegram_allowed_users: str = ""  # comma-separated user IDs
 
     # ── LLM model per skill (format: "provider/model") ────────────────────────
-    llm_extractor: str = "groq/llama-3.1-8b-instant"  # extractor JSON — rápido
-    llm_chat: str = "groq/llama-3.3-70b-versatile"  # asistente IA
-    llm_router: str = "groq/llama-3.1-8b-instant"  # clasificador de mensajes
-    llm_orchestrator: str = "zai/glm-4.7-flash"  # orquestador multi-tool — GLM recomendado; sobreescribir en .env
-    llm_orchestrator_fallback: str = "zai/glm-4.7-flash,groq/llama-3.3-70b-versatile"  # cadena de failover: GLM → Groq (sin Gemini — evita cargos Google Cloud)
+    llm_extractor: str = "google/gemini-2.5-flash-lite"  # extracción estructurada
+    llm_chat: str = "mistral/mistral-large-latest"  # chat general
+    llm_router: str = "google/gemini-2.5-flash-lite"  # routing / clasificación
+    llm_orchestrator: str = "mistral/mistral-small-latest"  # orquestador multi-tool
+    llm_orchestrator_fallback: str = "google/gemini-2.5-flash-lite,mistral/mistral-large-latest,groq/llama-3.3-70b-versatile"  # cadena de failover operativa
 
     # ── API keys ───────────────────────────────────────────────────────────────
-    groq_api_key: str = ""  # Groq — transcripción Whisper + LLM extractor/chat (otras skills)
+    groq_api_key: str = ""  # Groq — Whisper + fallback LLM
     zhipu_api_key: str = ""  # ZhipuAI China endpoint (legacy)
     zai_api_key: str = ""  # Z.AI global endpoint — GLM-4.7-Flash orquestador
     google_api_key: str = ""  # Google AI Studio — Gemini models
+    mistral_api_key: str = ""  # Mistral — chat general + orquestación
+    deepseek_api_key: str = ""
+    moonshot_api_key: str = ""
+    nvidia_api_key: str = ""
+    minimax_api_key: str = ""
+    openrouter_api_key: str = ""
+    openai_api_key: str = ""
+    ollama_api_key: str = "ollama"  # OpenAI client requiere un valor; Ollama local suele ignorarlo
+    ollama_base_url: str = "http://127.0.0.1:11434/v1/"  # endpoint OpenAI-compatible
 
     # FastAPI
     api_host: str = "0.0.0.0"  # nosec B104 — intencional, uvicorn escucha en todas las interfaces
@@ -48,7 +59,9 @@ class Settings(BaseSettings):
     port: int = 0  # Railway inyecta PORT — si está presente, tiene prioridad sobre api_port
     # CORS — en producción establecer con el dominio exacto de la PWA, e.g.:
     # CORS_ORIGINS=https://schoolai-web.pages.dev
-    cors_origins: str = "*"  # "*" para desarrollo; dominio exacto en producción
+    cors_origins: str = (
+        "http://localhost:3000,http://localhost:5173"  # desarrollo; dominio exacto en producción
+    )
 
     @property
     def effective_api_port(self) -> int:
@@ -78,7 +91,7 @@ class Settings(BaseSettings):
     # Autonomía: si True, el bot pide confirmación antes de toda escritura en DB
     supervised_mode: bool = False
 
-    @property
+    @cached_property
     def allowed_user_ids(self) -> list[int]:
         if not self.telegram_allowed_users:
             return []

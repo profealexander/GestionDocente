@@ -10,6 +10,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from schoolai.api.auth import get_current_user
 from schoolai.db.connection import get_session
+from schoolai.db.models.cuota import Actividad
 from schoolai.skills.cuotas.service import (
     add_participantes,
     create_actividad,
@@ -233,10 +234,7 @@ async def add_grade_participantes(
     body: AddParticipantesBody,
     session: AsyncSession = Depends(get_session),
 ):
-    actividad = await session.get(
-        __import__("schoolai.db.models.cuota", fromlist=["Actividad"]).Actividad,
-        actividad_id,
-    )
+    actividad = await session.get(Actividad, actividad_id)
     if not actividad:
         raise HTTPException(status_code=404, detail="Actividad no encontrada")
 

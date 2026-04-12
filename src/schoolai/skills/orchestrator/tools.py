@@ -11,13 +11,49 @@ Inspired by the NanoBot pattern (HKUDS/nanobot): self-contained tools.
 from __future__ import annotations
 
 import re
-from datetime import date, timedelta
-from datetime import datetime
+from collections import defaultdict
+from datetime import date, datetime, timedelta
+from zoneinfo import ZoneInfo
 
 from loguru import logger
+from sqlalchemy import select
 
 from schoolai.config import settings
+from schoolai.constants import TRUNCATE_DESCRIPTION
+from schoolai.db.connection import async_session
+from schoolai.db.models.grade import Grade
+from schoolai.db.models.teacher import Schedule, Teacher
+from schoolai.skills.attendance.matcher import match_names
+from schoolai.skills.attendance.service import infer_period_from_schedule, save_absences
+from schoolai.skills.context.tools import (
+    delete_context_doc,
+    list_context_docs,
+    save_web_page,
+    search_context,
+    web_search,
+)
+from schoolai.skills.cuotas.service import (
+    create_actividad,
+    get_actividad_by_nombre,
+    get_actividades,
+    get_estado_actividad,
+    get_students_in_grade,
+    register_pago,
+)
 from schoolai.skills.cuotas.tools import ToolDef
+from schoolai.skills.homework.repository import (
+    delete_homework,
+    find_grade,
+    find_homework_by_ref,
+    find_subject,
+    get_teacher_subject_ids,
+    save_homework,
+)
+from schoolai.skills.orchestrator.repl import run_repl
+from schoolai.skills.query.detector import QueryIntent, get_current_trimester
+from schoolai.skills.query.formatter import format_attendance, format_homework_multi
+from schoolai.skills.query.resolver import resolve_attendance, resolve_homework
+from schoolai.skills.reminders.tools import cancel_reminder, create_reminder, list_reminders
 
 # ── Helpers ───────────────────────────────────────────────────────────────────
 
@@ -48,8 +84,6 @@ def _parse_date(value: str) -> date:
 
 def _period_to_dates(period: str, qtype: str):
     """Convert a period string to a QueryIntent."""
-    from schoolai.skills.query.detector import QueryIntent, get_current_trimester
-
     today = _today()
     p = period.lower().strip()
 
@@ -85,14 +119,6 @@ async def _record_attendance(
     status: str = "absent",
 ) -> str:
     """Records absences, tardiness or justified absences for students in a course."""
-    from sqlalchemy import select
-
-    from schoolai.db.connection import async_session
-    from schoolai.db.models.teacher import Teacher
-    from schoolai.skills.attendance.matcher import match_names
-    from schoolai.skills.attendance.service import infer_period_from_schedule, save_absences
-    from schoolai.skills.homework.repository import find_grade
-
     status_map = {"absent": "F", "late": "AT", "justified": "J"}
 
     if status == "all_present" or not names:
@@ -155,11 +181,6 @@ async def _query_attendance(
     period: str = "today",
 ) -> str:
     """Queries the attendance record for one or more courses."""
-    from schoolai.db.connection import async_session
-    from schoolai.skills.homework.repository import find_grade
-    from schoolai.skills.query.formatter import format_attendance
-    from schoolai.skills.query.resolver import resolve_attendance
-
     intent = _period_to_dates(period, "attendance")
     results = []
 
@@ -188,17 +209,6 @@ async def _create_assignment(
     each with its own sequence_num within that subject.
     Only subjects assigned to the teacher in their schedule are allowed.
     """
-    from sqlalchemy import select
-
-    from schoolai.db.connection import async_session
-    from schoolai.db.models.teacher import Teacher
-    from schoolai.skills.homework.repository import (
-        find_grade,
-        find_subject,
-        get_teacher_subject_ids,
-        save_homework,
-    )
-
     subjects = [s for s in (subjects or []) if s]
     delivery = _parse_date(due_date) if due_date else None
 
@@ -280,14 +290,6 @@ async def _query_assignments(
 
     Only shows assignments for subjects the teacher is scheduled to teach.
     """
-    from sqlalchemy import select
-
-    from schoolai.db.connection import async_session
-    from schoolai.db.models.teacher import Teacher
-    from schoolai.skills.homework.repository import find_grade, get_teacher_subject_ids
-    from schoolai.skills.query.formatter import format_homework_multi
-    from schoolai.skills.query.resolver import resolve_homework
-
     intent = _period_to_dates(period, "homework")
     hw_data = []
     not_found = []
@@ -322,13 +324,6 @@ async def _query_assignments(
 
 async def _delete_assignment(number: int, course: str) -> str:
     """Deletes a homework assignment by sequence number and course. Submissions cascade."""
-    from schoolai.db.connection import async_session
-    from schoolai.skills.homework.repository import (
-        delete_homework,
-        find_grade,
-        find_homework_by_ref,
-    )
-
     async with async_session() as session:
         grade = await find_grade(session, course)
         if not grade:
@@ -342,16 +337,11 @@ async def _delete_assignment(number: int, course: str) -> str:
         seq = hw.sequence_num
         await delete_homework(session, hw.id)
 
-    return f"Tarea #{seq} eliminada — {grade.name}: {desc[:80]}"
+    return f"Tarea #{seq} eliminada — {grade.name}: {desc[:TRUNCATE_DESCRIPTION]}"
 
 
 async def _list_courses(level: str | None = None) -> str:
     """Lists available courses, optionally filtered by education level."""
-    from sqlalchemy import select
-
-    from schoolai.db.connection import async_session
-    from schoolai.db.models.grade import Grade
-
     level_aliases = {
         "basica": "egb",
         "básica": "egb",
@@ -379,12 +369,6 @@ async def _list_courses(level: str | None = None) -> str:
 
 async def _list_activities(telegram_id: int) -> str:
     """Lists active school activities filtered by the requesting teacher."""
-    from sqlalchemy import select
-
-    from schoolai.db.connection import async_session
-    from schoolai.db.models.teacher import Teacher
-    from schoolai.skills.cuotas.service import get_actividades
-
     async with async_session() as session:
         teacher = (
             await session.execute(select(Teacher).where(Teacher.telegram_id == telegram_id))
@@ -407,14 +391,6 @@ async def _create_activity(
     course: str | None = None,
 ) -> str:
     """Creates a new school activity or fee."""
-    from schoolai.db.connection import async_session
-    from schoolai.skills.cuotas.service import (
-        add_participantes,
-        create_actividad,
-        get_students_in_grade,
-    )
-    from schoolai.skills.homework.repository import find_grade
-
     async with async_session() as session:
         actividad = await create_actividad(session, name, amount)
         act_id = actividad.id
@@ -439,9 +415,6 @@ async def _create_activity(
 
 async def _activity_status(name: str) -> str:
     """Queries the payment status of an activity by name."""
-    from schoolai.db.connection import async_session
-    from schoolai.skills.cuotas.service import get_actividad_by_nombre, get_estado_actividad
-
     async with async_session() as session:
         actividad = await get_actividad_by_nombre(session, name)
         if not actividad:
@@ -476,11 +449,6 @@ async def _register_payment(
     course: str | None = None,
 ) -> str:
     """Records a payment from one or more students for an activity."""
-    from schoolai.db.connection import async_session
-    from schoolai.skills.attendance.matcher import match_names
-    from schoolai.skills.cuotas.service import get_actividad_by_nombre, register_pago
-    from schoolai.skills.homework.repository import find_grade
-
     if not course:
         return "Se requiere el curso para identificar a los estudiantes."
 
@@ -518,13 +486,6 @@ async def _register_payment(
 
 async def _my_courses(telegram_id: int) -> str:
     """Returns the current teacher's assigned courses and subjects."""
-    from collections import defaultdict
-
-    from sqlalchemy import select
-
-    from schoolai.db.connection import async_session
-    from schoolai.db.models.teacher import Schedule, Teacher
-
     async with async_session() as session:
         teacher = (
             await session.execute(select(Teacher).where(Teacher.telegram_id == telegram_id))
@@ -579,13 +540,6 @@ _DAYS_NAME = ["Lunes", "Martes", "Miércoles", "Jueves", "Viernes"]
 
 async def _my_schedule(telegram_id: int, day: str | None = None) -> str:
     """Returns the teacher's weekly schedule, optionally filtered by day."""
-    from collections import defaultdict
-
-    from sqlalchemy import select
-
-    from schoolai.db.connection import async_session
-    from schoolai.db.models.teacher import Schedule, Teacher
-
     async with async_session() as session:
         teacher = (
             await session.execute(select(Teacher).where(Teacher.telegram_id == telegram_id))
@@ -632,8 +586,6 @@ async def _my_schedule(telegram_id: int, day: str | None = None) -> str:
 
 async def _python_repl(code: str) -> str:
     """Executes restricted Python code with read-only DB access."""
-    from schoolai.skills.orchestrator.repl import run_repl
-
     return await run_repl(code)
 
 
@@ -646,8 +598,6 @@ async def _search_context(
     category: str | None = None,
 ) -> str:
     """Searches the teacher's context documents (personal + institutional)."""
-    from schoolai.skills.context.tools import search_context
-
     return await search_context(telegram_id=telegram_id, query=query, category=category)
 
 
@@ -657,29 +607,21 @@ async def _list_context_docs(
     scope: str | None = None,
 ) -> str:
     """Lists available context documents for the teacher."""
-    from schoolai.skills.context.tools import list_context_docs
-
     return await list_context_docs(telegram_id=telegram_id, category=category, scope=scope)
 
 
 async def _delete_context_doc(telegram_id: int, doc_id: int) -> str:
     """Deletes a context document by ID."""
-    from schoolai.skills.context.tools import delete_context_doc
-
     return await delete_context_doc(telegram_id=telegram_id, doc_id=doc_id)
 
 
 async def _web_search(query: str) -> str:
     """Searches the internet via DuckDuckGo and returns top results."""
-    from schoolai.skills.context.tools import web_search
-
     return await web_search(query=query)
 
 
 async def _save_web_page(telegram_id: int, url: str, hint: str | None = None) -> str:
     """Downloads a web page and saves it as a context document."""
-    from schoolai.skills.context.tools import save_web_page
-
     return await save_web_page(telegram_id=telegram_id, url=url, hint=hint)
 
 
@@ -694,8 +636,6 @@ async def _create_reminder(
     course: str | None = None,
 ) -> str:
     """Schedules a reminder via Telegram (teacher) and/or WhatsApp (parents)."""
-    from schoolai.skills.reminders.tools import create_reminder
-
     return await create_reminder(
         telegram_id=telegram_id,
         message=message,
@@ -707,15 +647,11 @@ async def _create_reminder(
 
 async def _list_reminders(telegram_id: int, status: str = "pending") -> str:
     """Lists the teacher's reminders."""
-    from schoolai.skills.reminders.tools import list_reminders
-
     return await list_reminders(telegram_id=telegram_id, status=status)
 
 
 async def _cancel_reminder(telegram_id: int, reminder_id: int) -> str:
     """Cancels a pending reminder by ID."""
-    from schoolai.skills.reminders.tools import cancel_reminder
-
     return await cancel_reminder(telegram_id=telegram_id, reminder_id=reminder_id)
 
 
