@@ -27,6 +27,36 @@ from typing import Any
 
 from loguru import logger
 
+# ── Helpers de builtins seguros ───────────────────────────────────────────────
+
+_MAX_POW_EXPONENT = 10_000
+_MAX_STR_LEN = 50_000
+_MAX_MEMORY_BYTES = 256 * 1024 * 1024  # 256 MB
+
+
+def _safe_pow(base: Any, exp: Any, mod: Any = None) -> Any:
+    """pow() que rechaza exponentes enormes para prevenir agotamiento de CPU."""
+    if isinstance(exp, int) and abs(exp) > _MAX_POW_EXPONENT:
+        raise ValueError(f"exponente {exp} excede el límite de {_MAX_POW_EXPONENT}")
+    return builtins.pow(base, exp, mod)
+
+
+def _safe_repr(obj: Any) -> str:
+    """repr() con límite de longitud para prevenir agotamiento de memoria."""
+    s = builtins.repr(obj)
+    if len(s) > _MAX_STR_LEN:
+        return s[:_MAX_STR_LEN] + f"... (truncado, {len(s)} chars)"
+    return s
+
+
+def _safe_format(value: Any, fmt: str = "") -> str:
+    """format() con límite de longitud."""
+    s = builtins.format(value, fmt)
+    if len(s) > _MAX_STR_LEN:
+        return s[:_MAX_STR_LEN] + "... (truncado)"
+    return s
+
+
 # ── Builtins permitidos ────────────────────────────────────────────────────────
 
 _SAFE_BUILTINS: dict[str, Any] = {
@@ -81,36 +111,6 @@ _SAFE_BUILTINS: dict[str, Any] = {
     "AttributeError": AttributeError,
     "StopIteration": StopIteration,
 }
-
-# ── Límites de recursos ─────────────────────────────────────────────────────────
-
-_MAX_POW_EXPONENT = 10_000
-_MAX_STR_LEN = 50_000
-_MAX_MEMORY_BYTES = 256 * 1024 * 1024  # 256 MB
-
-
-def _safe_pow(base: Any, exp: Any, mod: Any = None) -> Any:
-    """pow() que rechaza exponentes enormes para prevenir agotamiento de CPU."""
-    if isinstance(exp, int) and abs(exp) > _MAX_POW_EXPONENT:
-        raise ValueError(f"exponente {exp} excede el límite de {_MAX_POW_EXPONENT}")
-    return builtins.pow(base, exp, mod)
-
-
-def _safe_repr(obj: Any) -> str:
-    """repr() con límite de longitud para prevenir agotamiento de memoria."""
-    s = builtins.repr(obj)
-    if len(s) > _MAX_STR_LEN:
-        return s[:_MAX_STR_LEN] + f"... (truncado, {len(s)} chars)"
-    return s
-
-
-def _safe_format(value: Any, fmt: str = "") -> str:
-    """format() con límite de longitud."""
-    s = builtins.format(value, fmt)
-    if len(s) > _MAX_STR_LEN:
-        return s[:_MAX_STR_LEN] + f"... (truncado, {len(s)} chars)"
-    return s
-
 
 _ALLOWED_MODULES = frozenset({"datetime", "math", "collections", "re", "json", "decimal"})
 

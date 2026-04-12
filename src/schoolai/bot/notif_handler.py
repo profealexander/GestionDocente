@@ -100,7 +100,7 @@ async def handle_doc_notify_callback(update: Update, context: ContextTypes.DEFAU
         except Exception as exc:
             logger.error(f"[doc_notify] register_notification failed: {exc}")
             await context.bot.send_message(
-                chat_id, f"❌ Error al registrar la notificación. Intente nuevamente."
+                chat_id, "❌ Error al registrar la notificación. Intente nuevamente."
             )
             return
 
