@@ -8,7 +8,7 @@ from loguru import logger
 from telegram import InlineKeyboardButton, InlineKeyboardMarkup
 from telegram.constants import ParseMode
 
-from schoolai.db.connection import async_session
+from schoolai.db.connection import get_db_session
 from schoolai.db.models.cuota import Actividad
 from schoolai.skills.cuotas.extractor import CuotaExtract
 from schoolai.skills.cuotas.service import (
@@ -96,7 +96,7 @@ async def handle_edit(update, user_id: int, data: CuotaExtract) -> None:
 
     teacher_id = await _get_teacher_id(user_id)
 
-    async with async_session() as session:
+    async with get_db_session() as session:
         if data.nombre:
             actividad = await get_actividad_by_nombre(session, data.nombre)
             if not actividad:
@@ -148,7 +148,7 @@ async def handle_cuota_edit_pick_callback(update, context) -> None:
 
     actividad_id = int(query.data.split(":")[1])
 
-    async with async_session() as session:
+    async with get_db_session() as session:
         actividad = await session.get(Actividad, actividad_id)
 
     if not actividad:
@@ -174,7 +174,7 @@ async def handle_cuota_edit_field_callback(update, context) -> None:
     actividad_id = int(parts[1])
     field = parts[2]
 
-    async with async_session() as session:
+    async with get_db_session() as session:
         actividad = await session.get(Actividad, actividad_id)
 
     if not actividad:
@@ -210,7 +210,7 @@ async def handle_cuota_edit_toggle_callback(update, context) -> None:
 
     actividad_id = int(query.data.split(":")[1])
 
-    async with async_session() as session:
+    async with get_db_session() as session:
         actividad = await session.get(Actividad, actividad_id)
         if not actividad:
             await query.edit_message_text("Actividad no encontrada.")
@@ -241,7 +241,7 @@ async def handle_cuota_edit_add_part_callback(update, context) -> None:
 
     actividad_id = int(query.data.split(":")[1])
 
-    async with async_session() as session:
+    async with get_db_session() as session:
         actividad = await session.get(Actividad, actividad_id)
 
     if not actividad:
@@ -272,7 +272,7 @@ async def handle_cuota_edit_rm_part_callback(update, context) -> None:
 
     actividad_id = int(query.data.split(":")[1])
 
-    async with async_session() as session:
+    async with get_db_session() as session:
         actividad = await session.get(Actividad, actividad_id)
         participantes = await get_participantes(session, actividad_id)
 
@@ -329,7 +329,7 @@ async def handle_cuota_edit_rm_confirm_callback(update, context) -> None:
     actividad_id = int(parts[1])
     student_id = int(parts[2])
 
-    async with async_session() as session:
+    async with get_db_session() as session:
         actividad = await session.get(Actividad, actividad_id)
         stmt = _delete(ActividadParticipante).where(
             ActividadParticipante.actividad_id == actividad_id,
@@ -379,7 +379,7 @@ async def handle_cuota_edit_text(update, user_id: int) -> bool:
 
     clear_cuota_edit_field(user_id)
 
-    async with async_session() as session:
+    async with get_db_session() as session:
         actividad = await update_actividad(session, state.actividad_id, **kwargs)
 
     if not actividad:

@@ -6,7 +6,7 @@ from loguru import logger
 from telegram import InlineKeyboardButton, InlineKeyboardMarkup
 from telegram.constants import ParseMode
 
-from schoolai.db.connection import async_session
+from schoolai.db.connection import get_db_session
 from schoolai.db.models.cuota import Actividad
 from schoolai.db.models.grade import Grade
 from schoolai.skills.cuotas._helpers import _get_teacher_id
@@ -88,7 +88,7 @@ async def handle_create(update, user_id: int, data: CuotaExtract) -> None:
 
     teacher_id = await _get_teacher_id(user_id)
 
-    async with async_session() as session:
+    async with get_db_session() as session:
         actividad = await create_actividad(
             session, nombre=data.nombre, monto=data.monto, teacher_id=teacher_id,
         )
@@ -99,7 +99,7 @@ async def handle_create(update, user_id: int, data: CuotaExtract) -> None:
 
     added_msg = ""
     if data.course:
-        async with async_session() as session:
+        async with get_db_session() as session:
             from schoolai.skills.homework.repository import find_grade
 
             grade = await find_grade(session, data.course)
@@ -137,7 +137,7 @@ async def handle_cuota_add_callback(update, context) -> None:
     query = update.callback_query
     await query.answer()
     actividad_id = int(query.data.split(":")[1])
-    async with async_session() as session:
+    async with get_db_session() as session:
         grades = (await session.execute(_select(Grade).order_by(Grade.sort_order))).scalars().all()
     await query.edit_message_reply_markup(reply_markup=None)
     await context.bot.send_message(
@@ -162,7 +162,7 @@ async def handle_cuota_pick_callback(update, context) -> None:
 
     await query.edit_message_reply_markup(reply_markup=None)
 
-    async with async_session() as session:
+    async with get_db_session() as session:
         students = await get_students_in_grade(session, grade_id)
         actividad = await session.get(Actividad, actividad_id)
 
@@ -217,7 +217,7 @@ async def handle_cuota_addall_callback(update, context) -> None:
     clear_cuota_create(user_id)
     await query.edit_message_reply_markup(reply_markup=None)
 
-    async with async_session() as session:
+    async with get_db_session() as session:
         students = await get_students_in_grade(session, grade_id)
         added = await add_participantes(session, actividad_id, [s.id for s in students])
 
@@ -242,7 +242,7 @@ async def handle_cuota_done_callback(update, context) -> None:
     clear_cuota_participante(user_id)
     await query.edit_message_reply_markup(reply_markup=None)
 
-    async with async_session() as session:
+    async with get_db_session() as session:
         actividad = await session.get(Actividad, actividad_id)
         participantes = await get_participantes(session, actividad_id)
 
@@ -288,7 +288,7 @@ async def handle_cuota_names_text(update, user_id: int) -> bool:
         )
         return True
 
-    async with async_session() as session:
+    async with get_db_session() as session:
         added = await add_participantes(
             session, state.actividad_id, [s["student_id"] for s in selected],
         )
@@ -321,7 +321,7 @@ async def handle_cuota_participante_text(update, user_id: int) -> bool:
     import re
 
     from schoolai.bot.state import get_cuota_participante
-    from schoolai.db.connection import async_session
+    from schoolai.db.connection import get_db_session
     from schoolai.skills.cuotas.service import add_participantes, find_or_create_student
     from schoolai.skills.utils.courses import course_abbrev_map
     from schoolai.skills.utils.extract_rules import _extract_course
@@ -365,7 +365,7 @@ async def handle_cuota_participante_text(update, user_id: int) -> bool:
     added_lines = []
     created_lines = []
 
-    async with async_session() as session:
+    async with get_db_session() as session:
         for name in raw_names:
             if not grade_id:
                 # Sin curso → no podemos buscar ni crear
@@ -437,7 +437,7 @@ async def handle_add_grade_callback(update, context) -> None:
 
     await query.edit_message_reply_markup(reply_markup=None)
 
-    async with async_session() as session:
+    async with get_db_session() as session:
         students = await get_students_in_grade(session, grade_id)
         added = await add_participantes(session, actividad_id, [s.id for s in students])
 

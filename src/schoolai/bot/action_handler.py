@@ -27,7 +27,7 @@ from schoolai.bot.state import (
     set_wa_notification,
 )
 from schoolai.bot.whatsapp_handler import notify_keyboard
-from schoolai.db.connection import async_session
+from schoolai.db.connection import get_db_session
 from schoolai.db.models.grade import Grade
 from schoolai.db.models.homework import Homework
 from schoolai.skills.attendance.constants import ABSENT, JUSTIFIED, LATE
@@ -200,7 +200,7 @@ async def _sel_att_student(user_id: int, student_id: int, pending, bot) -> None:
     status = p["status"]
     status_labels = {"F": "Falta", "AT": "Atraso", "J": "Justificado"}
 
-    async with async_session() as session:
+    async with get_db_session() as session:
         await save_absences([student_id], {student_id: status}, attendance_date, session)
 
     label = status_labels.get(status, "Falta")
@@ -241,7 +241,7 @@ async def _sel_hw_task(user_id: int, hw_id: int, pending, bot) -> None:
     clear_selection(user_id)
     p = pending.payload
 
-    async with async_session() as session:
+    async with get_db_session() as session:
         hw = await session.get(Homework, hw_id)
         if not hw:
             await bot.send_message(pending.chat_id, "Tarea no encontrada.")
@@ -338,7 +338,7 @@ async def _sel_hw_student(user_id: int, student_id: int, pending, bot) -> None:
     if p.get("hw_id") is not None:
         # Single known task — save directly
         clear_selection(user_id)
-        async with async_session() as session:
+        async with get_db_session() as session:
             hw = await session.get(Homework, p["hw_id"])
             if not hw:
                 await bot.send_message(pending.chat_id, "Tarea no encontrada.")
@@ -365,7 +365,7 @@ async def _sel_hw_student(user_id: int, student_id: int, pending, bot) -> None:
     elif p.get("hw_ids"):
         # Multiple known tasks — save to all
         clear_selection(user_id)
-        async with async_session() as session:
+        async with get_db_session() as session:
             hws = (
                 (await session.execute(select(Homework).where(Homework.id.in_(p["hw_ids"]))))
                 .scalars()
@@ -540,7 +540,7 @@ async def _handle_attendance(
 
     if not data.course:
         store_pending(user_id, result)
-        async with async_session() as session:
+        async with get_db_session() as session:
             grades = (
                 (await session.execute(select(Grade).order_by(Grade.sort_order))).scalars().all()
             )
@@ -609,7 +609,7 @@ async def _save_attendance(
     status = STATUS_MAP.get(data.status, ABSENT)
     extracted = [{"name": n, "status": status} for n in data.names]
 
-    async with async_session() as session:
+    async with get_db_session() as session:
         grade = await find_grade(session, data.course)
         if not grade:
             await reply_fn(f"No encontré el curso *{data.course}*.", parse_mode=ParseMode.MARKDOWN)
@@ -639,7 +639,7 @@ async def _save_attendance(
         _period_start = _period.get("start_time") if _period else None
         _period_end = _period.get("end_time") if _period else None
 
-        async with async_session() as session:
+        async with get_db_session() as session:
             # 2. Fallback: inferir del horario si no hay jornada
             if _subject_name is None:
                 _teacher = (
@@ -740,7 +740,7 @@ async def _handle_homework(
 
     if not data.course:
         store_pending(user_id, result)
-        async with async_session() as session:
+        async with get_db_session() as session:
             grades = (
                 (await session.execute(select(Grade).order_by(Grade.sort_order))).scalars().all()
             )
@@ -804,7 +804,7 @@ async def _save_homework(reply_fn, user_id: int, data: HomeworkExtract) -> None:
         await reply_fn("⚠️ No se puede registrar una tarea sin materia.")
         return
 
-    async with async_session() as session:
+    async with get_db_session() as session:
         grade = await find_grade(session, data.course)
         if not grade:
             await reply_fn(f"No encontré el curso *{data.course}*.", parse_mode=ParseMode.MARKDOWN)
@@ -864,7 +864,7 @@ async def _save_homework(reply_fn, user_id: int, data: HomeworkExtract) -> None:
         # Fallback: crear la tarea para todas las materias del docente en ese curso.
         from schoolai.skills.homework.repository import get_teacher_subjects
 
-        async with async_session() as session:
+        async with get_db_session() as session:
             grade = await find_grade(session, data.course)
             delivery = _resolve_delivery(data.delivery_date)
             teacher_subjects = await get_teacher_subjects(session, teacher_id, grade.id)
@@ -993,7 +993,7 @@ async def _handle_query(update, user_id: int, result: ExtractionResult, data: Qu
 
     if not data.courses:
         store_pending(user_id, result)
-        async with async_session() as session:
+        async with get_db_session() as session:
             grades = (
                 (await session.execute(select(Grade).order_by(Grade.sort_order))).scalars().all()
             )
@@ -1031,14 +1031,14 @@ async def _handle_query(update, user_id: int, result: ExtractionResult, data: Qu
         from schoolai.skills.query.formatter import format_attendance_multi
         from schoolai.skills.query.resolver import resolve_attendance_multi
 
-        async with async_session() as session:
+        async with get_db_session() as session:
             data_list = await resolve_attendance_multi(intent, grade_ids, session)
         text = format_attendance_multi(data_list, label)
         await update.message.reply_text(text, parse_mode=ParseMode.MARKDOWN)
     else:
         from schoolai.db.models.teacher import Teacher as _Teacher
 
-        async with async_session() as session:
+        async with get_db_session() as session:
             teacher_subject_ids = None
             _teacher = (
                 await session.execute(
@@ -1188,7 +1188,7 @@ async def _handle_homework_report(
 
     if not data.course:
         store_pending(user_id, result)
-        async with async_session() as session:
+        async with get_db_session() as session:
             grades = (
                 (await session.execute(select(Grade).order_by(Grade.sort_order))).scalars().all()
             )
@@ -1207,7 +1207,7 @@ async def _save_homework_report(
     chat_id: int = 0,
 ) -> None:
 
-    async with async_session() as session:
+    async with get_db_session() as session:
         grade = await find_grade(session, data.course)
         if not grade:
             await reply_fn(f"No encontré el curso *{data.course}*.", parse_mode=ParseMode.MARKDOWN)
@@ -1434,7 +1434,7 @@ async def _query_my_courses_attendance(reply_fn, user_id: int, intent) -> None:
     from schoolai.skills.query.formatter import format_attendance_multi
     from schoolai.skills.query.resolver import resolve_attendance_multi
 
-    async with async_session() as session:
+    async with get_db_session() as session:
         teacher = (
             await session.execute(_sel(Teacher).where(Teacher.telegram_id == user_id))
         ).scalar_one_or_none()
@@ -1478,7 +1478,7 @@ async def _query_my_courses_homework(reply_fn, user_id: int, data) -> None:
     from schoolai.skills.query.formatter import format_homework_multi
     from schoolai.skills.query.resolver import resolve_homework_multi
 
-    async with async_session() as session:
+    async with get_db_session() as session:
         teacher = (
             await session.execute(_sel(Teacher).where(Teacher.telegram_id == user_id))
         ).scalar_one_or_none()
@@ -1576,7 +1576,7 @@ async def handle_act_callback(update, context) -> None:
 
         intent_obj = _build_query_intent(result.data.period, result.data.subject)
         intent_obj.type = result.data.query_type
-        async with async_session() as session:
+        async with get_db_session() as session:
             grade = await _find_grade(session, grade_name)
         if grade:
             await _run_query(query.edit_message_text, user_id, intent_obj, grade.id)

@@ -20,7 +20,7 @@ from sqlalchemy import select
 
 from schoolai.config import settings
 from schoolai.constants import TRUNCATE_DESCRIPTION
-from schoolai.db.connection import async_session
+from schoolai.db.connection import get_db_session
 from schoolai.db.models.grade import Grade
 from schoolai.db.models.teacher import Schedule, Teacher
 from schoolai.skills.attendance.matcher import match_names
@@ -33,6 +33,7 @@ from schoolai.skills.context.tools import (
     web_search,
 )
 from schoolai.skills.cuotas.service import (
+    add_participantes,
     create_actividad,
     get_actividad_by_nombre,
     get_actividades,
@@ -127,7 +128,7 @@ async def _record_attendance(
     db_status = status_map.get(status, "F")
     att_date = _parse_date(date)
 
-    async with async_session() as session:
+    async with get_db_session() as session:
         grade = await find_grade(session, course)
         if not grade:
             return f"Curso '{course}' no encontrado."
@@ -184,7 +185,7 @@ async def _query_attendance(
     intent = _period_to_dates(period, "attendance")
     results = []
 
-    async with async_session() as session:
+    async with get_db_session() as session:
         for course in courses:
             grade = await find_grade(session, course)
             if not grade:
@@ -212,7 +213,7 @@ async def _create_assignment(
     subjects = [s for s in (subjects or []) if s]
     delivery = _parse_date(due_date) if due_date else None
 
-    async with async_session() as session:
+    async with get_db_session() as session:
         grade = await find_grade(session, course)
         if not grade:
             return f"Curso '{course}' no encontrado."
@@ -294,7 +295,7 @@ async def _query_assignments(
     hw_data = []
     not_found = []
 
-    async with async_session() as session:
+    async with get_db_session() as session:
         teacher = (
             await session.execute(select(Teacher).where(Teacher.telegram_id == telegram_id))
         ).scalar_one_or_none()
@@ -324,7 +325,7 @@ async def _query_assignments(
 
 async def _delete_assignment(number: int, course: str) -> str:
     """Deletes a homework assignment by sequence number and course. Submissions cascade."""
-    async with async_session() as session:
+    async with get_db_session() as session:
         grade = await find_grade(session, course)
         if not grade:
             return f"Curso '{course}' no encontrado."
@@ -350,7 +351,7 @@ async def _list_courses(level: str | None = None) -> str:
         "educación": "egb",
     }
 
-    async with async_session() as session:
+    async with get_db_session() as session:
         stmt = select(Grade).order_by(Grade.sort_order)
         grades = (await session.execute(stmt)).scalars().all()
 
@@ -369,7 +370,7 @@ async def _list_courses(level: str | None = None) -> str:
 
 async def _list_activities(telegram_id: int) -> str:
     """Lists active school activities filtered by the requesting teacher."""
-    async with async_session() as session:
+    async with get_db_session() as session:
         teacher = (
             await session.execute(select(Teacher).where(Teacher.telegram_id == telegram_id))
         ).scalar_one_or_none()
@@ -391,7 +392,7 @@ async def _create_activity(
     course: str | None = None,
 ) -> str:
     """Creates a new school activity or fee."""
-    async with async_session() as session:
+    async with get_db_session() as session:
         actividad = await create_actividad(session, name, amount)
         act_id = actividad.id
 
@@ -415,7 +416,7 @@ async def _create_activity(
 
 async def _activity_status(name: str) -> str:
     """Queries the payment status of an activity by name."""
-    async with async_session() as session:
+    async with get_db_session() as session:
         actividad = await get_actividad_by_nombre(session, name)
         if not actividad:
             return f"Actividad '{name}' no encontrada."
@@ -452,7 +453,7 @@ async def _register_payment(
     if not course:
         return "Se requiere el curso para identificar a los estudiantes."
 
-    async with async_session() as session:
+    async with get_db_session() as session:
         act = await get_actividad_by_nombre(session, activity)
         if not act:
             return f"Actividad '{activity}' no encontrada."
@@ -486,7 +487,7 @@ async def _register_payment(
 
 async def _my_courses(telegram_id: int) -> str:
     """Returns the current teacher's assigned courses and subjects."""
-    async with async_session() as session:
+    async with get_db_session() as session:
         teacher = (
             await session.execute(select(Teacher).where(Teacher.telegram_id == telegram_id))
         ).scalar_one_or_none()
@@ -540,7 +541,7 @@ _DAYS_NAME = ["Lunes", "Martes", "Miércoles", "Jueves", "Viernes"]
 
 async def _my_schedule(telegram_id: int, day: str | None = None) -> str:
     """Returns the teacher's weekly schedule, optionally filtered by day."""
-    async with async_session() as session:
+    async with get_db_session() as session:
         teacher = (
             await session.execute(select(Teacher).where(Teacher.telegram_id == telegram_id))
         ).scalar_one_or_none()

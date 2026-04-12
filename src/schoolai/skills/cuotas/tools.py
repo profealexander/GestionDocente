@@ -49,52 +49,52 @@ async def _create_actividad(
     teacher_id: int | None = None,
     descripcion: str | None = None,
 ):
-    from schoolai.db.connection import async_session
+    from schoolai.db.connection import get_db_session
     from schoolai.skills.cuotas.service import create_actividad
 
-    async with async_session() as session:
+    async with get_db_session() as session:
         return await create_actividad(session, nombre, monto, teacher_id, descripcion)
 
 
 async def _list_actividades(teacher_id: int | None = None, only_active: bool = True):
-    from schoolai.db.connection import async_session
+    from schoolai.db.connection import get_db_session
     from schoolai.skills.cuotas.service import get_actividades
 
-    async with async_session() as session:
+    async with get_db_session() as session:
         return await get_actividades(session, teacher_id=teacher_id, only_active=only_active)
 
 
 async def _get_actividad_by_nombre(nombre: str):
-    from schoolai.db.connection import async_session
+    from schoolai.db.connection import get_db_session
     from schoolai.skills.cuotas.service import get_actividad_by_nombre
 
-    async with async_session() as session:
+    async with get_db_session() as session:
         return await get_actividad_by_nombre(session, nombre)
 
 
 async def _get_estado_actividad(actividad_id: int):
-    from schoolai.db.connection import async_session
+    from schoolai.db.connection import get_db_session
     from schoolai.skills.cuotas.service import get_estado_actividad
 
-    async with async_session() as session:
+    async with get_db_session() as session:
         return await get_estado_actividad(session, actividad_id)
 
 
 async def _add_participantes(actividad_id: int, student_ids: list[int]) -> int:
-    from schoolai.db.connection import async_session
+    from schoolai.db.connection import get_db_session
     from schoolai.skills.cuotas.service import add_participantes
 
-    async with async_session() as session:
+    async with get_db_session() as session:
         return await add_participantes(session, actividad_id, student_ids)
 
 
 async def _add_students_from_course(actividad_id: int, course_abbrev: str) -> int:
     """Agrega todos los alumnos activos de un curso a la actividad."""
-    from schoolai.db.connection import async_session
+    from schoolai.db.connection import get_db_session
     from schoolai.skills.cuotas.service import add_participantes, get_students_in_grade
     from schoolai.skills.homework.repository import find_grade
 
-    async with async_session() as session:
+    async with get_db_session() as session:
         grade = await find_grade(session, course_abbrev)
         if not grade:
             return 0
@@ -108,20 +108,20 @@ async def _register_pago(
     monto: float,
     notas: str | None = None,
 ):
-    from schoolai.db.connection import async_session
+    from schoolai.db.connection import get_db_session
     from schoolai.skills.cuotas.service import register_pago
 
-    async with async_session() as session:
+    async with get_db_session() as session:
         return await register_pago(session, actividad_id, student_id, monto, notas)
 
 
 async def _export_actividad(actividad_id: int) -> tuple | None:
     """Retorna (actividad, participantes, xlsx_bytes) o None si no existe."""
-    from schoolai.db.connection import async_session
+    from schoolai.db.connection import get_db_session
     from schoolai.skills.cuotas.exporter import export_actividad_excel
     from schoolai.skills.cuotas.service import get_estado_actividad
 
-    async with async_session() as session:
+    async with get_db_session() as session:
         actividad, participantes = await get_estado_actividad(session, actividad_id)
     if not actividad or not participantes:
         return None
