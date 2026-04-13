@@ -1,8 +1,9 @@
 """Match extracted name strings to actual students in the DB."""
 
 from dataclasses import dataclass, field
-from difflib import SequenceMatcher
 from typing import NamedTuple
+
+from rapidfuzz import fuzz as _fuzz
 
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -11,7 +12,7 @@ from schoolai.db.models.person import Person
 from schoolai.db.models.student import Student
 from schoolai.skills.utils.text import normalize as _norm
 
-SIMILARITY_THRESHOLD = 0.80  # mínimo para considerar nombre similar
+SIMILARITY_THRESHOLD = 0.75  # mínimo para considerar nombre similar
 
 
 class _StudentEntry(NamedTuple):
@@ -165,19 +166,15 @@ def _match_one(
         ]
         return MatchResult(raw_name=raw, status=status, candidates=candidates)
 
-    # Fuzzy match — compare against pre-normalized short name (first + last)
-    # Uses real_quick_ratio → quick_ratio → ratio cascade: 3-4x faster than ratio() alone
+    # Fuzzy match — WRatio combina ratio + partial_ratio + token_sort_ratio.
+    # Maneja mejor apellido solo ("Recalde" vs "Recalde Katerine") y nombres
+    # reordenados ("Katerine Recalde" vs "Recalde Katerine").
     norm_raw = _norm(raw)
     fuzzy_hits: list[tuple[float, int]] = []
     for sid, entry in by_id.items():
-        sm = SequenceMatcher(None, norm_raw, entry.norm_short)
-        if (
-            sm.real_quick_ratio() >= SIMILARITY_THRESHOLD
-            and sm.quick_ratio() >= SIMILARITY_THRESHOLD
-        ):
-            score = sm.ratio()
-            if score >= SIMILARITY_THRESHOLD:
-                fuzzy_hits.append((score, sid))
+        score = _fuzz.WRatio(norm_raw, entry.norm_short) / 100.0
+        if score >= SIMILARITY_THRESHOLD:
+            fuzzy_hits.append((score, sid))
 
     fuzzy_hits.sort(reverse=True)
 

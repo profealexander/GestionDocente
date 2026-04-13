@@ -1,6 +1,6 @@
 """Máquina de estados y handlers del Modo Jornada."""
 
-from datetime import date
+from datetime import date, timedelta
 
 from loguru import logger
 from telegram import InlineKeyboardButton, InlineKeyboardMarkup
@@ -25,6 +25,7 @@ from schoolai.bot.jornada.keyboards import (
     _ABSENT_REASONS,
     _FINISHED_KEYBOARD,
     _active_keyboard,
+    day_pick_keyboard,
 )
 
 # ── SOP ───────────────────────────────────────────────────────────────────────
@@ -68,10 +69,10 @@ async def handle_jornada_command(update, context) -> None:
         await _send_period_card(context.bot, session_obj, user_id)
         return
 
-    today = date.today().weekday()
-    if today > 4:
-        await update.message.reply_text("Hoy es fin de semana. ¡Descansa! 😄")
-        return
+    raw_today = date.today().weekday()
+    # Fin de semana → usar viernes como día de referencia para el horario
+    today = raw_today if raw_today <= 4 else 4
+    is_weekend = raw_today > 4
 
     async with async_session() as session:
         teacher = await get_teacher_by_telegram(session, user_id)
@@ -85,18 +86,40 @@ async def handle_jornada_command(update, context) -> None:
 
     if not periods:
         from schoolai.bot.state import DAY_NAMES
+        # Sin horario: mostrar teclado de jornada terminada para que pueda
+        # usar «Cambiar día» y seleccionar el día que necesita registrar.
         await update.message.reply_text(
-            f"No tienes clases registradas para hoy ({DAY_NAMES[today]}).\n"
-            "Usa /db → 📅 Horario para registrar tu horario.",
+            "📋 *No hay horario cargado para este día.*\n\n"
+            "Usa *«Cambiar día»* para seleccionar el día que quieres registrar.",
+            parse_mode=ParseMode.MARKDOWN,
+            reply_markup=_FINISHED_KEYBOARD,
         )
         return
 
     period_list = _build_period_list(periods)
-    start_index = _current_period_index(period_list)
+    # En fin de semana siempre modo "done" (retroactivo); en semana, detectar período actual
+    start_index = len(period_list) if is_weekend else _current_period_index(period_list)
+
+    # session_date: hoy para días de semana; último viernes para fin de semana
+    real_today = date.today()
+    if is_weekend:
+        days_to_friday = (real_today.weekday() - 4) % 7  # sábado→1, domingo→2
+        session_date = real_today - timedelta(days=days_to_friday)
+    else:
+        session_date = real_today
 
     if start_index >= len(period_list):
+        from schoolai.bot.state import DAY_NAMES
+        if is_weekend:
+            msg = (
+                f"📅 *Hoy es fin de semana.*\n\n"
+                f"Cargué el horario del *{DAY_NAMES[today]}*.\n"
+                "_Usa «Seleccionar período» para registrar o «Cambiar día» para otro día._"
+            )
+        else:
+            msg = "✅ *Todos los períodos de hoy ya pasaron.*\n\n¿Qué deseas hacer?"
         await update.message.reply_text(
-            "✅ *Todos los períodos de hoy ya pasaron.*\n\n¿Qué deseas hacer?",
+            msg,
             parse_mode=ParseMode.MARKDOWN,
             reply_markup=_FINISHED_KEYBOARD,
         )
@@ -107,6 +130,7 @@ async def handle_jornada_command(update, context) -> None:
             periods=period_list,
             current_index=len(period_list) - 1,
             status="done",
+            session_date=session_date,
         )
         set_jornada(user_id, jornada)
         return
@@ -117,6 +141,7 @@ async def handle_jornada_command(update, context) -> None:
         day_of_week=today,
         periods=period_list,
         current_index=start_index,
+        session_date=session_date,
     )
     set_jornada(user_id, jornada)
     await _send_period_card(context.bot, jornada, user_id)
@@ -135,10 +160,12 @@ async def handle_jornada_callback(update, context: ContextTypes.DEFAULT_TYPE) ->
     user_id = update.effective_user.id
     data = query.data
 
-    if data == "jor_start" and date.today().weekday() > 4:
-        await query.answer("Hoy es fin de semana. ¡Descansa! 😄", show_alert=True)
+    if data == "jor_day_pick":
+        await _on_day_pick(query, user_id)
         return
-
+    if data.startswith("jor_day:"):
+        await _on_day_select(query, user_id, int(data.split(":")[1]), context)
+        return
     if data.startswith("jor_goto:"):
         await _on_goto(query, user_id, int(data.split(":")[1]), context)
         return
@@ -172,7 +199,9 @@ async def handle_jornada_callback(update, context: ContextTypes.DEFAULT_TYPE) ->
 
 
 async def _on_start(query, user_id: int, context: ContextTypes.DEFAULT_TYPE) -> None:
-    today = date.today().weekday()
+    raw_today = date.today().weekday()
+    today = raw_today if raw_today <= 4 else 4  # fin de semana → viernes
+    is_weekend = raw_today > 4
 
     async with async_session() as session:
         teacher = await get_teacher_by_telegram(session, user_id)
@@ -182,11 +211,23 @@ async def _on_start(query, user_id: int, context: ContextTypes.DEFAULT_TYPE) -> 
         periods = await get_schedule_for_day(session, teacher.id, today)
 
     if not periods:
-        await query.edit_message_text("No hay clases registradas para hoy.")
+        await query.edit_message_text(
+            "📋 *No hay horario cargado para este día.*\n\n"
+            "Usa *«Cambiar día»* para seleccionar el día que quieres registrar.",
+            parse_mode=ParseMode.MARKDOWN,
+            reply_markup=_FINISHED_KEYBOARD,
+        )
         return
 
     period_list = _build_period_list(periods)
-    start_index = _current_period_index(period_list)
+    start_index = len(period_list) if is_weekend else _current_period_index(period_list)
+
+    real_today = date.today()
+    if is_weekend:
+        days_to_friday = (real_today.weekday() - 4) % 7
+        session_date = real_today - timedelta(days=days_to_friday)
+    else:
+        session_date = real_today
 
     if start_index >= len(period_list):
         jornada = JornadaSession(
@@ -196,10 +237,20 @@ async def _on_start(query, user_id: int, context: ContextTypes.DEFAULT_TYPE) -> 
             periods=period_list,
             current_index=len(period_list) - 1,
             status="done",
+            session_date=session_date,
         )
         set_jornada(user_id, jornada)
+        from schoolai.bot.state import DAY_NAMES
+        if is_weekend:
+            msg = (
+                f"📅 *Hoy es fin de semana.*\n\n"
+                f"Cargué el horario del *{DAY_NAMES[today]}*.\n"
+                "_Usa «Seleccionar período» para registrar o «Cambiar día» para otro día._"
+            )
+        else:
+            msg = "✅ *Todos los períodos de hoy ya pasaron.*\n\n¿Qué deseas hacer?"
         await query.edit_message_text(
-            "✅ *Todos los períodos de hoy ya pasaron.*\n\n¿Qué deseas hacer?",
+            msg,
             parse_mode=ParseMode.MARKDOWN,
             reply_markup=_FINISHED_KEYBOARD,
         )
@@ -211,6 +262,7 @@ async def _on_start(query, user_id: int, context: ContextTypes.DEFAULT_TYPE) -> 
         day_of_week=today,
         periods=period_list,
         current_index=start_index,
+        session_date=session_date,
     )
     set_jornada(user_id, jornada)
     await query.edit_message_reply_markup(reply_markup=None)
@@ -348,6 +400,7 @@ async def _on_absent_day_reason(
             day_of_week=today,
             periods=period_list,
             current_index=0,
+            session_date=date.today(),
         )
 
     if reason == "other":
@@ -512,6 +565,79 @@ async def _on_goto(query, user_id: int, index: int, context) -> None:
     set_jornada(user_id, jornada)
     await query.edit_message_reply_markup(reply_markup=None)
     await _send_period_card(context.bot, jornada, user_id)
+
+
+async def _on_day_pick(query, user_id: int) -> None:
+    """Muestra selector de día para registro retroactivo."""
+    jornada = get_jornada(user_id)
+    current_dow = jornada.day_of_week if jornada else date.today().weekday()
+    await query.edit_message_text(
+        "📅 *¿Para qué día quieres registrar?*\n"
+        "_Se cargará el horario de ese día._",
+        parse_mode="Markdown",
+        reply_markup=day_pick_keyboard(current_dow),
+    )
+
+
+async def _on_day_select(
+    query, user_id: int, dow: int, context: ContextTypes.DEFAULT_TYPE
+) -> None:
+    """Recarga la jornada para el día de semana seleccionado."""
+    if not (0 <= dow <= 4):
+        await query.answer("Día inválido.", show_alert=True)
+        return
+
+    # Calcular la fecha del día seleccionado (ocurrencia más reciente ≤ hoy)
+    today = date.today()
+    days_back = (today.weekday() - dow) % 7
+    session_date = today - timedelta(days=days_back)
+
+    async with async_session() as session:
+        teacher = await get_teacher_by_telegram(session, user_id)
+        if not teacher:
+            await query.edit_message_text("Perfil de docente no encontrado.")
+            return
+        periods = await get_schedule_for_day(session, teacher.id, dow)
+
+    if not periods:
+        from schoolai.bot.state import DAY_NAMES
+        await query.edit_message_text(
+            f"No tienes clases registradas para ese día ({DAY_NAMES[dow]}).",
+        )
+        return
+
+    period_list = _build_period_list(periods)
+
+    jornada = get_jornada(user_id)
+    if jornada is None:
+        jornada = JornadaSession(
+            teacher_id=teacher.id,
+            chat_id=query.message.chat_id,
+            day_of_week=dow,
+            periods=period_list,
+            session_date=session_date,
+            status="done",
+            current_index=len(period_list) - 1,
+        )
+    else:
+        jornada.day_of_week = dow
+        jornada.periods = period_list
+        jornada.session_date = session_date
+        jornada.current_index = len(period_list) - 1
+        jornada.status = "done"
+        jornada.clear_context()
+
+    set_jornada(user_id, jornada)
+    await query.edit_message_reply_markup(reply_markup=None)
+
+    from schoolai.bot.state import DAY_NAMES
+    await query.message.reply_text(
+        f"📅 *Jornada del {DAY_NAMES[dow]} {session_date.strftime('%d/%m/%Y')}*\n"
+        "_Usa «Seleccionar período» para registrar asistencia o tareas._",
+        parse_mode="Markdown",
+        reply_markup=_FINISHED_KEYBOARD,
+    )
+    logger.info(f"[jornada] day_select user={user_id} dow={dow} date={session_date}")
 
 
 async def _on_report_send(query, grade_id: int, context) -> None:

@@ -284,6 +284,10 @@ class JornadaSession:
     ]  # [{period_num, start_time, end_time, grade_id, grade_name, subject_id, subject_name}]
     current_index: int = 0  # índice activo en periods (0-based)
     status: JornadaStatus = "waiting"
+    # Fecha real del calendario — usada al guardar asistencia/tareas para evitar
+    # que date.today() dé un día distinto si la sesión persiste pasada la medianoche
+    # o si el docente registra retroactivamente para un día anterior.
+    session_date: date = field(default_factory=date.today)
     # Contexto activo — se llena al confirmar llegada
     grade_id: int | None = None
     grade_name: str | None = None
@@ -309,11 +313,24 @@ class JornadaSession:
         self.grade_id = self.grade_name = self.subject_id = self.subject_name = None
 
 
+def _decode_jornada(d: dict) -> "JornadaSession":
+    """Reconstruye JornadaSession desde dict de Redis.
+    Maneja entradas antiguas que no tienen session_date.
+    """
+    if "session_date" not in d:
+        # Sesiones antiguas: derivar la fecha del día de semana más reciente
+        today = date.today()
+        dow = d.get("day_of_week", today.weekday())
+        days_back = (today.weekday() - dow) % 7
+        d["session_date"] = today - __import__("datetime").timedelta(days=days_back)
+    return JornadaSession(**d)
+
+
 _jornada_store: StateStore[JornadaSession] = StateStore(
     "jornada",
     use_redis=True,
     ttl=_REDIS_TTL_JORNADA,
-    decode=lambda d: JornadaSession(**d),
+    decode=_decode_jornada,
 )
 
 
@@ -349,9 +366,44 @@ def iter_all_jornada() -> list[tuple[int, "JornadaSession"]]:
 
 
 def clear_jornada_all_stale() -> int:
-    """Limpia sesiones de jornada del día anterior."""
-    today = date.today().weekday()  # 0-4
-    return _jornada_store.cleanup_where(lambda s: s.day_of_week != today)
+    """Limpia sesiones de jornada de días anteriores."""
+    today = date.today()
+    return _jornada_store.cleanup_where(lambda s: s.session_date != today)
+
+
+# ── Conversation context (último intent mostrado) ─────────────────────────────
+
+
+@dataclass
+class ConversationCtx:
+    """Recuerda qué mostró el bot en la última respuesta.
+
+    Permite interpretar acciones ambiguas ("editar", "borrar") en el contexto
+    correcto: si el bot acabó de mostrar tareas, "editar" → editar tarea.
+    """
+    last_intent: str           # "homework" | "attendance" | "cuota" | ...
+    grade_id: int | None = None
+    grade_name: str | None = None
+
+
+_conv_ctx_store: StateStore[ConversationCtx] = StateStore(
+    "convctx",
+    use_redis=True,
+    ttl=_REDIS_TTL_SHORT,
+    decode=lambda d: ConversationCtx(**d),
+)
+
+
+def set_conversation_ctx(user_id: int, intent: str, grade_id: int | None = None, grade_name: str | None = None) -> None:
+    _conv_ctx_store.set(user_id, ConversationCtx(last_intent=intent, grade_id=grade_id, grade_name=grade_name))
+
+
+def get_conversation_ctx(user_id: int) -> ConversationCtx | None:
+    return _conv_ctx_store.get(user_id)
+
+
+def clear_conversation_ctx(user_id: int) -> None:
+    _conv_ctx_store.clear(user_id)
 
 
 # ── Pending course context ────────────────────────────────────────────────────
@@ -668,6 +720,37 @@ def get_broadcast_flow(user_id: int) -> BroadcastFlow | None:
 
 def clear_broadcast_flow(user_id: int) -> None:
     _broadcast_store.clear(user_id)
+
+
+# ── User mode (Registrar / Editar) ───────────────────────────────────────────
+
+UserModeValue = Literal["registrar", "editar"]
+
+
+@dataclass
+class UserMode:
+    mode: UserModeValue = "registrar"
+
+
+_usermode_store: StateStore[UserMode] = StateStore(
+    "usermode",
+    use_redis=True,
+    ttl=7200,  # 2h — se olvida si no interactúa
+    decode=lambda d: UserMode(**d),
+)
+
+
+def set_user_mode(user_id: int, mode: UserModeValue) -> None:
+    _usermode_store.set(user_id, UserMode(mode=mode))
+
+
+def get_user_mode(user_id: int) -> UserModeValue:
+    m = _usermode_store.get(user_id)
+    return m.mode if m else "registrar"
+
+
+def clear_user_mode(user_id: int) -> None:
+    _usermode_store.clear(user_id)
 
 
 # ── Legacy cleanup_stale (backward compat for callers) ────────────────────────

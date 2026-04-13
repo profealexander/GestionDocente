@@ -103,7 +103,7 @@ _PERIOD_TOKENS: tuple[tuple[str, str], ...] = (
 # ── Attendance patterns ───────────────────────────────────────────────────────
 
 _ABSENT_RE = re.compile(
-    r"\b(falt[oó]|faltaron|no\s+asisti[oó]|no\s+asistieron"
+    r"\b(faltas?|falt[oó]|faltaron|no\s+asisti[oó]|no\s+asistieron"
     r"|no\s+vino|ausente|inasistencia)\b",
     re.IGNORECASE,
 )
@@ -131,6 +131,25 @@ _HW_RE = re.compile(
 # ── Course extraction ─────────────────────────────────────────────────────────
 
 _COURSE_RE = re.compile(r"\b(\d{1,2}(?:bt|egb)|prep|i[12])\b", re.IGNORECASE)
+
+# Verbal course names stripped from name segments: "Primero BT", "Décimo EGB", etc.
+_COURSE_VERBAL_RE = re.compile(
+    r"\b("
+    r"primero?\s+bt|segundo?\s+bt|tercero?\s+bt"
+    r"|segundo?\s+egb|tercero?\s+egb|cuarto?\s+egb|quinto?\s+egb"
+    r"|sexto?\s+egb|s[eé]ptimo?\s+egb|octavo?\s+egb|noveno?\s+egb|d[eé]cimo?\s+egb"
+    r"|inicial\s+[12]|preparatoria"
+    r")\b",
+    re.IGNORECASE,
+)
+
+_PERIOD_OR_COURSE_RE = re.compile(
+    r"\b(hoy|ayer|esta\s+semana|semana\s+pasada|este\s+mes|mes\s+pasado|trimestre"
+    r"|\d{1,2}(?:bt|egb)|prep|i[12]"
+    r"|bachillerato|b[aá]sica|inicial|egb"
+    r"|primero|segundo|tercero|cuarto|quinto|sexto|s[eé]ptimo|octavo|noveno|d[eé]cimo)\b",
+    re.IGNORECASE,
+)
 
 _COURSE_ALIASES: dict[str, str] = {
     "1bt": "1bt",
@@ -188,11 +207,16 @@ def _extract_names(text: str, status_re: re.Pattern) -> list[str]:
         return []
     left = text[: m.start()].strip().rstrip(",.")
     right = _COURSE_RE.sub("", text[m.end() :]).strip().lstrip(",.")
+    right = _COURSE_VERBAL_RE.sub("", right).strip(", .")
     right = re.sub(r"\b(en|de|del|para|con)\b", "", right, flags=re.IGNORECASE).strip(", .")
 
     def _split(segment: str) -> list[str]:
         parts = re.split(r",\s*|\s+y\s+", segment, flags=re.IGNORECASE)
-        return [p.strip() for p in parts if _NAME_MIN_LEN <= len(p.strip()) <= _NAME_MAX_LEN]
+        return [
+            p.strip() for p in parts
+            if _NAME_MIN_LEN <= len(p.strip()) <= _NAME_MAX_LEN
+            and normalize(p.strip()) not in _ATT_KW
+        ]
 
     candidates = _split(left) or _split(right)
     return [c for c in candidates if not _COURSE_RE.fullmatch(c)]
@@ -336,7 +360,20 @@ def extract_prefilter(text: str) -> ExtractionResult | None:
 
     trigger = bool(_QUERY_TRIGGER_RE.match(t)) or bool(tokens & _TRIGGER_KW)
 
-    if is_att and (trigger or bool(_QUERY_ATT_RE.match(t))):
+    has_status_modifier = bool(_JUSTIFIED_RE.search(t)) or bool(_LATE_RE.search(t))
+
+    # Treat "starts with att keyword" as a query when:
+    # - a period/course indicator is present: "Faltas de hoy 3BT"
+    # - OR the entire message is only att keywords: "asistencia", "faltas"
+    # NOT when followed by a name: "Falta tatiana" (registration)
+    _pure_att = frozenset(norm.split()) <= _ATT_KW
+    is_likely_query_by_start = (
+        bool(_QUERY_ATT_RE.match(t))
+        and (bool(_PERIOD_OR_COURSE_RE.search(t)) or _pure_att)
+        and not has_status_modifier
+    )
+
+    if is_att and (trigger or is_likely_query_by_start):
         return _make_query("attendance", norm, "today")
     if is_hw and (trigger or bool(_QUERY_HW_RE.match(t))):
         return _make_query("homework", norm, "trimester")

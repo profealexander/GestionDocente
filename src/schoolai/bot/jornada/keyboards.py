@@ -48,8 +48,25 @@ _FINISHED_KEYBOARD = InlineKeyboardMarkup(
             InlineKeyboardButton("🔄 Recorrer desde el inicio", callback_data="jor_restart"),
             InlineKeyboardButton("📋 Seleccionar período",       callback_data="jor_pick"),
         ],
+        [
+            InlineKeyboardButton("📅 Cambiar día",              callback_data="jor_day_pick"),
+        ],
     ],
 )
+
+_DAY_LABELS = ["LUN", "MAR", "MIÉ", "JUE", "VIE"]
+
+
+def day_pick_keyboard(current_dow: int) -> InlineKeyboardMarkup:
+    """Muestra lunes–viernes; el día actual aparece marcado."""
+    buttons = [
+        InlineKeyboardButton(
+            f"·{_DAY_LABELS[d]}·" if d == current_dow else _DAY_LABELS[d],
+            callback_data=f"jor_day:{d}",
+        )
+        for d in range(5)
+    ]
+    return InlineKeyboardMarkup([buttons])
 
 
 def _active_keyboard(has_prev: bool) -> InlineKeyboardMarkup:

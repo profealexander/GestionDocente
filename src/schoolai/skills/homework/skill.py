@@ -204,12 +204,11 @@ class HWEditSkill(BaseSkill):
         ref_m = re.search(r"#?\s*(\d+)", text)
         hw_ref = int(ref_m.group(1)) if ref_m else None
 
-        # Completar con contexto de jornada si no se detectó curso/materia
-        subject_id_ctx: int | None = None
-        if not course:
-            _, grade_name, subject_id_ctx, _ = get_jornada_context(user_id)
-            if grade_name:
-                course = grade_name
+        # Siempre extraer subject_id del contexto de jornada (si hay jornada activa).
+        # Solo sobreescribir course si no se detectó uno en el texto.
+        _, grade_name_ctx, subject_id_ctx, _ = get_jornada_context(user_id)
+        if not course and grade_name_ctx:
+            course = grade_name_ctx
 
         await handle_hw_edit(update, user_id, course, hw_ref, subject_id=subject_id_ctx)
 

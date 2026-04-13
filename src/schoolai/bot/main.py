@@ -27,6 +27,7 @@ from telegram.request import HTTPXRequest
 import schoolai.skills.attendance.handler_edit  # noqa: F401 — triggers auto-register
 import schoolai.skills.cuotas.handler_edit  # noqa: F401 — triggers auto-register
 import schoolai.skills.homework.handler_edit  # noqa: F401 — triggers auto-register
+import schoolai.bot.modo_editar  # noqa: F401 — registra interceptor + callback edit_mode:
 from schoolai.bot.action_handler import (
     handle_act_callback,
     handle_act_confirm_callback,
@@ -40,7 +41,7 @@ from schoolai.bot.context_handler import handle_context_text_command
 from schoolai.bot.cron_handler import handle_cron_command
 from schoolai.bot.cron_service import cron_service
 from schoolai.bot.db_handler import handle_db_callback, handle_db_command, handle_db_text
-from schoolai.bot.handlers import JORNADA_KEYBOARD, handle_text, handle_voice
+from schoolai.bot.handlers import cmd_editar, cmd_registrar, handle_text, handle_voice
 from schoolai.bot.help_handler import handle_help_back, handle_help_callback, handle_help_command
 from schoolai.bot.jornada_handler import (
     handle_horario_callback,
@@ -69,6 +70,7 @@ from schoolai.bot.state import (
     clear_position_flow,
     clear_schedule_flow,
     clear_selection,
+    clear_user_mode,
     clear_wa_notification,
     clear_wa_setup,
     get_cuota_create,
@@ -92,19 +94,18 @@ from schoolai.skills.cuotas.handler import (
 
 async def _handle_start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     from schoolai.bot.mode import is_jornada
+    from schoolai.bot.handlers import JORNADA_AND_EDIT_KEYBOARD, LIBRE_KEYBOARD
 
     if is_jornada():
         await update.message.reply_text(
             "¡Hola! Toca *📅 Jornada* o escribe *j* para iniciar tu jornada.",
             parse_mode="Markdown",
-            reply_markup=JORNADA_KEYBOARD,
+            reply_markup=JORNADA_AND_EDIT_KEYBOARD,
         )
     else:
-        from schoolai.bot.handlers import REMOVE_KEYBOARD
-
         await update.message.reply_text(
             "¡Hola! ¿En qué te puedo ayudar?",
-            reply_markup=REMOVE_KEYBOARD,
+            reply_markup=LIBRE_KEYBOARD,
         )
 
 
@@ -126,11 +127,14 @@ async def _handle_cancel(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
     clear_cuota_participante(user_id)
     clear_hw_edit_field(user_id)
     clear_pending_confirm(user_id)
+    clear_user_mode(user_id)
     pop_pending_pago(user_id)
     if is_jornada():
-        await update.message.reply_text("Operación cancelada.", reply_markup=JORNADA_KEYBOARD)
+        from schoolai.bot.handlers import JORNADA_AND_EDIT_KEYBOARD
+        await update.message.reply_text("Operación cancelada.", reply_markup=JORNADA_AND_EDIT_KEYBOARD)
     else:
-        await update.message.reply_text("Operación cancelada.")
+        from schoolai.bot.handlers import LIBRE_KEYBOARD
+        await update.message.reply_text("Operación cancelada.", reply_markup=LIBRE_KEYBOARD)
 
 
 class _DbFlowFilter(filters.MessageFilter):
@@ -225,7 +229,7 @@ async def _send_jornada_keyboard_to_teachers(bot) -> None:
     """Al arrancar en modo Jornada, envía el teclado persistente a todos los docentes activos."""
     from sqlalchemy import select
 
-    from schoolai.bot.handlers import JORNADA_KEYBOARD
+    from schoolai.bot.handlers import JORNADA_AND_EDIT_KEYBOARD
     from schoolai.db.connection import async_session
     from schoolai.db.models.teacher import Teacher
 
@@ -250,7 +254,7 @@ async def _send_jornada_keyboard_to_teachers(bot) -> None:
                     chat_id=telegram_id,
                     text="Bot listo. Toca *📅 Jornada* para iniciar.",
                     parse_mode="Markdown",
-                    reply_markup=JORNADA_KEYBOARD,
+                    reply_markup=JORNADA_AND_EDIT_KEYBOARD,
                 )
             except Exception as e:
                 logger.warning(f"[jornada_init] no se pudo enviar teclado a {telegram_id}: {e}")
@@ -259,10 +263,10 @@ async def _send_jornada_keyboard_to_teachers(bot) -> None:
 
 
 async def _remove_keyboard_from_teachers(bot) -> None:
-    """Al arrancar en modo Libre, elimina el teclado persistente de jornada."""
+    """Al arrancar en modo Libre, envía el teclado con botón Modo Editar a todos los docentes."""
     from sqlalchemy import select
 
-    from schoolai.bot.handlers import REMOVE_KEYBOARD
+    from schoolai.bot.handlers import LIBRE_KEYBOARD
     from schoolai.db.connection import async_session
     from schoolai.db.models.teacher import Teacher
 
@@ -286,10 +290,10 @@ async def _remove_keyboard_from_teachers(bot) -> None:
                 await bot.send_message(
                     chat_id=telegram_id,
                     text="Bot listo.",
-                    reply_markup=REMOVE_KEYBOARD,
+                    reply_markup=LIBRE_KEYBOARD,
                 )
             except Exception as e:
-                logger.warning(f"[libre_init] no se pudo limpiar teclado a {telegram_id}: {e}")
+                logger.warning(f"[libre_init] no se pudo enviar teclado a {telegram_id}: {e}")
     except Exception as e:
         logger.warning(f"[libre_init] error al cargar docentes: {e}")
 
@@ -379,6 +383,10 @@ def run(dev: bool = False) -> None:
 
     # ── Broadcast ─────────────────────────────────────────────────────────────
     app.add_handler(CallbackQueryHandler(handle_broadcast_callback, pattern=r"^bc_"))
+
+    # ── Modo Editar / Registrar ───────────────────────────────────────────────
+    app.add_handler(CommandHandler("editar",    cmd_editar))
+    app.add_handler(CommandHandler("registrar", cmd_registrar))
 
     # ── Contexto ──────────────────────────────────────────────────────────────
     app.add_handler(CommandHandler("contexto", handle_context_text_command))

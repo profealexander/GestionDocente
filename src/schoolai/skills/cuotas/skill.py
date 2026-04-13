@@ -43,10 +43,10 @@ class CuotaSkill(BaseSkill):
             r"|quién\s+(no\s+)?pag[oó]"
             r"|quien\s+(no\s+)?pago"
             r"|exportar\s+cuotas?"
-            r"|editar(?:\s+(?:actividad|cuota|\w+))?"
-            r"|modificar(?:\s+(?:actividad|cuota|\w+))?"
-            r"|cambiar\s+(?:actividad|cuota)?"
-            r"|actualizar\s+(?:actividad|cuota)?"
+            r"|editar\s+(?:actividad|cuota|\w+)"
+            r"|modificar\s+(?:actividad|cuota|\w+)"
+            r"|cambiar\s+(?:actividad|cuota)"
+            r"|actualizar\s+(?:actividad|cuota)"
             r")\b",
             re.IGNORECASE,
         ),

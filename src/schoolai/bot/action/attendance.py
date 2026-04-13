@@ -139,13 +139,27 @@ async def _save_attendance(
     data: AttendanceExtract,
     chat_id: int = 0,
 ) -> None:
+    from datetime import timedelta as _timedelta
+
     from sqlalchemy import select as _sel
 
+    from schoolai.bot.state import get_jornada as _get_jornada
     from schoolai.db.models.teacher import Teacher as _Teacher
     from schoolai.skills.attendance.service import infer_period_from_schedule
     from schoolai.skills.utils.dates import parse_date as _parse_date
 
-    attendance_date = _parse_date(data.date)
+    # En Modo Jornada, usar la fecha de la sesión (no date.today()) para que el
+    # registro sea correcto aunque el docente registre fuera del horario real
+    # o la sesión persista pasada la medianoche.
+    _jornada = _get_jornada(user_id)
+    _jornada_session_date = _jornada.session_date if _jornada else None
+
+    if data.date == "today" and _jornada_session_date is not None:
+        attendance_date = _jornada_session_date
+    elif data.date == "yesterday" and _jornada_session_date is not None:
+        attendance_date = _jornada_session_date - _timedelta(days=1)
+    else:
+        attendance_date = _parse_date(data.date)
     status = STATUS_MAP.get(data.status, STATUS_MAP["absent"])
     extracted = [{"name": n, "status": status} for n in data.names]
 
@@ -162,12 +176,10 @@ async def _save_attendance(
     not_found = [r for r in results if r.not_found]
 
     if resolved:
-        from schoolai.bot.state import get_jornada as _get_jornada
-
         student_ids = [r.matched_id for r in resolved]
         statuses = {r.matched_id: r.status for r in resolved}
 
-        _jornada = _get_jornada(user_id)
+        # Reusar _jornada ya obtenido arriba
         _period = _jornada.current_period if _jornada else None
         _subject_name = _period.get("subject_name") if _period else None
         _period_start = _period.get("start_time") if _period else None

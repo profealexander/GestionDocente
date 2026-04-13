@@ -35,6 +35,32 @@ JORNADA_KEYBOARD = ReplyKeyboardMarkup(
 )
 REMOVE_KEYBOARD = ReplyKeyboardRemove()
 
+# Teclados para modo Libre con botón de modo editar
+LIBRE_KEYBOARD = ReplyKeyboardMarkup(
+    [[KeyboardButton("✏️ Modo Editar")]],
+    resize_keyboard=True,
+    input_field_placeholder="Escribe o toca ✏️ Modo Editar...",
+)
+# Teclado Jornada con botón de modo editar
+JORNADA_AND_EDIT_KEYBOARD = ReplyKeyboardMarkup(
+    [[KeyboardButton("📅 Jornada"), KeyboardButton("✏️ Modo Editar")]],
+    resize_keyboard=True,
+    is_persistent=True,
+    input_field_placeholder="Escribe o toca 📅 Jornada...",
+)
+# Teclado cuando MODO EDITAR está activo
+EDIT_ACTIVE_KEYBOARD = ReplyKeyboardMarkup(
+    [[KeyboardButton("📋 Modo Registrar")]],
+    resize_keyboard=True,
+    input_field_placeholder="✏️ MODO EDITAR — Escribe qué modificar...",
+)
+EDIT_ACTIVE_JORNADA_KEYBOARD = ReplyKeyboardMarkup(
+    [[KeyboardButton("📅 Jornada"), KeyboardButton("📋 Modo Registrar")]],
+    resize_keyboard=True,
+    is_persistent=True,
+    input_field_placeholder="✏️ MODO EDITAR — Escribe qué modificar...",
+)
+
 
 def is_allowed(user_id: int) -> bool:
     """Retorna True si el usuario está autorizado.
@@ -178,6 +204,31 @@ async def _show_course_group_menu(update: Update, courses: list[tuple[str, str]]
     )
 
 
+def _enrich_with_context(action: str, conv_ctx) -> str:
+    """Enriquece una acción a secas con el contexto de la última respuesta del bot.
+
+    "editar" + last_intent="homework"   → "editar tarea"
+    "editar" + last_intent="attendance" → (sin cambio, asistencia no se edita así)
+    "ver"    + last_intent="homework"   → "ver tareas"
+    """
+    verb = action.strip().lower()
+    intent = conv_ctx.last_intent
+    course = conv_ctx.grade_name or ""
+
+    if intent == "homework":
+        if verb in ("editar", "edita", "modificar", "modifica", "actualizar", "actualiza"):
+            return f"editar tarea {course}".strip()
+        if verb in ("ver", "mostrar"):
+            return f"ver tareas {course}".strip()
+        if verb in ("borrar", "borra", "eliminar", "elimina"):
+            return f"editar tarea {course}".strip()  # HWEditSkill maneja borrado
+    elif intent == "attendance":
+        if verb in ("ver", "mostrar"):
+            return f"ver asistencia hoy {course}".strip()
+    # Para otros intents no transformamos
+    return action
+
+
 async def _dispatch(
     update: Update, user_id: int, text: str, context: ContextTypes.DEFAULT_TYPE = None
 ) -> None:
@@ -217,6 +268,25 @@ async def _dispatch(
     if await text_interceptors.run(update, user_id):
         return
 
+    # Contexto conversacional: si el mensaje es una acción a secas ("editar",
+    # "borrar", "ver") y el bot mostró algo previamente, deducir el intent.
+    import re as _re
+    _BARE_ACTION_RE = _re.compile(
+        r"^\s*(editar?|modificar?|actualizar?|borrar?|eliminar?|ver|mostrar)\s*$",
+        _re.IGNORECASE,
+    )
+    if _BARE_ACTION_RE.match(text):
+        from schoolai.bot.state import get_conversation_ctx
+        conv_ctx = get_conversation_ctx(user_id)
+        if conv_ctx:
+            enriched = _enrich_with_context(text, conv_ctx)
+            if enriched != text:
+                text = enriched
+                logger.info(
+                    f"[dispatch] context-enriched text={text!r} "
+                    f"last_intent={conv_ctx.last_intent} user={user_id}"
+                )
+
     # Detección + ejecución
     skills = registry.detect_all(text)
 
@@ -238,3 +308,15 @@ async def _dispatch(
 
     for skill, fragment in plan(text, skills):
         await skill.handle(update, user_id, fragment)
+
+
+async def cmd_editar(update, context) -> None:
+    from schoolai.bot.modo_editar import activar_modo_editar
+
+    await activar_modo_editar(update, update.effective_user.id)
+
+
+async def cmd_registrar(update, context) -> None:
+    from schoolai.bot.modo_editar import activar_modo_registrar
+
+    await activar_modo_registrar(update, update.effective_user.id)
