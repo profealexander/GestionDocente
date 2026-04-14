@@ -68,9 +68,24 @@ async def handle_chat_mode_text(update: Update, user_id: int) -> bool:
     if get_user_mode(user_id) != "chat":
         return False
 
-    # Enrutar directamente a ChatSkill
+    # Primero intentar skills específicas (asistencia, tareas, cuotas…)
+    # Si hay match, las ejecutamos normalmente — no hace falta salir del chat.
+    from schoolai.skills.registry import registry
+
+    skills = registry.detect_all(text)
+
+    if len(skills) == 1:
+        await skills[0].handle(update, user_id, text)
+        return True
+
+    if len(skills) > 1:
+        from schoolai.skills.planner import plan
+        for skill, fragment in plan(text, skills):
+            await skill.handle(update, user_id, fragment)
+        return True
+
+    # Sin match específico → ChatSkill (saltamos OrchestratorSkill)
     from schoolai.skills.ia.skill import ChatSkill
 
-    skill = ChatSkill()
-    await skill.handle(update, user_id, text)
+    await ChatSkill().handle(update, user_id, text)
     return True
