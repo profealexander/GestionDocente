@@ -27,19 +27,26 @@ class ChatSkill(BaseSkill):
 
     async def handle(self, update, user_id: int, text: str) -> None:
         """Responde con el agente de IA en modo streaming."""
-        from schoolai.bot.handlers import _detect_course_only, _show_course_action_menu
+        from schoolai.bot.handlers import (
+            _detect_course_group,
+            _detect_course_only,
+            _show_course_action_menu,
+            _show_course_group_menu,
+        )
         from schoolai.bot.mode import is_jornada
         from schoolai.skills.ia.agent import chat
+        from schoolai.skills.utils.courses import get_teacher_abbrevs
 
         # En modo Libre: si el mensaje es solo un nombre de curso → menú de acciones
+        # Solo se muestran los cursos asignados al docente (admin ve todos).
         if not is_jornada():
-            course_info = _detect_course_only(text)
+            allowed = await get_teacher_abbrevs(user_id)
+            course_info = _detect_course_only(text, allowed)
             if course_info:
                 await _show_course_action_menu(update, course_info)
                 return
-            from schoolai.bot.handlers import _detect_course_group, _show_course_group_menu
 
-            group_courses = _detect_course_group(text)
+            group_courses = _detect_course_group(text, allowed)
             if group_courses:
                 await _show_course_group_menu(update, group_courses)
                 return

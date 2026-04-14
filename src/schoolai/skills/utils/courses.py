@@ -5,6 +5,8 @@ skills/extractor/llm.py.  Importar desde aquí en todos los módulos
 que necesiten resolver cursos.
 """
 
+import time
+
 from loguru import logger
 
 # Mapa estático: nombre canónico en BD → abreviatura
@@ -85,3 +87,73 @@ async def load_course_map(*, force: bool = False) -> None:
             course_abbrev_map[abbrev] = g.id
     _last_loaded_at = time.monotonic()
     logger.info(f"[courses] course_map cargado: {len(course_abbrev_map)} cursos")
+
+
+# ── Cursos por docente ─────────────────────────────────────────────────────────
+
+_teacher_abbrevs_cache: dict[int, tuple[set[str], float]] = {}
+_TEACHER_CACHE_TTL = 1800  # 30 min — si cambia el horario, se refleja en media hora
+
+
+async def get_teacher_abbrevs(telegram_id: int) -> set[str] | None:
+    """Retorna el set de abreviaturas asignadas al docente, o None si es admin (sin filtro).
+
+    None = admin → ve todos los cursos.
+    set vacío = docente sin cursos asignados.
+    set con valores = solo esos cursos son visibles para el docente.
+
+    Cacheado 30 min para evitar queries en cada mensaje.
+    """
+    from schoolai.config import settings
+
+    # Admin nunca es filtrado
+    if settings.admin_telegram_id and telegram_id == settings.admin_telegram_id:
+        return None
+
+    # Cache hit
+    cached = _teacher_abbrevs_cache.get(telegram_id)
+    if cached is not None:
+        abbrevs, ts = cached
+        if time.monotonic() - ts < _TEACHER_CACHE_TTL:
+            return abbrevs
+
+    # Query BD
+    from sqlalchemy import select
+
+    from schoolai.db.connection import async_session
+    from schoolai.db.models.teacher import Schedule, Teacher
+
+    try:
+        async with async_session() as session:
+            teacher = (
+                await session.execute(
+                    select(Teacher).where(Teacher.telegram_id == telegram_id)
+                )
+            ).scalar_one_or_none()
+
+            if not teacher:
+                # Telegram ID no registrado → sin filtro (puede ser un admin sin ID en BD)
+                return None
+
+            schedules = (
+                await session.execute(
+                    select(Schedule).where(
+                        Schedule.teacher_id == teacher.id,
+                        Schedule.is_active.is_(True),
+                    )
+                )
+            ).scalars().all()
+    except Exception as e:
+        logger.warning(f"[courses] no se pudieron cargar cursos del docente {telegram_id}: {e}")
+        return None
+
+    grade_names = {s.grade.name for s in schedules}
+    abbrevs = {_NAME_TO_ABBREV[name] for name in grade_names if name in _NAME_TO_ABBREV}
+    _teacher_abbrevs_cache[telegram_id] = (abbrevs, time.monotonic())
+    logger.debug(f"[courses] docente={telegram_id} cursos={sorted(abbrevs)}")
+    return abbrevs
+
+
+def invalidate_teacher_cache(telegram_id: int) -> None:
+    """Invalida el cache de un docente (llamar si cambia su horario)."""
+    _teacher_abbrevs_cache.pop(telegram_id, None)

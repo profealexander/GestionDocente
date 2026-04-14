@@ -132,21 +132,29 @@ async def handle_voice(update: Update, context: ContextTypes.DEFAULT_TYPE) -> No
     await _dispatch(update, user.id, text, context)
 
 
-def _detect_course_only(text: str) -> tuple[str, int, str] | None:
-    """Returns (abbrev, grade_id, grade_name) when the message is just a course reference."""
+def _detect_course_only(
+    text: str, allowed: set[str] | None = None
+) -> tuple[str, int, str] | None:
+    """Returns (abbrev, grade_id, grade_name) when the message is just a course reference.
+
+    allowed=None → admin, sin filtro (ve los 15 cursos).
+    allowed=set  → solo detecta cursos dentro del set (cursos asignados al docente).
+    """
     t = text.strip()
 
     # Path 1: verbal name  ("primero bt", "octavo egb")
     canonical = t.upper()
     abbrev = _NAME_TO_ABBREV.get(canonical)
     if abbrev and abbrev in course_abbrev_map:
-        return abbrev, course_abbrev_map[abbrev], canonical
+        if allowed is None or abbrev in allowed:
+            return abbrev, course_abbrev_map[abbrev], canonical
 
     # Path 2: abbreviation ("1bt", "8egb", "prep")
     abbrev = t.lower().replace(" ", "")
     if abbrev in course_abbrev_map:
-        grade_name = _ABBREV_TO_NAME.get(abbrev, abbrev.upper())
-        return abbrev, course_abbrev_map[abbrev], grade_name
+        if allowed is None or abbrev in allowed:
+            grade_name = _ABBREV_TO_NAME.get(abbrev, abbrev.upper())
+            return abbrev, course_abbrev_map[abbrev], grade_name
 
     return None
 
@@ -190,17 +198,24 @@ async def _show_course_action_menu(update: Update, course_info: tuple) -> None:
     )
 
 
-def _detect_course_group(text: str) -> list[tuple[str, str]] | None:
+def _detect_course_group(
+    text: str, allowed: set[str] | None = None
+) -> list[tuple[str, str]] | None:
     """Detecta si el texto es un alias de grupo (ej. 'bachillerato').
 
     Retorna lista de (abbrev, grade_name) de los cursos del grupo,
-    o None si no es un alias conocido o los cursos no están en el mapa.
+    filtrada a los cursos permitidos del docente.
+    allowed=None → admin, sin filtro.
     """
     key = text.strip().lower()
     abbrevs = COURSE_GROUP_ALIASES.get(key)
     if not abbrevs:
         return None
-    courses = [(a, _ABBREV_TO_NAME.get(a, a.upper())) for a in abbrevs if a in course_abbrev_map]
+    courses = [
+        (a, _ABBREV_TO_NAME.get(a, a.upper()))
+        for a in abbrevs
+        if a in course_abbrev_map and (allowed is None or a in allowed)
+    ]
     return courses or None
 
 
