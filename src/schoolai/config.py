@@ -33,7 +33,7 @@ class Settings(BaseSettings):
 
     # ── LLM model per skill (format: "provider/model") ────────────────────────
     llm_extractor: str = "google/gemini-2.5-flash-lite"  # extracción estructurada
-    llm_chat: str = "groq/compound"  # chat general — búsqueda web nativa, 70K TPM
+    llm_chat: str = "groq/compound-beta"  # chat general — búsqueda web nativa, 70K TPM
     llm_chat_fallback: str = "mistral/mistral-small-latest"  # fallback chat — 97% quality, 421ms
     llm_router: str = "google/gemini-2.5-flash-lite"  # routing / clasificación
     llm_orchestrator: str = "deepseek/deepseek-reasoner"  # orquestador multi-tool — 100% quality + reasoning
