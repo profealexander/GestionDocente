@@ -28,6 +28,7 @@ import schoolai.skills.attendance.handler_edit  # noqa: F401 — triggers auto-r
 import schoolai.skills.cuotas.handler_edit  # noqa: F401 — triggers auto-register
 import schoolai.skills.homework.handler_edit  # noqa: F401 — triggers auto-register
 import schoolai.bot.modo_editar  # noqa: F401 — registra interceptor + callback edit_mode:
+import schoolai.bot.modo_chat  # noqa: F401 — registra interceptor modo chat IA
 from schoolai.bot.action_handler import (
     handle_act_callback,
     handle_act_confirm_callback,

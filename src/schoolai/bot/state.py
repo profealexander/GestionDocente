@@ -724,7 +724,7 @@ def clear_broadcast_flow(user_id: int) -> None:
 
 # ── User mode (Registrar / Editar) ───────────────────────────────────────────
 
-UserModeValue = Literal["registrar", "editar"]
+UserModeValue = Literal["registrar", "editar", "chat"]
 
 
 @dataclass

@@ -37,28 +37,40 @@ REMOVE_KEYBOARD = ReplyKeyboardRemove()
 
 # Teclados para modo Libre con botón de modo editar
 LIBRE_KEYBOARD = ReplyKeyboardMarkup(
-    [[KeyboardButton("✏️ Modo Editar")]],
+    [[KeyboardButton("✏️ Modo Editar"), KeyboardButton("🤖 Chat IA")]],
     resize_keyboard=True,
     input_field_placeholder="Escribe o toca ✏️ Modo Editar...",
 )
 # Teclado Jornada con botón de modo editar
 JORNADA_AND_EDIT_KEYBOARD = ReplyKeyboardMarkup(
-    [[KeyboardButton("📅 Jornada"), KeyboardButton("✏️ Modo Editar")]],
+    [[KeyboardButton("📅 Jornada"), KeyboardButton("✏️ Modo Editar"), KeyboardButton("🤖 Chat IA")]],
     resize_keyboard=True,
     is_persistent=True,
     input_field_placeholder="Escribe o toca 📅 Jornada...",
 )
 # Teclado cuando MODO EDITAR está activo
 EDIT_ACTIVE_KEYBOARD = ReplyKeyboardMarkup(
-    [[KeyboardButton("📋 Modo Registrar")]],
+    [[KeyboardButton("📋 Modo Registrar"), KeyboardButton("🤖 Chat IA")]],
     resize_keyboard=True,
     input_field_placeholder="✏️ MODO EDITAR — Escribe qué modificar...",
 )
 EDIT_ACTIVE_JORNADA_KEYBOARD = ReplyKeyboardMarkup(
-    [[KeyboardButton("📅 Jornada"), KeyboardButton("📋 Modo Registrar")]],
+    [[KeyboardButton("📅 Jornada"), KeyboardButton("📋 Modo Registrar"), KeyboardButton("🤖 Chat IA")]],
     resize_keyboard=True,
     is_persistent=True,
     input_field_placeholder="✏️ MODO EDITAR — Escribe qué modificar...",
+)
+# Teclado cuando MODO CHAT IA está activo
+CHAT_ACTIVE_KEYBOARD = ReplyKeyboardMarkup(
+    [[KeyboardButton("🚪 Salir del Chat")]],
+    resize_keyboard=True,
+    input_field_placeholder="🤖 Chat IA — Escribe tu pregunta...",
+)
+CHAT_ACTIVE_JORNADA_KEYBOARD = ReplyKeyboardMarkup(
+    [[KeyboardButton("📅 Jornada"), KeyboardButton("🚪 Salir del Chat")]],
+    resize_keyboard=True,
+    is_persistent=True,
+    input_field_placeholder="🤖 Chat IA — Escribe tu pregunta...",
 )
 
 
