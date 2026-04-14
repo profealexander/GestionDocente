@@ -20,14 +20,14 @@ Los docentes pueden interactuar por **Telegram** o **WhatsApp** (Green API).
 │ main.py  │  │ main_dev.py │       │                                  │
 │ p=10..50 │  │ p=10..50    │       │  POST /webhook/whatsapp          │
 │ regex+   │  │ + SOP +     │       │    → autentica teacher           │
-│ Groq+    │  │ cron        │       │    → lazy-init SkillRegistry     │
-│ GLM+chat │  │             │       │    → _dispatch(WhatsAppUpdate)   │
+│ Gemini+  │  │ cron        │       │    → lazy-init SkillRegistry     │
+│ DS+chat  │  │             │       │    → _dispatch(WhatsAppUpdate)   │
 └────┬─────┘  └──────┬──────┘       │                                  │
      │               │              │  POST /auth/token                │
      │    ┌──────────────────┐      │  GET /grades /subjects           │
      │    │  BOT AGENTE      │      │  GET /students /homework         │
      │    │  main_agente.py  │      │  GET /attendance                 │
-     │    │  Gemini 2.5 FL   │      │  GET/POST /cuotas/...            │
+     │    │  DeepSeek R.     │      │  GET/POST /cuotas/...            │
      │    │  ReAct loop      │      │  Swagger UI: /docs               │
      │    │  sin regex       │      └──────────────┬───────────────────┘
      │    └──────┬───────────┘                     │
@@ -35,11 +35,84 @@ Los docentes pueden interactuar por **Telegram** o **WhatsApp** (Green API).
                                    │
           ┌────────────────────────┤
           │                        │
-┌─────────▼────────┐  ┌───────────┴──┐  ┌──────────────┐  ┌────────────┐  ┌──────────────┐
-│   PostgreSQL      │  │    Redis     │  │   Groq API   │  │  Z.AI API  │  │  Google API  │
-│   schoolai DB     │  │ estado+TTL  │  │ Whisper+LLM  │  │ GLM-4.7   │  │ Gemini 2.5FL │
-└──────────────────┘  └──────────────┘  └──────────────┘  └────────────┘  └──────────────┘
+┌─────────▼────────┐  ┌──────────────┐  ┌──────────────┐  ┌─────────────┐  ┌──────────────┐  ┌──────────────┐
+│   PostgreSQL      │  │    Redis     │  │  DeepSeek    │  │  Google API │  │  Mistral API │  │  Groq API    │
+│   schoolai DB     │  │ estado+TTL  │  │  Reasoner    │  │ Gemini 2.5FL│  │  Small/Large │  │ Whisper+LLM  │
+└──────────────────┘  └──────────────┘  └──────────────┘  └─────────────┘  └──────────────┘  └──────────────┘
 ```
+
+---
+
+## Stack tecnológico
+
+### Runtime y herramientas
+
+| Componente | Tecnología | Versión mínima |
+|---|---|---|
+| Lenguaje | Python | 3.11 |
+| Gestor de paquetes | uv | — |
+| Build backend | hatchling | — |
+| Linter/formatter | ruff | 0.8+ |
+| Tests | pytest + pytest-asyncio | 8+ |
+| Event loop (Linux) | uvloop | 0.22+ |
+
+### Web framework y API
+
+| Librería | Rol | Notas |
+|---|---|---|
+| `fastapi` | API REST + Swagger UI `/docs` | OpenAPI automático |
+| `uvicorn[standard]` | ASGI server | WebSockets + HTTP |
+| `pyjwt` | JWT HS256 — auth API | `JWT_SECRET_KEY` |
+| `bcrypt` | Hashing contraseñas | — |
+| `httpx` | Cliente HTTP async | webhooks, Green API |
+
+### Base de datos
+
+| Librería | Rol | Notas |
+|---|---|---|
+| `sqlalchemy[asyncio]` | ORM async (2.x) | modelos, queries |
+| `asyncpg` | Driver PostgreSQL async | runtime |
+| `alembic` | Migraciones DB | `uv run alembic upgrade head` |
+| `psycopg2-binary` | Driver sync (solo dev) | para alembic en local |
+
+### Telegram bot
+
+| Librería | Rol |
+|---|---|
+| `python-telegram-bot[job-queue]` | PTB v21 — polling + inline keyboards + cron jobs |
+
+### LLM y AI
+
+| Librería | Rol | Notas |
+|---|---|---|
+| `openai` | Cliente OpenAI-compatible | usado con todos los 11 providers |
+| `groq` | SDK nativo Groq | Whisper audio transcription |
+| `pydantic` | Structured output — `model_json_schema()`, `model_validate_json()` | BaseModel para todos los Extract |
+| `rapidfuzz` | Fuzzy matching nombres alumnos | attendance matcher |
+| `duckduckgo-search` | Búsqueda web desde tools | orchestrator web tool |
+
+### Generación de documentos
+
+| Librería | Formato | Uso |
+|---|---|---|
+| `python-docx` | `.docx` | plantillas documentos escolares |
+| `docxtpl` | `.docx` con Jinja2 | cartas, circulares |
+| `fpdf2` | PDF | notificaciones, reportes |
+| `openpyxl` | Excel `.xlsx` | exportación cuotas, asistencia |
+
+### Estado y caché
+
+| Librería | Rol |
+|---|---|
+| `redis` | Estado persistente L2 (RAM+Redis con TTL) |
+| `python-dotenv` | Carga `.env` en desarrollo |
+| `pydantic-settings` | Configuración tipada desde env vars |
+
+### Logging
+
+| Librería | Rol |
+|---|---|
+| `loguru` | Logging estructurado — rotación diaria, compresión, alert a Telegram admin |
 
 ---
 
@@ -50,7 +123,7 @@ Los docentes pueden interactuar por **Telegram** o **WhatsApp** (Green API).
 | Token | `TELEGRAM_BOT_TOKEN` | `TELEGRAM_BOT_TOKEN_JORNADA` | `TELEGRAM_BOT_TOKEN_AGENTE` |
 | Comando | `schoolai-bot` | `schoolai-bot-jornada` | `schoolai-bot-agente` |
 | Script | `dev-bot.sh` | `dev-bot-jornada.sh` | `dev-bot-agente.sh` |
-| Función | Pipeline regex + Groq fallback | Mismo pipeline, guía hora a hora | Gemini 2.5 Flash-Lite + ReplAgent(GLM-4.7) |
+| Función | Pipeline regex + Gemini extractor + DeepSeek orchestrator | Mismo pipeline, guía hora a hora | DeepSeek Reasoner + ReplAgent(Qwen3-Coder) |
 | Extra | — | `/jornada`, cron matutino, SOP Engine | ReAct loop multi-tool, voz→texto |
 
 ---
@@ -176,11 +249,24 @@ whatsapp = "schoolai.bot.channels.whatsapp:WhatsAppChannel"
 | 35  | CuotaSkill          | `cuota`           | keywords: cuota, actividad, pago… |
 | 40  | HWEditSkill         | `homework_edit`   | editar/modificar/eliminar + tarea |
 | 40  | QuerySkill          | `query`           | trigger explícito (ver/dame/mostrar…) + dominio |
-| 90  | OrchestratorSkill   | `orchestrator`    | **fallback 1** — `matches()=False`, Gemini 2.5 Flash-Lite |
-| 100 | ChatSkill           | `chat`            | **fallback 2** — Groq 70B conversación libre |
+| 90  | OrchestratorSkill   | `orchestrator`    | **fallback 1** — `matches()=False`, DeepSeek Reasoner |
+| 100 | ChatSkill           | `chat`            | **fallback 2** — Groq Compound, conversación libre + web search |
 
 `detect_all()` excluye `orchestrator` y `chat` (son fallbacks, no skills de detección primaria).
 `detect()` busca primero en `detect_all()`, luego en orden: OrchestratorSkill → ChatSkill.
+
+**Filosofía de los dos fallbacks — agente limpio vs agente específico:**
+
+| | ChatSkill (p=100) | OrchestratorSkill (p=90) |
+|---|---|---|
+| Propósito | Conversación general, preguntas libres, búsqueda web | Tareas específicas de la institución con acceso a DB |
+| Contexto del docente | ❌ Ninguno — agente limpio intencional | ✅ Fecha, tools, historial Redis |
+| Acceso a DB | ❌ Explícitamente bloqueado en system prompt | ✅ 11 tools (asistencia, tareas, cuotas, REPL) |
+| Historial | RAM, 10 turnos, se pierde al reiniciar | Redis, 6 pares, TTL 30min |
+| Modelo | Groq Compound (web search nativa) + fallback Mistral Small | DeepSeek Reasoner + fallback chain |
+| Web search | ✅ Nativo en Compound | ✅ via `web_search` tool del ContextAgent |
+
+**Decisión de diseño**: ChatSkill es intencionalmente un agente sin contexto institucional. No sabe quién es el docente, no tiene acceso al horario ni a documentos subidos. Para preguntas que requieren datos de la institución el docente usa el Bot Agente (OrchestratorSkill), que maneja todo vía LLM con tools. Esta separación mantiene ChatSkill simple, predecible y sin riesgo de confundir datos reales con respuestas generales.
 
 ---
 
@@ -284,9 +370,10 @@ Sobrevive reinicios — la hora configurada persiste en `logs/cron.json`.
 | `query/` | Skill + tools + extracción de períodos/cursos + formatter (listado visual con stats, índice de materias, numeración emoji) |
 | `cuotas/` | Skill + tools + handlers (create/pago/query/edit) + service + exporter |
 | `orchestrator/` | OrchestratorSkill + router de patrones + SkillAgents especializados + ReplAgent + session + 11 tools |
-| `ia/` | ChatSkill: chat IA general con streaming (Groq 70B) |
-| `llm/` | Cliente unificado OpenAI-compatible + tool_caller + providers (groq/zai/zhipu) |
-| `utils/schema.py` | `ExtractionResult` (incl. `via_llm`), todos los Extract dataclasses |
+| `ia/` | ChatSkill: conversación libre + web search (Groq Compound). Agente limpio sin contexto institucional |
+| `llm/` | Cliente unificado OpenAI-compatible + tool_caller + structured output + providers (11 providers) |
+| `llm/structured.py` | `llm_structured_output()` — structured output portable (Pydantic + json_object) |
+| `utils/schema.py` | `ExtractionResult` (incl. `via_llm`), todos los Extract Pydantic models |
 | `utils/` | normalize(), extract_rules, schema, keyboards |
 | `documents/` | Generación de documentos PDF/notificaciones |
 | `whatsapp/` | Integración Green API |
@@ -318,20 +405,20 @@ Sobrevive reinicios — la hora configurada persiste en `logs/cron.json`.
 | `repl.py` | REPL Python restringido: `await query(sql)` con whitelist de builtins, timeout 5 s, fallback `_last_query` |
 | `tools.py` | **11 tools**: listar_cursos, registrar_asistencia, consultar_asistencia, crear_tarea, consultar_tareas, eliminar_tarea, listar_actividades, crear_actividad, estado_actividad, registrar_pago, **python_repl** |
 | `skill_agents/base.py` | `SkillAgentBase`: loop ReAct genérico + failover + `llm_override` + `TELEGRAM_FORMAT` constante |
-| `skill_agents/attendance.py` | AttendanceAgent: 3 tools (registrar_asistencia, consultar_asistencia, listar_cursos). Modelo: Gemini 2.5 Flash-Lite. |
-| `skill_agents/homework.py` | HomeworkAgent: 4 tools (crear_tarea, consultar_tareas, eliminar_tarea, listar_cursos). Pide confirmación antes de eliminar. Modelo: Gemini 2.5 Flash-Lite. |
-| `skill_agents/cuotas.py` | CuotasAgent: 5 tools (listar_actividades, crear_actividad, estado_actividad, registrar_pago, listar_cursos). Modelo: Gemini 2.5 Flash-Lite. |
-| `skill_agents/repl.py` | **ReplAgent**: 2 tools (python_repl, listar_cursos). `llm_override="zai/glm-4.7-flash"` — GLM genera código Python correcto; Gemini tiene artifact `default_api.query()`. |
+| `skill_agents/attendance.py` | AttendanceAgent: 3 tools (record_attendance, query_attendance, list_courses). Sin `llm_override` — usa `settings.llm_orchestrator`. |
+| `skill_agents/homework.py` | HomeworkAgent: 4 tools (create_homework, query_homeworks, delete_homework, list_courses). Pide confirmación antes de eliminar. Sin `llm_override`. |
+| `skill_agents/cuotas.py` | CuotasAgent: 5 tools (list_activities, create_activity, activity_status, record_payment, list_courses). Sin `llm_override`. |
+| `skill_agents/repl.py` | **ReplAgent**: 2 tools (python_repl, list_courses). `llm_override="ollama/qwen3-coder:480b-cloud"` — Qwen3-Coder genera `await query(sql)` correcto. |
 
-**Arquitectura LLM dual — Gemini para tools / GLM para REPL:**
+**Arquitectura LLM por agente:**
 
 | Agente | Modelo primario | Tools | Razón |
 |---|---|---|---|
-| AttendanceAgent | Gemini 2.5 Flash-Lite | 3 predefinidas | Más rápido, 1,000 RPD gratis |
-| HomeworkAgent | Gemini 2.5 Flash-Lite | 4 predefinidas | Idem |
-| CuotasAgent | Gemini 2.5 Flash-Lite | 5 predefinidas | Idem |
-| **ReplAgent** | **GLM-4.7-Flash** | python_repl + listar_cursos | GLM genera `await query(sql)` correcto |
-| _FlatAgent | Gemini 2.5 Flash-Lite | 10 tools (sin python_repl) | Fallback general |
+| AttendanceAgent | **DeepSeek Reasoner** (via `llm_orchestrator`) | 3 predefinidas | Hereda del orchestrator principal |
+| HomeworkAgent | **DeepSeek Reasoner** (via `llm_orchestrator`) | 4 predefinidas | Idem |
+| CuotasAgent | **DeepSeek Reasoner** (via `llm_orchestrator`) | 5 predefinidas | Idem |
+| **ReplAgent** | **GPT-OSS 20B** (Groq) | python_repl + list_courses | Genera `await query(sql)` correcto (3/3 benchmark); gratis, 890ms avg |
+| _FlatAgent | **DeepSeek Reasoner** (via `llm_orchestrator`) | 10 tools (sin python_repl) | Fallback general |
 
 `llm_override` en `SkillAgentBase` fija el modelo primario por agente; el resto de la cadena actúa como fallback.
 
@@ -341,9 +428,9 @@ texto del docente
        │
        ▼ (anti-injection wrap)
 router.route(text)  — regex 0ms, 4 dominios
-  ├── [] vacío     → _FlatAgent (10 tools, sin python_repl) ← Gemini
-  ├── ["repl"]     → ReplAgent (python_repl) ← GLM-4.7-Flash
-  ├── [1 agente]   → SkillAgent especializado ← Gemini 2.5 FL
+  ├── [] vacío     → _FlatAgent (10 tools, sin python_repl) ← DeepSeek Reasoner
+  ├── ["repl"]     → ReplAgent (python_repl) ← GPT-OSS 20B (Groq)
+  ├── [1 agente]   → SkillAgent especializado ← DeepSeek Reasoner
   └── [N agentes]  → asyncio.gather(a.run() for a in agents)  ← paralelo
        │
        ▼
@@ -511,36 +598,76 @@ Almacena el intent (`"attendance"` | `"homework"`), el resumen legible y el
 
 ## LLM — Estrategia por capas
 
+### Modelos activos (2026-04-14)
+
+| Skill | Modelo | Quality | TTFT | Costo |
+|---|---|---|---|---|
+| `LLM_EXTRACTOR` | `google/gemini-2.5-flash-lite` | 97% | ~638ms | Google AI Studio free |
+| `LLM_ROUTER` | `google/gemini-2.5-flash-lite` | 97% | ~638ms | Google AI Studio free |
+| `LLM_CHAT` | `groq/compound` | 96% | ~1,145ms | $0 (70K TPM, web search nativa) |
+| `LLM_CHAT_FALLBACK` | `mistral/mistral-small-latest` | 97% | ~421ms | ~$0.1/M tokens |
+| `LLM_ORCHESTRATOR` | `deepseek/deepseek-reasoner` | 100% | ~1007ms | $0.55/M tokens + reasoning |
+| Fallback 1 | `deepseek/deepseek-chat` | 93% | ~567ms | $0.27/M tokens |
+| Fallback 2 | `google/gemini-2.5-flash-lite` | 97% | ~638ms | free |
+| Fallback 3 | `groq/openai/gpt-oss-20b` | 82% | ~347ms | Groq free |
+| Fallback 4 | `mistral/mistral-large-latest` | 97% | ~856ms | $2/M tokens (último recurso) |
+
 ```python
-# config.py
-llm_extractor             = "groq/llama-3.1-8b-instant"       # fallback extractor — rápido
-llm_chat                  = "groq/llama-3.3-70b-versatile"     # chat IA general — streaming
-llm_orchestrator          = "google/gemini-2.5-flash-lite"      # orquestador multi-tool — primario
-llm_orchestrator_fallback = "google/gemini-2.5-flash,zai/glm-4.7-flash,groq/llama-3.3-70b-versatile"
+# config.py — defaults actuales
+llm_extractor             = "google/gemini-2.5-flash-lite"
+llm_router                = "google/gemini-2.5-flash-lite"
+llm_chat                  = "groq/compound"
+llm_chat_fallback         = "mistral/mistral-small-latest"
+llm_orchestrator          = "deepseek/deepseek-reasoner"
+llm_orchestrator_fallback = "deepseek/deepseek-chat,google/gemini-2.5-flash-lite,groq/openai/gpt-oss-20b,mistral/mistral-large-latest"
 ```
 
 Capas de procesamiento (Modo Libre/Jornada):
 1. **Regex (<1ms, sin costo)** — cubre el 85-90% de mensajes estructurados
-2. **LLM fallback Groq (~500ms)** — mensajes ambiguos → `via_llm=True`
+2. **LLM extractor (Gemini 2.5 Flash-Lite, ~638ms)** — mensajes ambiguos → `via_llm=True`
 3. **Confirmación** — si `via_llm=True` o `supervised_mode=True`, el docente confirma
-4. **OrchestratorSkill (Gemini 2.5 Flash-Lite)** — si ninguna skill regex matchea → ReAct multi-tool
-5. **ChatSkill (Groq 70B)** — conversación libre pura, último recurso
+4. **OrchestratorSkill (DeepSeek Reasoner)** — si ninguna skill regex matchea → ReAct multi-tool con razonamiento interno
+5. **ChatSkill (Groq Compound)** — conversación libre + web search nativa, último recurso. Fallback: Mistral Small
 
-El fallback Groq usa tool calling (`skills/llm/tool_caller.py`):
+### Structured Output portable (`skills/llm/structured.py`)
+
+Módulo central para extracción estructurada compatible con todos los providers:
+- `response_format={"type": "json_object"}` + JSON schema Pydantic en system prompt
+- `model_validate_json()` → validación de tipos con Pydantic v2
+- Fallback: extrae bloque `{...}` con regex si el LLM envuelve en markdown
+
+```python
+result = await llm_structured_output(
+    prompt=...,
+    model_cls=MyPydanticModel,   # define el schema via model_json_schema()
+    provider_model="google/gemini-2.5-flash-lite",
+    system_prefix="instrucciones adicionales",
+    timeout=20.0,
+    agent="context_categorizer",
+)
+# retorna MyPydanticModel | None
 ```
-texto → anti-injection wrap → Groq (llama-3.1-8b-instant) con tool definitions
+
+**Por qué NO usar alternativas:**
+- `client.beta.chat.completions.parse()` → solo OpenAI oficial
+- `response_format={"type": "json_schema"}` → Groq y varios providers no lo implementan
+
+El extractor Groq usa tool calling (`skills/llm/tool_caller.py`):
+```
+texto → anti-injection wrap → Gemini 2.5 Flash-Lite con tool definitions
       → tool_name + args → ExtractionResult (via_llm=True) / CuotaExtract
 ```
 
 El OrchestratorSkill usa router de patrones + SkillAgents especializados (`skills/orchestrator/`):
 ```
 texto → _llm_call_with_failover(providers_chain)
-        ├── intento 1: Google / Gemini 2.5 Flash-Lite
+        ├── intento 1: DeepSeek Reasoner (100% quality, reasoning tokens internos)
         │     error transitorio → retry con backoff 1s, 2s
         │     rate-limit/401   → cambia proveedor inmediatamente
-        ├── intento 2: Google / Gemini 2.5 Flash
-        ├── intento 3: ZAI / GLM-4.7-Flash (override en ReplAgent)
-        └── intento 4: Groq / llama-3.3-70b-versatile
+        ├── intento 2: DeepSeek Chat
+        ├── intento 3: Google / Gemini 2.5 Flash-Lite
+        ├── intento 4: Groq / GPT-OSS 20B
+        └── intento 5: Mistral Large
       → tool_call → execute_tool() → resultado
       → feed back al LLM → siguiente iteración hasta respuesta final (MAX_ITER=6)
 ```
@@ -559,12 +686,21 @@ Tipos de error y estrategia:
 - **Todos fallaron** → mensaje de error al usuario con indicación de revisar `.env`
 
 **Providers disponibles** (`skills/llm/providers.py`):
-| Provider | Endpoint | Key | Uso |
+| Provider | Endpoint | Key | Uso activo |
 |---|---|---|---|
-| `groq` | api.groq.com | `GROQ_API_KEY` | extractor, chat, Whisper, fallback orquestador |
-| `google` | generativelanguage.googleapis.com/v1beta/openai/ | `GOOGLE_API_KEY` | OrchestratorSkill primario (Gemini) |
-| `zai` | api.z.ai/api/paas/v4/ | `ZAI_API_KEY` | ReplAgent primario (GLM-4.7-Flash) + fallback |
-| `zhipu` | open.bigmodel.cn | `ZHIPU_API_KEY` | legacy — solo si se necesita China endpoint |
+| `deepseek` | api.deepseek.com | `DEEPSEEK_API_KEY` | **Orchestrator primario** (Reasoner + Chat fallback) |
+| `google` | generativelanguage.googleapis.com/v1beta/openai/ | `GOOGLE_API_KEY` | Extractor, Router, SkillAgents, fallback orquestador |
+| `mistral` | api.mistral.ai/v1/ | `MISTRAL_API_KEY` | Chat primario + fallback final orquestador |
+| `groq` | api.groq.com | `GROQ_API_KEY` | GPT-OSS 20B fallback + Whisper transcripción |
+| `zai` | api.z.ai/api/paas/v4/ | `ZAI_API_KEY` | ReplAgent (GLM-4.7-Flash) |
+| `openrouter` | openrouter.ai/api/v1/ | `OPENROUTER_API_KEY` | modelos experimentales vía proxy |
+| `openai` | api.openai.com | `OPENAI_API_KEY` | modelos OpenAI directos (opcional) |
+| `ollama` | localhost:11434/v1 | — | modelos locales (desarrollo) |
+| `nvidia` | integrate.api.nvidia.com/v1/ | `NVIDIA_API_KEY` | legacy / experimental |
+| `zhipu` | open.bigmodel.cn | `ZHIPU_API_KEY` | legacy — China endpoint |
+| `zai` | api.z.ai/api/paas/v4/ | `ZAI_API_KEY` | ReplAgent primario (GLM-4.7-Flash) |
+| `minimax` | api.minimaxi.chat/v1/ | `MINIMAX_API_KEY` | experimental |
+| `moonshot` | api.moonshot.cn/v1/ | `MOONSHOT_API_KEY` | experimental (Kimi) |
 
 **Anti prompt-injection** (ambos pipelines):
 ```python
@@ -635,21 +771,25 @@ Niveles: `DEBUG` (detalle interno) · `INFO` (intenciones, acciones DB) · `WARN
 # ── Obligatorio ────────────────────────────────────────────────
 TELEGRAM_BOT_TOKEN=...          # Bot Modo Libre
 DATABASE_URL=postgresql+asyncpg://user:pass@host/db
-GROQ_API_KEY=...                # LLM fallback + transcripción Whisper
+DEEPSEEK_API_KEY=...            # Orchestrator primario (Reasoner + Chat fallback)
+GOOGLE_API_KEY=...              # Extractor, Router, SkillAgents (Gemini 2.5 Flash-Lite)
+MISTRAL_API_KEY=...             # Chat primario (Mistral Small) + fallback final
+GROQ_API_KEY=...                # GPT-OSS 20B fallback + Whisper transcripción
 
 # ── Bots adicionales ───────────────────────────────────────────
 TELEGRAM_BOT_TOKEN_JORNADA=...  # Bot Modo Jornada (opcional)
-TELEGRAM_BOT_TOKEN_AGENTE=...   # Bot Agente Gemini/GLM (opcional)
+TELEGRAM_BOT_TOKEN_AGENTE=...   # Bot Agente (opcional)
 
-# ── LLM (override opcional) ────────────────────────────────────
-LLM_EXTRACTOR=groq/llama-3.1-8b-instant
-LLM_CHAT=groq/llama-3.3-70b-versatile
-LLM_ORCHESTRATOR=google/gemini-2.5-flash-lite
-LLM_ORCHESTRATOR_FALLBACK=google/gemini-2.5-flash,zai/glm-4.7-flash,groq/llama-3.3-70b-versatile
+# ── LLM — valores actuales ─────────────────────────────────────
+LLM_EXTRACTOR=google/gemini-2.5-flash-lite
+LLM_ROUTER=google/gemini-2.5-flash-lite
+LLM_CHAT=groq/compound
+LLM_CHAT_FALLBACK=mistral/mistral-small-latest
+LLM_ORCHESTRATOR=deepseek/deepseek-reasoner
+LLM_ORCHESTRATOR_FALLBACK=deepseek/deepseek-chat,google/gemini-2.5-flash-lite,groq/openai/gpt-oss-20b,mistral/mistral-large-latest
 
-# ── API Keys LLM adicionales ───────────────────────────────────
-GOOGLE_API_KEY=...              # Google AI Studio — Gemini 2.5 Flash-Lite (OrchestratorSkill primario)
-ZAI_API_KEY=...                 # Z.AI global — GLM-4.7-Flash (ReplAgent + fallback)
+# ── API Keys LLM adicionales (opcionales) ─────────────────────
+ZAI_API_KEY=...                 # Z.AI global — GLM-4.7-Flash (ReplAgent)
 ZHIPU_API_KEY=...               # ZhipuAI China — legacy
 
 # ── API auth ───────────────────────────────────────────────────
@@ -700,10 +840,134 @@ La escuela puede no tener servidor Redis. Sin él el sistema funciona igual (sol
 **¿Por qué HS256 y no RS256?**
 Un solo servicio firma y verifica. No hay microservicios que necesiten verificar sin la clave privada. HS256 es suficiente y más simple.
 
-**¿Por qué Gemini 2.5 Flash-Lite para tools predefinidas y GLM-4.7-Flash para python_repl?**
-Gemini 2.5 Flash-Lite es el modelo más rápido del free tier (0.29s TTFT, 1,000 RPD) y maneja tool calling predefinidas correctamente. Sin embargo, tiene un artefacto de entrenamiento donde genera `default_api.query(sql=...)` en lugar de `await query(sql)` al ejecutar código Python. GLM-4.7-Flash genera código Python correcto, pero su concurrencia gratuita es limitada (1 req simultáneo), por lo que usarlo solo para el REPL es el balance óptimo. El campo `llm_override` en `SkillAgentBase` formaliza este patrón.
+**¿Por qué DeepSeek Reasoner como orchestrator principal?**
+Benchmark propio (2026-04-13): único modelo con 100% quality en tool calling multi-step. El reasoning interno (Chain of Thought embebido) mejora decisiones en escenarios complejos sin costo adicional de tokens en el prompt. El fallback chain (Chat → Gemini → GPT-OSS 20B → Mistral Large) cubre todos los escenarios de indisponibilidad a costo progresivo.
+
+**¿Por qué DeepSeek Reasoner para los SkillAgents especializados?**
+Los SkillAgents no tienen `llm_override` y heredan `settings.llm_orchestrator`. El reasoning interno de DeepSeek Reasoner mejora la toma de decisiones en multi-step tool calling (ej.: listar cursos → registrar asistencia → confirmar). El fallback chain del orchestrator actúa automáticamente si DeepSeek falla.
+
+**¿Por qué GPT-OSS 20B (Groq) para python_repl?**
+Validado en benchmark propio (2026-04-14): 3/3 prompts generaron `await query(sql)` correcto, SQL bien formado, sin artefactos. Gemini y otros modelos generan `default_api.query()` que falla en el REPL restringido. GPT-OSS 120B falló en el prompt más complejo (2/3). DeepSeek Reasoner tuvo error de autenticación durante el test. GPT-OSS 20B es gratis en Groq, 890ms avg TTFT, ya configurado como provider. El campo `llm_override` en `SkillAgentBase` formaliza este patrón por agente.
 
 **⚠️ Nota de deprecación — modelos Gemini:**
 `gemini-2.5-flash-lite` y `gemini-2.5-flash` están programados para deprecarse el **17 jun 2026**.
 Migrar a `gemini-3-flash` (o equivalente GA) antes de esa fecha. Monitorear: `https://ai.google.dev/gemini-api/docs/changelog`.
 Los modelos Gemini 3.x (preview a mar 2026) no son production-ready aún por 429s en function calling.
+
+---
+
+## Runbook operacional
+
+### Arrancar el proyecto (desarrollo)
+
+```bash
+# 1. Sincronizar dependencias
+cd /home/edwin8600/schoolai
+uv sync
+
+# 2. Base de datos — aplicar migraciones pendientes
+uv run alembic upgrade head
+
+# 3. Bots (cada uno en su terminal)
+uv run schoolai-bot            # Modo Libre (Bot principal)
+uv run schoolai-bot-jornada    # Modo Jornada
+uv run schoolai-bot-agente     # Bot Agente (DeepSeek Reasoner + Qwen3-Coder)
+
+# 4. API REST (proceso separado)
+uv run schoolai-api            # FastAPI en http://localhost:8000
+                               # Swagger UI: http://localhost:8000/docs
+```
+
+### Comandos frecuentes
+
+```bash
+# Ver logs en tiempo real
+tail -f logs/schoolai_$(date +%Y-%m-%d).log
+
+# Lint / format
+uv run ruff check src/
+uv run ruff format src/
+
+# Tests
+uv run pytest -x -q
+
+# Agregar dependencia nueva
+uv add <paquete>
+
+# Crear migración DB (después de cambiar un modelo SQLAlchemy)
+uv run alembic revision --autogenerate -m "descripcion del cambio"
+uv run alembic upgrade head
+```
+
+### Señales de problema frecuentes
+
+| Síntoma | Causa probable | Acción |
+|---|---|---|
+| `ValueError: API key not configured for provider deepseek` | `DEEPSEEK_API_KEY` faltante en `.env` | Agregar clave al `.env` |
+| Bot no responde a mensajes de voz | `GROQ_API_KEY` inválida (Whisper usa Groq) | Regenerar en console.groq.com |
+| ReplAgent falla con "model not found" | `ollama signin` no ejecutado | `ollama signin` en terminal |
+| Redis `ConnectionRefusedError` | Redis no corre (se degrada a RAM) | `redis-server` o dejar sin `REDIS_URL` |
+| `429 Too Many Requests` desde Google | Free tier 1,000 RPD alcanzado | El fallback a DeepSeek actúa automáticamente |
+| Doble instancia del bot (PTB error) | PID file obsoleto | El singleton_guard lo maneja; si persiste: `rm /tmp/schoolai-*.pid` |
+
+---
+
+## Migraciones de base de datos
+
+Convención y flujo con Alembic:
+
+```bash
+# Ver estado actual
+uv run alembic current
+
+# Ver historial
+uv run alembic history --verbose
+
+# Crear nueva migración (después de editar src/schoolai/db/models/)
+uv run alembic revision --autogenerate -m "add_campo_a_tabla"
+
+# Aplicar
+uv run alembic upgrade head
+
+# Rollback un paso
+uv run alembic downgrade -1
+```
+
+**Convención de nombres**: `verb_noun` en snake_case, descriptivo. Ej: `add_whatsapp_phone_to_teachers`, `create_index_attendance_date`.
+
+**Archivo de env para alembic** (`alembic.ini` + `env.py`): usa `settings.database_url` desde `config.py`. En producción debe estar `DATABASE_URL` en el entorno.
+
+**Migración más reciente**: `d9d691ddadf1` — índices de rendimiento en `attendance` y `homework`.
+
+---
+
+## Límites y cuotas de providers LLM
+
+| Provider | Plan | Límite | Notas |
+|---|---|---|---|
+| Google AI Studio (Gemini) | Free | 1,000 RPD / 15 RPM | Extractor + Router + SkillAgents. El failover actúa al 429. |
+| DeepSeek | Pay-per-use | Sin límite fijo | $0.55/M tokens Reasoner. Límites de concurrencia variables. |
+| Mistral | Pay-per-use | Sin límite fijo | Small: $0.1/M. Large: $2/M (solo failover final). |
+| Groq | Free | ~14,400 RPD / 30 RPM (varía por modelo) | GPT-OSS 20B: verificar en console.groq.com/limits |
+| Ollama Cloud (Qwen3-Coder) | Free con signin | Sin límite publicado | Requiere `ollama signin`. Solo para ReplAgent. |
+| Z.AI (GLM) | Free tier | 1 req/s concurrente aprox. | Solo ReplAgent legacy si Ollama falla |
+
+**Cuándo escalar**: si Gemini alcanza 1,000 RPD diariamente, considerar Google AI Pro ($7/mes) o agregar `llm_override="deepseek/deepseek-chat"` a los SkillAgents para reducir dependencia del free tier.
+
+---
+
+## Historial de decisiones LLM
+
+Ver benchmark completo: `docs/llm-benchmark-2026-04-13.md`
+
+| Fecha | Cambio | Razón |
+|---|---|---|
+| 2026-04 (inicial) | Orquestador: `groq/llama-3.3-70b-versatile` | Disponible, rápido, gratis |
+| 2026-04-07 | Extractor/Router: → `google/gemini-2.5-flash-lite` | 97% quality, latencia aceptable, free tier |
+| 2026-04-07 | Chat: → `mistral/mistral-small-latest` | 97% quality, 434ms TTFT, costo bajo |
+| 2026-04-14 | Chat: → `groq/compound` + fallback `mistral-small` | Web search nativa, 70K TPM gratis; Mistral Small como fallback (mismo quality, sin search) |
+| 2026-04-13 | Orquestador: → `deepseek/deepseek-reasoner` | 100% quality en benchmark propio; reasoning interno |
+| 2026-04-13 | Fallback 3: + `groq/openai/gpt-oss-20b` | 82% quality, 347ms, gratis en Groq; reemplaza Step 3.5 Flash (22%) |
+| 2026-04-13 | ReplAgent: `zai/glm-4.7-flash` → `ollama/qwen3-coder:480b-cloud` | Código Python correcto (no instalado — ver siguiente) |
+| 2026-04-14 | ReplAgent: `ollama/qwen3-coder:480b-cloud` → `groq/openai/gpt-oss-20b` | Benchmark 3/3 `await query()` correcto; qwen3-coder no disponible en Ollama local |
+| Jun 2026 | **Pendiente**: `gemini-2.5-flash-lite` → deprecación | Migrar a `gemini-3-flash` antes del 17 jun 2026 |

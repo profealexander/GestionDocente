@@ -1,11 +1,11 @@
 """Esquemas de datos para extracción de intención y entidades."""
 
-from dataclasses import dataclass, field
 from typing import Literal
 
+from pydantic import BaseModel, Field
 
-@dataclass
-class AttendanceExtract:
+
+class AttendanceExtract(BaseModel):
     names: list[str]
     course: str | None
     date: str  # "today" | "yesterday" | "YYYY-MM-DD"
@@ -13,18 +13,16 @@ class AttendanceExtract:
     complete: bool  # False si falta course
 
 
-@dataclass
-class HomeworkExtract:
+class HomeworkExtract(BaseModel):
     description: str
     course: str | None
     subject: str | None
     delivery_date: str | None  # "YYYY-MM-DD" | nombre día | None
     complete: bool  # False si falta course o subject
-    subjects: list[str] = field(default_factory=list)  # todas las materias detectadas
+    subjects: list[str] = Field(default_factory=list)  # todas las materias detectadas
 
 
-@dataclass
-class QueryExtract:
+class QueryExtract(BaseModel):
     query_type: Literal["attendance", "homework"]
     courses: list[str]  # abreviaturas de cursos, [] si no se mencionó ninguno
     period: str  # today|yesterday|week|last_week|month|last_month|trimester|...
@@ -32,8 +30,7 @@ class QueryExtract:
     subject: str | None = None  # materia específica si se mencionó
 
 
-@dataclass
-class HomeworkReportExtract:
+class HomeworkReportExtract(BaseModel):
     names: list[str]  # quienes no cumplieron
     homework_ref: int | None  # número de tarea (ej: 3)
     course: str | None
@@ -42,13 +39,11 @@ class HomeworkReportExtract:
     complete: bool  # False si falta course o homework_ref
 
 
-@dataclass
-class ChatExtract:
+class ChatExtract(BaseModel):
     pass
 
 
-@dataclass
-class ExtractionResult:
+class ExtractionResult(BaseModel):
     intent: Literal["attendance", "homework", "homework_report", "query", "chat"]
     data: AttendanceExtract | HomeworkExtract | HomeworkReportExtract | QueryExtract | ChatExtract
     via_llm: bool = False  # True cuando se usó LLM fallback (confianza menor)

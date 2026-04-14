@@ -1,7 +1,7 @@
 """ReplAgent — agente especializado en consultas analíticas via Python REPL.
 
-Usa Qwen3-Coder 480B Cloud (via Ollama) para análisis/SQL/código.
-Ollama CLI debe estar logueado (ollama signin) para acceso cloud.
+Usa GPT-OSS 20B (Groq) para análisis/SQL/código.
+Validado: genera `await query(sql)` correcto en benchmark 3/3 prompts.
 """
 
 from __future__ import annotations
@@ -34,11 +34,11 @@ _SYSTEM_PROMPT = (
 
 
 class ReplAgent(SkillAgentBase):
-    """Agente analítico — usa Qwen3-Coder 480B Cloud para código Python/SQL."""
+    """Agente analítico — usa GPT-OSS 20B (Groq) para código Python/SQL."""
 
     name = "repl"
     system_prompt_template = _SYSTEM_PROMPT
-    llm_override = "ollama/qwen3-coder:480b-cloud"
+    llm_override = "groq/openai/gpt-oss-20b"
 
     @property
     def tools(self):

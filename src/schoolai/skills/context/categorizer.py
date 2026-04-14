@@ -1,94 +1,65 @@
 """Categorización automática de documentos via LLM.
 
 Determina: título, categoría y scope a partir del contenido + pista opcional.
+Usa structured output portable (json_object + Pydantic) en lugar de regex frágil.
 """
 
 from __future__ import annotations
 
-import asyncio
-import json
-import re
+from typing import Literal
 
 from loguru import logger
+from pydantic import BaseModel
 
-_CATEGORIES = ["schedule", "calendar", "policies", "contacts", "notes", "other"]
-_SCOPES = ["personal", "institution"]
 
-_PROMPT = """\
-Analiza el siguiente contenido de un documento y determina:
-1. Un título descriptivo (máximo 70 caracteres).
-2. La categoría más apropiada de esta lista:
-   - schedule   → horario del docente (clases, horas, días)
-   - calendar   → calendario escolar, cronograma de fechas, trimestres, feriados
-   - policies   → reglamentos, normas, circulares, comunicados oficiales
-   - contacts   → directorio de contactos, teléfonos, correos
-   - notes      → apuntes, recordatorios, notas personales
-   - other      → no encaja en ninguna categoría anterior
-3. El alcance:
-   - personal     → información específica del docente (su horario, sus notas)
-   - institution  → aplica a toda la institución (calendario escolar, reglamentos)
+class _CategorizerOutput(BaseModel):
+    title: str
+    category: Literal["schedule", "calendar", "policies", "contacts", "notes", "other"]
+    scope: Literal["personal", "institution"]
 
-Pista del usuario: {hint}
 
-Contenido (primeros 2000 caracteres):
-{content}
-
-Responde ÚNICAMENTE con JSON válido, sin texto adicional:
-{{"title": "...", "category": "...", "scope": "..."}}
+_SYSTEM = """\
+You analyze school documents and classify them.
+- title: descriptive title, max 70 chars, in the document's language.
+- category: best match — schedule (teacher timetable), calendar (school dates/trimesters), \
+policies (rules/circulars), contacts (directories/phones), notes (personal notes/reminders), \
+other (none of the above).
+- scope: personal = specific to one teacher; institution = applies to the whole school.\
 """
 
 
 async def categorize(content: str, hint: str | None = None) -> dict[str, str]:
     """Retorna {title, category, scope}. Usa defaults si el LLM falla."""
     from schoolai.config import settings
-    from schoolai.skills.llm.client import get_client, parse_model
+    from schoolai.skills.llm.structured import llm_structured_output
 
-    provider, model = parse_model(settings.llm_orchestrator)
-    try:
-        client = get_client(provider, timeout=20.0)
-    except ValueError:
-        provider, model = parse_model(settings.llm_orchestrator_fallback.split(",")[0].strip())
-        client = get_client(provider, timeout=20.0)
-
-    prompt = _PROMPT.format(
-        hint=hint or "ninguna",
-        content=content[:2000],
+    prompt = (
+        f"User hint: {hint or 'none'}\n\n"
+        f"Document content (first 2000 chars):\n{content[:2000]}"
     )
 
-    def _call():
-        return client.chat.completions.create(
-            model=model,
-            messages=[{"role": "user", "content": prompt}],
-            temperature=0,
-        )
+    # Intento con el extractor configurado; si el provider falla, structured_output
+    # retorna None y usamos el fallback de abajo.
+    provider_model = settings.llm_extractor
+    result = await llm_structured_output(
+        prompt=prompt,
+        model_cls=_CategorizerOutput,
+        provider_model=provider_model,
+        system_prefix=_SYSTEM,
+        timeout=20.0,
+        agent="context_categorizer",
+    )
 
-    try:
-        from schoolai.skills.llm.usage import fire_record_usage
+    if result is None:
+        logger.warning("[categorizer] LLM categorization failed, using defaults")
+        return {
+            "title": hint[:70] if hint else "Documento sin título",
+            "category": "other",
+            "scope": "personal",
+        }
 
-        response = await asyncio.to_thread(_call)
-        fire_record_usage(
-            provider=provider, model=model, response=response, agent="context_categorizer"
-        )
-        raw = (response.choices[0].message.content or "").strip()
-        # Extraer JSON aunque venga envuelto en ```json ... ```
-        match = re.search(r"\{.*\}", raw, re.DOTALL)
-        if match:
-            data = json.loads(match.group())
-            return {
-                "title": str(data.get("title", "Documento"))[:120],
-                "category": data.get("category", "other")
-                if data.get("category") in _CATEGORIES
-                else "other",
-                "scope": data.get("scope", "personal")
-                if data.get("scope") in _SCOPES
-                else "personal",
-            }
-    except Exception as exc:
-        logger.warning(f"[categorizer] LLM categorization failed, using defaults: {exc}")
-
-    # Fallback: title desde hint o genérico
     return {
-        "title": (hint[:70] if hint else "Documento sin título"),
-        "category": "other",
-        "scope": "personal",
+        "title": result.title[:120],
+        "category": result.category,
+        "scope": result.scope,
     }

@@ -1,4 +1,4 @@
-"""ChatSkill — fallback de conversación libre usando LLM (GLM-4.7 streaming)."""
+"""ChatSkill — fallback de conversación libre con web search (Groq Compound)."""
 
 from __future__ import annotations
 

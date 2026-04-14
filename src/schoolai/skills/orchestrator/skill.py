@@ -1,9 +1,9 @@
-"""OrchestratorSkill — agente inteligente con GLM-4.7-Flash (Z.AI) + todas las herramientas.
+"""OrchestratorSkill — agente inteligente con DeepSeek Reasoner + todas las herramientas.
 
 Actúa como fallback inteligente entre las skills específicas y ChatSkill:
 - Skills específicas (Attendance, Homework, etc.) = detección regex/keywords — rápidas
 - OrchestratorSkill = fallback con tool calling — entiende intenciones complejas
-- ChatSkill = emergencia si Orchestrator no está configurado
+- ChatSkill = conversación libre + web search si Orchestrator no matcheó
 
 Registro: priority=90 (antes de ChatSkill en 100).
 matches() = False → excluido de detect_all(), solo activa vía registry.detect() fallback.
@@ -19,7 +19,7 @@ from schoolai.skills.base import BaseSkill
 
 
 class OrchestratorSkill(BaseSkill):
-    """Fallback inteligente: GLM-4.7-Flash con todas las herramientas del sistema."""
+    """Fallback inteligente: DeepSeek Reasoner con todas las herramientas del sistema."""
 
     intent = "orchestrator"
     priority = 90

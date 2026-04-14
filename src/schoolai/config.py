@@ -33,10 +33,11 @@ class Settings(BaseSettings):
 
     # ── LLM model per skill (format: "provider/model") ────────────────────────
     llm_extractor: str = "google/gemini-2.5-flash-lite"  # extracción estructurada
-    llm_chat: str = "mistral/mistral-large-latest"  # chat general
+    llm_chat: str = "groq/compound"  # chat general — búsqueda web nativa, 70K TPM
+    llm_chat_fallback: str = "mistral/mistral-small-latest"  # fallback chat — 97% quality, 421ms
     llm_router: str = "google/gemini-2.5-flash-lite"  # routing / clasificación
-    llm_orchestrator: str = "mistral/mistral-small-latest"  # orquestador multi-tool
-    llm_orchestrator_fallback: str = "google/gemini-2.5-flash-lite,mistral/mistral-large-latest,groq/llama-3.3-70b-versatile"  # cadena de failover operativa
+    llm_orchestrator: str = "deepseek/deepseek-reasoner"  # orquestador multi-tool — 100% quality + reasoning
+    llm_orchestrator_fallback: str = "deepseek/deepseek-chat,google/gemini-2.5-flash-lite,groq/openai/gpt-oss-20b,mistral/mistral-large-latest"  # cadena de failover operativa
 
     # ── API keys ───────────────────────────────────────────────────────────────
     groq_api_key: str = ""  # Groq — Whisper + fallback LLM

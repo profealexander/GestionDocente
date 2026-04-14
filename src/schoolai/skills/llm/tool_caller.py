@@ -1,7 +1,8 @@
-"""Helper compartido para tool calling con Groq.
+"""Helper compartido para tool calling (extractor fallback).
 
-Centraliza la lógica HTTP para que cada skill solo defina sus tools
-y el mapeo tool_name → dataclass.
+Usa settings.llm_extractor (Gemini 2.5 Flash-Lite) para convertir mensajes ambiguos
+en ExtractionResult/CuotaExtract cuando el regex de cada skill no logra parsear.
+Centraliza la lógica HTTP para que cada skill solo defina sus tools.
 """
 
 from __future__ import annotations
