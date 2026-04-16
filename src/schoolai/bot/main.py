@@ -42,7 +42,7 @@ from schoolai.bot.context_handler import handle_context_text_command
 from schoolai.bot.cron_handler import handle_cron_command
 from schoolai.bot.cron_service import cron_service
 from schoolai.bot.db_handler import handle_db_callback, handle_db_command, handle_db_text
-from schoolai.bot.handlers import cmd_editar, cmd_registrar, handle_text, handle_voice
+from schoolai.bot.handlers import cmd_editar, cmd_registrar, handle_photo, handle_text, handle_voice
 from schoolai.bot.help_handler import handle_help_back, handle_help_callback, handle_help_command
 from schoolai.bot.jornada_handler import (
     handle_horario_callback,
@@ -407,6 +407,7 @@ def run(dev: bool = False) -> None:
         ),
     )
     app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_text))
+    app.add_handler(MessageHandler(filters.PHOTO, handle_photo))
     app.add_handler(MessageHandler(filters.VOICE | filters.AUDIO, handle_voice))
 
     logger.info("Bot running. Press Ctrl+C to stop.")

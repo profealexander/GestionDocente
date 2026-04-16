@@ -24,7 +24,7 @@ router = APIRouter(prefix="/dev", tags=["Developer"])
 # Modelos sugeridos por proveedor
 _PROVIDER_MODELS: dict[str, list[str]] = {
     "google":     ["google/gemini-2.5-flash-lite", "google/gemini-2.5-flash"],
-    "groq":       ["groq/llama-3.1-8b-instant", "groq/llama-3.3-70b-versatile"],
+    "groq":       ["groq/meta-llama/llama-4-scout-17b-16e-instruct", "groq/openai/gpt-oss-120b"],
     "zai":        ["zai/glm-4.7-flash"],
     "zhipu":      ["zhipu/glm-4-flash"],
     "mistral":    ["mistral/mistral-small-latest"],

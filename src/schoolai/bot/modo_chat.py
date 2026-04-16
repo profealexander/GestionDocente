@@ -49,7 +49,10 @@ async def desactivar_modo_chat(update: Update, user_id: int) -> None:
 async def handle_chat_mode_text(update: Update, user_id: int) -> bool:
     """Interceptor priority=1 — captura botón Chat IA y procesa mensajes en modo chat."""
     msg = update.message
-    if not msg or not msg.text:
+    if not msg:
+        return False
+
+    if not msg.text:
         return False
 
     text = msg.text.strip()

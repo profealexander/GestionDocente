@@ -208,10 +208,10 @@ def _extract_names(text: str, status_re: re.Pattern) -> list[str]:
     left = text[: m.start()].strip().rstrip(",.")
     right = _COURSE_RE.sub("", text[m.end() :]).strip().lstrip(",.")
     right = _COURSE_VERBAL_RE.sub("", right).strip(", .")
-    right = re.sub(r"\b(en|de|del|para|con)\b", "", right, flags=re.IGNORECASE).strip(", .")
+    right = _NAME_PREP_RE.sub("", right).strip(", .")
 
     def _split(segment: str) -> list[str]:
-        parts = re.split(r",\s*|\s+y\s+", segment, flags=re.IGNORECASE)
+        parts = _NAME_SPLIT_RE.split(segment)
         return [
             p.strip() for p in parts
             if _NAME_MIN_LEN <= len(p.strip()) <= _NAME_MAX_LEN
@@ -254,6 +254,9 @@ def _extract_courses_prefilter(norm_text: str) -> list[str]:
             return abbrevs
     return []
 
+
+_NAME_SPLIT_RE = re.compile(r",\s*|\s+y\s+", re.IGNORECASE)
+_NAME_PREP_RE = re.compile(r"\b(en|de|del|para|con)\b", re.IGNORECASE)
 
 _DAY_OF_MONTH_RE = re.compile(r"\bdel?\s+(\d{1,2})\b")
 _DAY_NAME_RE = re.compile(

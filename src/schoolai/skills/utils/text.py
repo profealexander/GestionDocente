@@ -4,7 +4,7 @@ import unicodedata
 from functools import lru_cache
 
 
-@lru_cache(maxsize=4096)
+@lru_cache(maxsize=65536)
 def normalize(text: str) -> str:
     """NFKD + mayúsculas + sin acentos. Cache LRU: los nombres/keywords se repiten."""
     return "".join(

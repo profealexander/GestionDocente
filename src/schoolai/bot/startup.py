@@ -33,6 +33,10 @@ async def common_post_init(
     from schoolai.config import settings
     from schoolai.skills.utils.courses import load_course_map
 
+    if not settings.redis_url:
+        logger.debug(
+            "[startup] REDIS_URL no configurado — estado de sesión en RAM (sin persistencia entre reinicios).",
+        )
     init_redis(settings.redis_url)
     await load_course_map()
 

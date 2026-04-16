@@ -102,6 +102,24 @@ async def handle_text(update: Update, context: ContextTypes.DEFAULT_TYPE) -> Non
     await _dispatch(update, user.id, text, context)
 
 
+async def handle_photo(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    """Fotos → ChatSkill._handle_vision(), salvo que haya un flow pendiente que espere archivo."""
+    user = update.effective_user
+    if not is_allowed(user.id):
+        logger.warning(f"Unauthorized user {user.id}")
+        return
+
+    # Flows con paso await_file tienen prioridad — esperan una foto del usuario
+    from schoolai.bot.broadcast_handler import handle_broadcast_text
+    if await handle_broadcast_text(update, context):
+        return
+
+    from schoolai.skills.ia.skill import ChatSkill
+    caption = (update.message.caption or "").strip()
+    logger.info(f"[photo] user={user.id} caption={caption[:50]!r}")
+    await ChatSkill().handle(update, user.id, caption)
+
+
 async def handle_voice(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     user = update.effective_user
     if not is_allowed(user.id):

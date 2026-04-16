@@ -1,5 +1,6 @@
 """Match extracted name strings to actual students in the DB."""
 
+import time
 from dataclasses import dataclass, field
 from typing import NamedTuple
 
@@ -14,12 +15,36 @@ from schoolai.skills.utils.text import normalize as _norm
 
 SIMILARITY_THRESHOLD = 0.75  # mínimo para considerar nombre similar
 
+# ── Student lookup cache (per grade_id, TTL 5 min) ───────────────────────────
+
+_STUDENT_CACHE_TTL = 300  # seconds
+
 
 class _StudentEntry(NamedTuple):
     student: object
     display: str
     short: str
     norm_short: str  # pre-normalizado para fuzzy matching — evita re-normalizar en cada check
+
+
+@dataclass
+class _GradeCache:
+    by_id: dict
+    by_first: dict
+    by_last: dict
+    by_full: dict
+    ts: float
+
+
+_grade_cache: dict[int, _GradeCache] = {}
+
+
+def invalidate_grade_cache(grade_id: int | None = None) -> None:
+    """Invalida el caché de un grado específico o todo el caché si grade_id es None."""
+    if grade_id is None:
+        _grade_cache.clear()
+    else:
+        _grade_cache.pop(grade_id, None)
 
 
 @dataclass
@@ -43,13 +68,8 @@ class MatchResult:
         return not self.resolved and len(self.candidates) == 0
 
 
-async def match_names(
-    extracted: list[dict],
-    grade_id: int,
-    session: AsyncSession,
-) -> list[MatchResult]:
-    """Match each extracted name against students of the given grade."""
-    # Load all students for this grade with their person info
+async def _load_grade_lookup(grade_id: int, session: AsyncSession) -> _GradeCache:
+    """Carga y construye las estructuras de búsqueda para un grado desde la DB."""
     stmt = (
         select(Student)
         .where(Student.grade_id == grade_id, Student.status == "active")
@@ -57,46 +77,66 @@ async def match_names(
     )
     students = (await session.execute(stmt)).unique().scalars().all()
 
-    # Build lookup structures
-    by_id: dict[int, _StudentEntry] = {}  # student.id → _StudentEntry
-    by_first: dict[str, list[int]] = {}  # norm first_name → [student_ids]
-    by_last: dict[str, list[int]] = {}  # norm last_name → [student_ids]
-    by_full: dict[str, int] = {}  # norm name variant → student_id
+    by_id: dict[int, _StudentEntry] = {}
+    by_first: dict[str, list[int]] = {}
+    by_last: dict[str, list[int]] = {}
+    by_full: dict[str, int] = {}
 
     for s in students:
         if not s.person:
             continue
         p: Person = s.person
         short = f"{p.first_name} {p.last_name}".strip()
-        if p.second_last_name:
-            full_long = f"{p.first_name} {p.last_name} {p.second_last_name}"
-        else:
-            full_long = short
-
+        full_long = (
+            f"{p.first_name} {p.last_name} {p.second_last_name}"
+            if p.second_last_name
+            else short
+        )
         display = p.full_name()
         by_id[s.id] = _StudentEntry(
             student=s, display=display, short=short, norm_short=_norm(short),
         )
         by_full[_norm(short)] = s.id
         by_full[_norm(full_long)] = s.id
-        # Variantes con apellido primero: "Recalde David", "Recalde Montenegro David Leodan"
         by_full[_norm(f"{p.last_name} {p.first_name}")] = s.id
         if p.middle_name:
             by_full[_norm(f"{p.last_name} {p.first_name} {p.middle_name}")] = s.id
         if p.second_last_name:
             by_full[_norm(f"{p.last_name} {p.second_last_name} {p.first_name}")] = s.id
-
         by_first.setdefault(_norm(p.first_name), []).append(s.id)
         if p.middle_name:
             by_first.setdefault(_norm(p.middle_name), []).append(s.id)
-
         by_last.setdefault(_norm(p.last_name), []).append(s.id)
         if p.second_last_name:
             by_last.setdefault(_norm(p.second_last_name), []).append(s.id)
 
+    return _GradeCache(
+        by_id=by_id, by_first=by_first, by_last=by_last, by_full=by_full,
+        ts=time.monotonic(),
+    )
+
+
+async def match_names(
+    extracted: list[dict],
+    grade_id: int,
+    session: AsyncSession,
+) -> list[MatchResult]:
+    """Match each extracted name against students of the given grade.
+
+    Student lookup structures are cached per grade_id for _STUDENT_CACHE_TTL seconds
+    to avoid a DB round-trip on every attendance message.
+    """
+    cached = _grade_cache.get(grade_id)
+    if cached is None or (time.monotonic() - cached.ts) > _STUDENT_CACHE_TTL:
+        cached = await _load_grade_lookup(grade_id, session)
+        _grade_cache[grade_id] = cached
+
     results: list[MatchResult] = []
     for item in extracted:
-        result = _match_one(item["name"], item["status"], by_id, by_first, by_last, by_full)
+        result = _match_one(
+            item["name"], item["status"],
+            cached.by_id, cached.by_first, cached.by_last, cached.by_full,
+        )
         results.append(result)
 
     return results

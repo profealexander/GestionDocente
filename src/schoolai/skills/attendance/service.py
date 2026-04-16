@@ -3,7 +3,7 @@
 from dataclasses import dataclass
 from datetime import date, datetime, timedelta, timezone
 
-from sqlalchemy import delete, select
+from sqlalchemy import delete, insert, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from schoolai.db.models.attendance import Attendance
@@ -88,17 +88,20 @@ async def save_absences(
             ),
         )
 
-    for sid in student_ids:
-        session.add(
-            Attendance(
-                student_id=sid,
-                date=attendance_date,
-                status=statuses.get(sid, ABSENT),
-                subject_name=subject_name,
-                period_start=period_start,
-                period_end=period_end,
-            ),
-        )
+    await session.execute(
+        insert(Attendance),
+        [
+            {
+                "student_id": sid,
+                "date": attendance_date,
+                "status": statuses.get(sid, ABSENT),
+                "subject_name": subject_name,
+                "period_start": period_start,
+                "period_end": period_end,
+            }
+            for sid in student_ids
+        ],
+    )
 
     await session.commit()
     return AttendanceResult(saved=len(student_ids), date=attendance_date, grade_name="")

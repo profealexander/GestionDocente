@@ -32,12 +32,14 @@ class Settings(BaseSettings):
     telegram_allowed_users: str = ""  # comma-separated user IDs
 
     # ── LLM model per skill (format: "provider/model") ────────────────────────
-    llm_extractor: str = "google/gemini-2.5-flash-lite"  # extracción estructurada
+    llm_extractor: str = "google/gemini-3.1-flash-lite-preview"  # extracción estructurada — benchmark 1451ms, 100% tool calling
     llm_chat: str = "groq/compound-beta"  # chat general — búsqueda web nativa, 70K TPM
-    llm_chat_fallback: str = "mistral/mistral-small-latest"  # fallback chat — 97% quality, 421ms
-    llm_router: str = "google/gemini-2.5-flash-lite"  # routing / clasificación
-    llm_orchestrator: str = "deepseek/deepseek-reasoner"  # orquestador multi-tool — 100% quality + reasoning
-    llm_orchestrator_fallback: str = "deepseek/deepseek-chat,google/gemini-2.5-flash-lite,groq/openai/gpt-oss-20b,mistral/mistral-large-latest"  # cadena de failover operativa
+    llm_chat_fallback: str = "mistral/mistral-small-latest"  # fallback chat — 882ms (benchmark 2026-04-15)
+    llm_vision: str = "openrouter/nvidia/nemotron-nano-12b-v2-vl:free"  # visión — rápido, 128K ctx
+    llm_vision_fallback: str = "openrouter/google/gemma-4-31b-it:free"  # visión fallback — más potente
+    llm_router: str = "google/gemini-3.1-flash-lite-preview"  # routing / clasificación
+    llm_orchestrator: str = "deepseek/deepseek-chat"  # orquestador multi-tool — 1899ms, 100% tool calling, estable en multi-turn
+    llm_orchestrator_fallback: str = "deepseek/deepseek-reasoner,google/gemini-2.5-flash-lite,groq/openai/gpt-oss-120b,mistral/mistral-large-latest"  # cadena de failover: R1 → Gemini 2.5 → gpt-oss-120b → mistral
 
     # ── API keys ───────────────────────────────────────────────────────────────
     groq_api_key: str = ""  # Groq — Whisper + fallback LLM

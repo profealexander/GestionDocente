@@ -54,6 +54,9 @@ class HomeworkSkill(BaseSkill):
         re.IGNORECASE,
     )
 
+    _DIGIT_COURSE_RE: re.Pattern = re.compile(r"^\d{1,2}$")
+    _MULTI_SUBJECT_RE: re.Pattern = re.compile(r"\bmaterias\b", re.IGNORECASE)
+
     # Mensajes que son consultas puras: "tareas" + solo curso/período, sin descripción real
     # Plural "tareas" sola o con filtro corto → es consulta, no creación.
     # Singular "tarea" sin trigger explícito → puede ser creación, no bloquear.
@@ -97,7 +100,7 @@ class HomeworkSkill(BaseSkill):
 
         # Descartar cursos que sean solo dígitos (ej. "9" en "tarea 9") —
         # son falsos positivos del patrón de números EGB sin sufijo.
-        if course is not None and re.fullmatch(r"\d{1,2}", course.strip()):
+        if course is not None and self._DIGIT_COURSE_RE.fullmatch(course.strip()):
             course = None
 
         # Extraer descripción real: texto después de ":" si existe
@@ -132,7 +135,7 @@ class HomeworkSkill(BaseSkill):
                 subjects = [subject_name]
 
         # Si se menciona "materias" (plural), puede haber múltiples → forzar LLM
-        multi_hint = bool(re.search(r"\bmaterias\b", text, re.IGNORECASE))
+        multi_hint = bool(self._MULTI_SUBJECT_RE.search(text))
 
         result = ExtractionResult(
             intent="homework",
@@ -185,6 +188,8 @@ class HWEditSkill(BaseSkill):
         r"\b(asistencia|falta|atraso|justificado|cuota|actividad|pago)\b",
         re.IGNORECASE,
     )
+    _HW_REF_RE: re.Pattern = re.compile(r"#?\s*(\d+)")
+    _DIGIT_COURSE_RE: re.Pattern = re.compile(r"^\d{1,2}$")
 
     def matches(self, text: str) -> bool:
         if self._OTHER_DOMAIN_RE.search(text):
@@ -198,10 +203,10 @@ class HWEditSkill(BaseSkill):
 
         course = extract_course(text)
         # Descartar bare digits (falsos positivos del detector)
-        if course is not None and re.fullmatch(r"\d{1,2}", course.strip()):
+        if course is not None and self._DIGIT_COURSE_RE.fullmatch(course.strip()):
             course = None
 
-        ref_m = re.search(r"#?\s*(\d+)", text)
+        ref_m = self._HW_REF_RE.search(text)
         hw_ref = int(ref_m.group(1)) if ref_m else None
 
         # Siempre extraer subject_id del contexto de jornada (si hay jornada activa).
@@ -251,6 +256,10 @@ class HWReportSkill(BaseSkill):
     _NOISE: frozenset[str] = frozenset(
         {"hoy", "ayer", "el", "la", "los", "las", "de", "del", "al", "para"}
     )
+    _LATE_RE: re.Pattern = re.compile(r"\b(tarde|atrasad[ao])\b", re.IGNORECASE)
+    _PARTIAL_RE: re.Pattern = re.compile(r"\b(incompleto|parcial)\b", re.IGNORECASE)
+    _HW_REF_RE: re.Pattern = re.compile(r"\b(?:tarea|la|#)\s*#?(\d+)\b", re.IGNORECASE)
+    _NAME_SPLIT_RE: re.Pattern = re.compile(r",\s*|\s+y\s+", re.IGNORECASE)
 
     async def handle(self, update, user_id: int, text: str) -> None:
         from schoolai.bot.action_handler import handle_extraction
@@ -258,9 +267,9 @@ class HWReportSkill(BaseSkill):
         from schoolai.skills.homework.tools import llm_fallback
         from schoolai.skills.utils.schema import ExtractionResult, HomeworkReportExtract
 
-        if re.search(r"\b(tarde|atrasad[ao])\b", text, re.IGNORECASE):
+        if self._LATE_RE.search(text):
             status = "late"
-        elif re.search(r"\b(incompleto|parcial)\b", text, re.IGNORECASE):
+        elif self._PARTIAL_RE.search(text):
             status = "partial"
         else:
             status = "missing"
@@ -270,7 +279,7 @@ class HWReportSkill(BaseSkill):
         if m:
             left = text[: m.start()].strip().rstrip(",.")
             if len(left) > 2:
-                parts = re.split(r",\s*|\s+y\s+", left, flags=re.IGNORECASE)
+                parts = self._NAME_SPLIT_RE.split(left)
                 names = [
                     p.strip()
                     for p in parts
@@ -280,7 +289,7 @@ class HWReportSkill(BaseSkill):
                     and not self._COURSE_TOK.fullmatch(p.strip())
                 ]
 
-        ref_m = re.search(r"\b(?:tarea|la|#)\s*#?(\d+)\b", text, re.IGNORECASE)
+        ref_m = self._HW_REF_RE.search(text)
         homework_ref = int(ref_m.group(1)) if ref_m else None
 
         course = extract_course(text)

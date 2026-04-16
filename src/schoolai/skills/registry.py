@@ -34,11 +34,13 @@ class SkillRegistry:
     def __init__(self) -> None:
         self._skills: list[BaseSkill] = []
         self._by_intent: dict[str, BaseSkill] = {}
+        self._detect_all_cache: dict[str, list[BaseSkill]] = {}
 
     def register(self, skill: BaseSkill) -> None:
         """Registra una skill. El orden de registro define la prioridad de detección."""
         self._skills.append(skill)
         self._by_intent[skill.intent] = skill
+        self._detect_all_cache.clear()
         logger.debug(f"[registry] registered skill: {skill.intent}")
 
     def detect(self, text: str) -> BaseSkill:
@@ -71,10 +73,17 @@ class SkillRegistry:
         Excluye fallbacks (intent="chat" y intent="orchestrator") — son exclusivos de detect().
         Si ninguna hace match, retorna lista vacía (el caller decide el fallback).
         """
-        return [
+        cached = self._detect_all_cache.get(text)
+        if cached is not None:
+            return cached
+        result = [
             s for s in self._skills
             if s.intent not in ("chat", "orchestrator") and s.matches(text)
         ]
+        if len(self._detect_all_cache) >= 256:
+            self._detect_all_cache.clear()
+        self._detect_all_cache[text] = result
+        return result
 
     def get(self, intent: str) -> BaseSkill | None:
         """Obtiene una skill por su intent. Devuelve None si no existe."""
