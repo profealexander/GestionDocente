@@ -99,6 +99,10 @@ async def handle_text(update: Update, context: ContextTypes.DEFAULT_TYPE) -> Non
     logger.info(f"[text] user={user.id} (@{user.username}): {text[:TRUNCATE_LOG_PREVIEW]}")
     logger.debug(f"[text:full] user={user.id}: {text}")
 
+    if settings.gateway_enabled:
+        from schoolai.bot.gateway_adapter import intercept
+        await intercept(update, context, text)
+
     await _dispatch(update, user.id, text, context)
 
 

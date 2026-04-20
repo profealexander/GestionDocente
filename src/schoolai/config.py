@@ -95,6 +95,10 @@ class Settings(BaseSettings):
     # Autonomía: si True, el bot pide confirmación antes de toda escritura en DB
     supervised_mode: bool = False
 
+    # Gateway v2 — cuando True los bots normalizan a TaskSpec antes del dispatch v1
+    gateway_enabled: bool = False
+    gateway_url: str = "http://localhost:8001"  # usado por canales externos (web, CLI)
+
     @cached_property
     def allowed_user_ids(self) -> list[int]:
         if not self.telegram_allowed_users:

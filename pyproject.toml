@@ -65,6 +65,7 @@ schoolai-bot-jornada = "schoolai.bot.main_dev:run_dev"
 schoolai-bot-agente  = "schoolai.bot.main_agente:run_agente"
 schoolai-dev        = "schoolai.bot.dev:run"
 schoolai-api        = "schoolai.api.runner:run"
+schoolai-gateway    = "schoolai.gateway.runner:run"
 
 [build-system]
 requires = ["hatchling"]
