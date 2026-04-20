@@ -8,16 +8,16 @@ from fastapi import FastAPI, HTTPException
 
 from .auth import AuthError, RateLimitError, check_auth, check_rate_limit
 from .normalizer import normalize
-from .schemas import MessageSpec, TaskSpec
+from .schemas import AgentResponseOut, MessageSpec, TaskSpec
 
 app = FastAPI(title="SchoolAI Gateway", version="2.0.0")
 
 
-@app.post("/gateway/message", response_model=TaskSpec)
-async def receive_message(msg: MessageSpec) -> TaskSpec:
+@app.post("/gateway/message", response_model=AgentResponseOut)
+async def receive_message(msg: MessageSpec) -> AgentResponseOut:
     """
-    Channel adapters POST here. Returns a TaskSpec for the Agent Runtime.
-    Agent Runtime integration is wired in Fase 2.
+    Channel adapters POST here.
+    Normalizes → TaskSpec → Agent Runtime → AgentResponse.
     """
     try:
         check_auth(msg.user_id)
@@ -28,7 +28,29 @@ async def receive_message(msg: MessageSpec) -> TaskSpec:
         raise HTTPException(status_code=429, detail=str(e))
 
     task = await normalize(msg)
-    return task
+
+    from schoolai.agent.loop import run
+    result = await run(task)
+    return AgentResponseOut(
+        session_id=task.session_id,
+        text=result.text,
+        domain=result.domain,
+        intent=result.intent,
+    )
+
+
+@app.post("/gateway/classify", response_model=TaskSpec)
+async def classify_only(msg: MessageSpec) -> TaskSpec:
+    """Returns TaskSpec without running the agent. Useful for testing Fase 1."""
+    try:
+        check_auth(msg.user_id)
+        check_rate_limit(msg.user_id)
+    except AuthError as e:
+        raise HTTPException(status_code=403, detail=str(e))
+    except RateLimitError as e:
+        raise HTTPException(status_code=429, detail=str(e))
+
+    return await normalize(msg)
 
 
 @app.get("/gateway/health")

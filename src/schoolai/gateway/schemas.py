@@ -29,3 +29,7 @@ class ResponseSpec(BaseModel):
     text: str
     domain: str
     intent: str
+
+
+# Alias usado por app.py — mismo shape, nombre explícito para el OpenAPI spec
+AgentResponseOut = ResponseSpec
