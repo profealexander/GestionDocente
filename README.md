@@ -7,7 +7,7 @@
 
 **Asistente IA para docentes** — registra asistencia, tareas y cuotas desde Telegram con lenguaje natural, sin formularios.
 
-[Guía de usuario](docs/user-guide.md) | [Arquitectura](docs/architecture.md) | [API REST](#api-rest) | [Bot Agente](#ejecución)
+[Guía de usuario](docs/user-guide.md) | [Arquitectura v2](docs/architecture/plan-v2.md) | [API REST](#api-rest) | [Bot Agente](#ejecución)
 
 [![Python](https://img.shields.io/badge/Python-3.13+-3776AB?style=flat&logo=python&logoColor=white)](https://www.python.org/)
 [![FastAPI](https://img.shields.io/badge/FastAPI-0.115+-009688?style=flat&logo=fastapi&logoColor=white)](https://fastapi.tiangolo.com/)
@@ -278,6 +278,7 @@ Ver documentación interactiva en `/docs` (Swagger UI) o `/redoc`.
 | Método | Ruta | Descripción |
 |---|---|---|
 | POST | `/auth/token` | Obtener JWT |
+| GET | `/health` | Estado de API, DB y Redis |
 | GET | `/grades/` | Lista todos los grados |
 | GET | `/subjects/` | Lista materias |
 | GET | `/students/` | Lista estudiantes |
@@ -288,6 +289,8 @@ Ver documentación interactiva en `/docs` (Swagger UI) o `/redoc`.
 | POST | `/cuotas/actividades/` | Crea una actividad |
 | POST | `/cuotas/actividades/{id}/participantes` | Agrega participantes |
 | POST | `/cuotas/actividades/{id}/pagos` | Registra un pago |
+| GET/POST | `/scores/` | Notas académicas por trimestre/columna |
+| GET | `/llm-stats/` | Uso de LLMs agrupado por proveedor y modelo |
 | POST | `/webhook/whatsapp` | Webhook Green API — mensajes entrantes WhatsApp |
 
 ---

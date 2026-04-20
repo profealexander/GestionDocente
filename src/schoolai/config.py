@@ -37,9 +37,11 @@ class Settings(BaseSettings):
     llm_chat_fallback: str = "groq/qwen/qwen3-32b"  # fallback chat — 1038ms, 100% JSON noex, gratis
     llm_vision: str = "openrouter/nvidia/nemotron-nano-12b-v2-vl:free"  # visión — 128K ctx, free
     llm_vision_fallback: str = "openrouter/google/gemma-4-31b-it:free"  # visión fallback — free
-    llm_router: str = "google/gemini-3.1-flash-lite-preview"  # routing / clasificación — mismo modelo que extractor
-    llm_orchestrator: str = "moonshotai/kimi-k2-instruct"  # orquestador multi-tool — Groq free, 100% JSON noex
-    llm_orchestrator_fallback: str = "deepseek/deepseek-chat,deepseek/deepseek-reasoner,groq/openai/gpt-oss-120b,mistral/mistral-large-latest"  # failover: DeepSeek → gpt-oss-120b → Mistral
+    llm_router: str = "google/gemini-3.1-flash-lite-preview"  # routing / clasificación — 100% JSON noex, 500 RPD free
+    llm_router_fallback: str = "groq/openai/gpt-oss-120b,deepseek/deepseek-chat"  # 457ms 100% JSON → 3069ms 100% JSON
+    llm_orchestrator: str = "groq/qwen/qwen3-32b"  # 1092ms, 100% JSON noex, gratis Groq — benchmark 2026-04-19
+    llm_orchestrator_fallback: str = "google/gemini-3.1-flash-lite-preview,deepseek/deepseek-chat,mistral/mistral-medium-latest"  # 100% JSON noex → fallback seguro
+    llm_context_agent: str = "groq/qwen/qwen3-32b"  # context skill agent — mismo tier que orchestrator, configurable independientemente
 
     # ── API keys ───────────────────────────────────────────────────────────────
     groq_api_key: str = ""  # Groq — Whisper + fallback LLM

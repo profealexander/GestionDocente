@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from loguru import logger
 
+from schoolai.config import settings
 from schoolai.skills.orchestrator.skill_agents.base import TELEGRAM_FORMAT, SkillAgentBase
 
 _COMMON_RULES = (
@@ -57,14 +58,14 @@ class ContextAgent(SkillAgentBase):
     """Agente especializado en gestión de documentos de contexto.
 
     Optimizaciones:
-    - llm_override: usa kimi-k2 (Groq, rápido y capaz) en vez de DeepSeek (~5-7s)
+    - llm_override: usa qwen3-32b (Groq, rápido) en vez de DeepSeek (~5-7s)
     - Pre-check de docs: si el docente no tiene documentos, excluye search_context y
       list_context_docs, y usa un system prompt simplificado — reduce de 3 a 2 llamadas LLM.
     """
 
     name = "context"
     system_prompt_template = _SYSTEM_PROMPT_WITH_DOCS  # default; se sobreescribe en run()
-    llm_override = "moonshotai/kimi-k2-instruct"
+    llm_override = settings.llm_context_agent
 
     # Estado por request — seguro en asyncio single-thread
     _teacher_has_docs: bool = True

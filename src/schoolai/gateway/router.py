@@ -7,7 +7,7 @@ from __future__ import annotations
 import json
 
 from schoolai.config import settings
-from schoolai.skills.llm.client import get_client, parse_model
+from schoolai.skills.llm.client import call_with_fallback
 
 _SYSTEM = """
 You are a classifier for a school management assistant.
@@ -29,11 +29,9 @@ Examples:
 
 
 async def classify(text: str) -> dict:
-    provider, model = parse_model(settings.llm_router)
-    client = get_client(provider)
-
-    response = client.chat.completions.create(
-        model=model,
+    response = call_with_fallback(
+        primary=settings.llm_router,
+        fallbacks=settings.llm_router_fallback,
         messages=[
             {"role": "system", "content": _SYSTEM},
             {"role": "user", "content": text},

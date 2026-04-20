@@ -125,9 +125,9 @@ src/schoolai/
 ├── agent/
 │   ├── loop.py          ciclo principal con timing y logs
 │   ├── orchestrator.py  Router Python puro: domain → DomainController
-│   ├── planner.py       LLM #1 (llm_orchestrator/kimi-k2) → plan JSON
+│   ├── planner.py       LLM #1 (llm_orchestrator) → plan JSON
 │   ├── executor.py      Python puro — ejecuta steps, captura errores
-│   ├── synthesizer.py   LLM #2 (llm_router/gemini-flash) → respuesta ES
+│   ├── synthesizer.py   LLM #2 (llm_router) → respuesta ES
 │   ├── context.py       Context Engine RAM, 10 turnos/sesión
 │   ├── schemas.py       PlanStep, ActionResult, AgentContext, AgentResponse
 │   └── domains/
@@ -141,20 +141,76 @@ src/schoolai/
 ├── cli/
 │   └── main.py          CLI interactivo con rich — chat HTTP al gateway
 │
+├── bot/
+│   ├── main.py / main_dev.py / main_agente.py   entrypoints de cada bot
+│   ├── singleton.py     PID-file guard — evita Conflict 409 con watchfiles/WSL2
+│   ├── startup.py       common_post_init: redis, course_map, cleanup jobs
+│   ├── mode.py          modo activo del proceso: "libre" | "jornada"
+│   ├── permissions.py   niveles de acceso: superadmin/admin/secretaria/teacher/none
+│   ├── gateway_adapter.py  thin adapter GATEWAY_ENABLED=true → normaliza a TaskSpec
+│   ├── modo_chat.py     text interceptor p=1: toggle Chat IA por usuario
+│   ├── modo_editar.py   text interceptor p=2: toggle Modo Registrar / Modo Editar
+│   ├── broadcast_handler.py  comunicados masivos a docentes vía WhatsApp (Green API)
+│   ├── query_handler.py helpers de ejecución y formato de consultas
+│   ├── handlers.py / text_interceptors.py / callback_router.py
+│   ├── state.py / state_store.py   sesión por usuario RAM+Redis
+│   ├── action_handler.py / action/  flujos de callback (asistencia, tarea, selección)
+│   ├── jornada_handler.py / jornada/  SOP Engine + notificación matutina
+│   ├── channels/        TelegramChannel, WhatsAppChannel (BaseChannel ABC)
+│   └── …otros handlers: attendance, schedule, position, db, whatsapp, notif, help
+│
+├── api/
+│   ├── main.py / auth.py / schemas.py / runner.py
+│   └── routers/
+│       ├── auth.py, grades.py, subjects.py, students.py
+│       ├── attendance.py, homework.py, cuotas.py
+│       ├── scores.py        notas académicas (gradebook)
+│       ├── llm_stats.py     uso de LLMs agrupado por proveedor/modelo
+│       ├── health.py        GET /health — DB + Redis status
+│       ├── dev.py           endpoints de desarrollo
+│       └── whatsapp_webhook.py
+│
+├── db/
+│   ├── connection.py    sesión async SQLAlchemy + get_db_session()
+│   └── models/
+│       ├── grade, student, teacher, person, subject
+│       ├── attendance, homework, homework_submission  (seguimiento de entregas)
+│       ├── student_score    notas por estudiante/materia/trimestre/columna
+│       ├── cuota, reminder, context_document
+│       ├── llm_usage        registro de tokens/costo por llamada LLM
+│       ├── notification     notificaciones pendientes/enviadas
+│       ├── teacher_absence  ausencias de docentes
+│       ├── whatsapp_contact número WhatsApp vinculado a teacher/person
+│       └── student_representative  representantes (many-to-many con students)
+│
 └── skills/
-    ├── autonomy/
-    │   ├── scheduler.py     AsyncIOScheduler singleton
-    │   ├── bot_registry.py  Registry bot → APScheduler jobs
-    │   └── jobs.py          register_jobs(bot) — reminders c/5min
-    │
-    ├── reports/
-    │   ├── _pdf.py          Helpers compartidos: init_pdf, safe, footer
-    │   ├── attendance.py    generate_attendance_pdf(AttendanceData) → bytes
-    │   └── homework.py      generate_homework_pdf(HomeworkData) → bytes
-    │
-    └── orchestrator/
-        └── _tools/
-            └── reports.py   _report_attendance_pdf, _report_homework_pdf
+    ├── autonomy/        APScheduler singleton + registry de jobs por bot
+    ├── reports/         generate_attendance_pdf / generate_homework_pdf (fpdf2)
+    ├── documents/
+    │   ├── generator.py     Word (docxtpl) + PDF para notificaciones formales
+    │   ├── repository.py    CRUD de documentos institucionales
+    │   └── notif_repository.py  notificaciones pendientes a representantes
+    ├── db/
+    │   ├── service.py       insert/upsert de personas (students, teachers)
+    │   ├── schedule_service.py  horarios y docentes
+    │   ├── schedule_parser.py   parse de cadenas de horario
+    │   ├── position_service.py  cargos institucionales
+    │   └── deduplicator.py     dedup fuzzy de personas
+    ├── orchestrator/
+    │   ├── skill.py / agent.py / router.py / repl.py / session.py
+    │   ├── _tools/           attendance, homework, cuotas, reports, courses,
+    │   │                     context_docs, reminders, repl, teacher, helpers
+    │   └── skill_agents/     SkillAgents: attendance, homework, cuotas,
+    │                         reminders, context, repl (base ABC)
+    ├── attendance/       skill + tools + matcher fuzzy + service + handler_edit
+    ├── homework/         skill + tools + detector + repository + handler_edit
+    ├── cuotas/           skill + tools + handlers (create/pago/query/edit) + service
+    ├── query/            skill + detector + resolver + formatter
+    ├── context/          documentos institucionales + búsqueda web (DuckDuckGo)
+    ├── reminders/        dispatcher + repository + tools
+    ├── ia/               ChatSkill — agente libre (Groq 70B)
+    ├── llm/              cliente unificado + tool_caller + providers + usage tracker
+    └── utils/            normalize, extract_rules, schema (via_llm), keyboards, dates
 
 ui/                          SvelteKit (copiado de ~/schoolaiUI)
 ├── src/lib/api/gateway.ts   GatewaySocket — WebSocket con auto-reconnect
@@ -210,8 +266,29 @@ VITE_GATEWAY_WS=ws://localhost:8001
 
 ## Calidad de Código
 
-- **ruff**: 0 errores
+- **ruff**: 0 errores (verificado 2026-04-20)
 - **pylint**: 9.98/10
+
+## LLM Stack activo (2026-04-20)
+
+| Rol | Modelo primario | Fallback chain |
+|---|---|---|
+| Router (classify) | `google/gemini-3.1-flash-lite-preview` | → `groq/openai/gpt-oss-120b` → `deepseek/deepseek-chat` |
+| Orchestrator (planner) | `groq/qwen/qwen3-32b` | → `google/gemini-3.1-flash-lite-preview` → `deepseek/deepseek-chat` → `mistral/mistral-medium-latest` |
+| Context agent | `groq/qwen/qwen3-32b` | (usa llm_context_agent, configurable independientemente) |
+| Chat | `groq/compound-beta` | → `groq/qwen/qwen3-32b` |
+| Extractor | `google/gemini-3.1-flash-lite-preview` | — |
+
+Fallback implementado en `skills/llm/client.py:call_with_fallback()` — maneja 503 y 429 automáticamente.
+
+## Bugs corregidos en smoke test (2026-04-20)
+
+| Bug | Fix |
+|---|---|
+| `planner.py` — `KeyError` por `{}` del JSON en `.format()` | `.replace("{tools}", tools_desc)` |
+| Parser planner — no manejaba objeto único `{"tool":...}` de Qwen3 | Extendido para 3 formatos de respuesta |
+| `LLM_ORCHESTRATOR=moonshotai/...` — provider no registrado, caía a Groq | Renombrado a `moonshot/` → reemplazado por `groq/qwen/qwen3-32b` |
+| `llm_override` hardcodeado en `context.py` | → `settings.llm_context_agent` |
 
 ---
 
@@ -221,8 +298,28 @@ VITE_GATEWAY_WS=ws://localhost:8001
 |---|---|
 | PostgreSQL + SQLAlchemy | Sin cambios |
 | `_tools/` existentes | Reutilizados directamente por el Executor |
-| LLM providers (groq, google, moonshot) | Sin cambios |
+| LLM providers (groq, google, deepseek, mistral, zai) | Sin cambios |
 | python-telegram-bot | Sin cambios (v1 en producción) |
+
+---
+
+## Implementado post-Fase 4
+
+Funcionalidades añadidas tras las fases planificadas:
+
+| Feature | Módulo | Descripción |
+|---|---|---|
+| Gradebook (notas) | `api/routers/scores.py` + `db/models/student_score.py` | CRUD notas por trimestre/columna |
+| LLM usage tracking | `skills/llm/usage.py` + `db/models/llm_usage.py` + `api/routers/llm_stats.py` | Registro tokens/costo por llamada |
+| Comunicados masivos | `bot/broadcast_handler.py` | Envío WhatsApp a docentes por nivel/cargo |
+| Permisos por rol | `bot/permissions.py` | Niveles: superadmin/admin/secretaria/teacher/none |
+| Singleton guard | `bot/singleton.py` | Evita Conflict 409 en WSL2 con watchfiles |
+| Modo Chat IA / Modo Editar | `bot/modo_chat.py`, `bot/modo_editar.py` | Toggle de modo de trabajo por usuario |
+| Documentos formales | `skills/documents/` | Word (docxtpl) + PDF para notificaciones institucionales |
+| Ausencias de docentes | `db/models/teacher_absence.py` | Registro de inasistencia del personal |
+| WhatsApp contacts | `db/models/whatsapp_contact.py` | Número WA vinculado a teacher/person |
+| Representantes | `db/models/student_representative.py` | Many-to-many students ↔ representantes |
+| Health check | `api/routers/health.py` | GET /health — estado DB + Redis |
 
 ---
 

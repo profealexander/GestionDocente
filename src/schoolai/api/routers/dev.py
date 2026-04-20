@@ -33,7 +33,7 @@ _PROVIDER_MODELS: dict[str, list[str]] = {
     "openai":     ["openai/gpt-4o-mini"],
     "nvidia":     ["nvidia/meta/llama-3.1-8b-instruct"],
     "minimax":    ["minimax/MiniMax-Text-01"],
-    "moonshot":   ["moonshot/moonshot-v1-8k"],
+    "groq_qwen":  ["groq/qwen/qwen3-32b"],
 }
 
 
