@@ -1,3 +1,4 @@
+"""HomeworkController — create, query and delete homework assignments."""
 from __future__ import annotations
 
 from typing import Any
@@ -22,7 +23,10 @@ class HomeworkController(BaseDomainController):
                 "course": {"type": "string", "description": "Course code or name"},
                 "subject": {"type": "string", "description": "Subject name"},
                 "description": {"type": "string", "description": "Assignment description"},
-                "due_date": {"type": "string", "description": "Due date: 'tomorrow', day name, or DD/MM/YYYY"},
+                "due_date": {
+                    "type": "string",
+                    "description": "Due date: 'tomorrow', day name, or DD/MM/YYYY",
+                },
             },
             "required": ["course", "description"],
         },
@@ -31,6 +35,11 @@ class HomeworkController(BaseDomainController):
             "description": "List pending homework assignments for a course.",
             "parameters": {
                 "course": {"type": "string", "description": "Course code or name"},
+                "period": {
+                    "type": "string",
+                    "description": "Period: 'trimestre', 'week', 'month'",
+                    "default": "trimestre",
+                },
             },
             "required": ["course"],
         },
@@ -47,17 +56,20 @@ class HomeworkController(BaseDomainController):
 
     async def execute_tool(self, tool: str, params: dict[str, Any], user_id: str) -> str:
         if tool == "create_assignment":
+            subject = params.get("subject", "")
             return await _create_assignment(
                 telegram_id=int(user_id),
-                course=params.get("course", ""),
-                subject=params.get("subject", ""),
                 description=params.get("description", ""),
-                due_date=params.get("due_date", ""),
+                course=params.get("course", ""),
+                subjects=[subject] if subject else None,
+                due_date=params.get("due_date") or None,
             )
         if tool == "query_assignments":
+            # _query_assignments takes courses as a list
             return await _query_assignments(
                 telegram_id=int(user_id),
-                course=params.get("course", ""),
+                courses=[params.get("course", "")],
+                period=params.get("period", "trimestre"),
             )
         if tool == "delete_assignment":
             return await _delete_assignment(

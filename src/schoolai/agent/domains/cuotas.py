@@ -1,3 +1,4 @@
+"""CuotasController — list activities, query status, register payments."""
 from __future__ import annotations
 
 from typing import Any
@@ -36,8 +37,9 @@ class CuotasController(BaseDomainController):
                 "activity": {"type": "string", "description": "Activity name"},
                 "student": {"type": "string", "description": "Student name"},
                 "amount": {"type": "number", "description": "Payment amount"},
+                "course": {"type": "string", "description": "Course code to identify the student"},
             },
-            "required": ["activity", "student", "amount"],
+            "required": ["activity", "student", "amount", "course"],
         },
     ]
 
@@ -47,10 +49,11 @@ class CuotasController(BaseDomainController):
         if tool == "activity_status":
             return await _activity_status(name=params.get("name", ""))
         if tool == "register_payment":
+            # _register_payment takes names (list), amount, activity, course
             return await _register_payment(
-                telegram_id=int(user_id),
-                activity=params.get("activity", ""),
-                student=params.get("student", ""),
+                names=[params.get("student", "")],
                 amount=float(params.get("amount", 0)),
+                activity=params.get("activity", ""),
+                course=params.get("course"),
             )
         raise ValueError(f"Unknown tool: {tool}")

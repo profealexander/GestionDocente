@@ -1,14 +1,14 @@
-# SchoolAI v2 — Plan de Migración
+# SchoolAI v2 — Arquitectura Hub-and-Spoke
 
-**Estado:** En planificación  
-**Inicio estimado:** Por definir  
-**Rama:** `main`
+**Estado:** Implementado (Fases 1–4 completas)
+**Rama:** `refactor/v2-hub-spoke`
+**Directorio:** `/home/edwin8600/schoolai2/`
 
 ---
 
 ## Contexto
 
-El sistema actual (v1) funciona en producción pero tiene problemas estructurales:
+El sistema v1 funciona en producción pero tiene problemas estructurales:
 
 - El LLM decide qué función llamar por nombre libre → hallucination de tools
 - Razonamiento y ejecución mezclados en el mismo agente → difícil de mantener
@@ -18,40 +18,50 @@ El sistema actual (v1) funciona en producción pero tiene problemas estructurale
 
 ---
 
-## Arquitectura Objetivo
+## Arquitectura
 
 ```
 ┌─────────────────────────────────────────────────────┐
 │  CANALES DE ENTRADA                                  │
-│  Telegram Bot │ SvelteKit Web │ CLI │ Cron           │
+│  Telegram Bot │ SvelteKit Web │ CLI │ Webhook        │
 └──────────────────────┬──────────────────────────────┘
                        │ mensaje crudo
 ┌──────────────────────▼──────────────────────────────┐
-│  GATEWAY (FastAPI Hub)                               │
-│  Message Normalizer → TaskSpec                       │
-│  Auth + Rate Limiting                                │
-│  Session Manager                                     │
+│  GATEWAY (FastAPI — puerto 8001)                     │
+│  POST /gateway/message   → HTTP (CLI, Web)           │
+│  WS   /gateway/ws/{uid}  → WebSocket (SvelteKit)     │
+│  POST /gateway/telegram/{token} → Webhook Telegram   │
+│  Auth + Rate Limiting (20 msg/60s por usuario)       │
+│  Session Manager (sha256 user+canal+día)             │
+│  Message Normalizer → TaskSpec (LLM: llm_router)     │
 └──────────────────────┬──────────────────────────────┘
                        │ TaskSpec
 ┌──────────────────────▼──────────────────────────────┐
 │  AGENT RUNTIME                                       │
-│  ├── Agent Loop       ciclo principal                │
-│  ├── Router           elige Domain Controller        │
-│  ├── Planner          LLM → plan [{tool, params}]   │
-│  ├── Executor         Python puro, sin LLM           │
-│  ├── Synthesizer      LLM → respuesta formateada     │
-│  └── Context Engine   historial + memoria            │
+│  ├── Agent Loop       ciclo principal + timing       │
+│  ├── Router           Python puro → DomainController │
+│  ├── Planner          LLM call #1 → [{tool, params}] │
+│  ├── Executor         Python puro → ejecuta steps    │
+│  ├── Synthesizer      LLM call #2 → respuesta final  │
+│  └── Context Engine   historial RAM (10 turnos)      │
 └──────────────────────┬──────────────────────────────┘
                        │ acciones
 ┌──────────────────────▼──────────────────────────────┐
-│  DOMAIN TOOLS (Skills)                               │
-│  Attendance │ Homework │ Cuotas │ WebSearch          │
-│  Reports │ Notifications │ Autonomy │ Integrations   │
+│  DOMAIN CONTROLLERS                                  │
+│  AttendanceController  │ HomeworkController           │
+│  CuotasController      │ ReportsController            │
+│  GeneralController                                   │
+└──────────────────────┬──────────────────────────────┘
+                       │ reusan sin modificar
+┌──────────────────────▼──────────────────────────────┐
+│  SKILLS / _TOOLS/ (v1 — sin cambios)                 │
+│  attendance/ │ homework/ │ cuotas/ │ reports/        │
 └──────────────────────┬──────────────────────────────┘
                        │
 ┌──────────────────────▼──────────────────────────────┐
 │  PERSISTENCIA                                        │
-│  PostgreSQL + PGVector │ Archivos locales            │
+│  PostgreSQL schoolai_v2 (clon de schoolai)           │
+│  Archivos locales (PDFs temporales en /tmp)          │
 └─────────────────────────────────────────────────────┘
 ```
 
@@ -61,39 +71,22 @@ El sistema actual (v1) funciona en producción pero tiene problemas estructurale
 
 | Componente | Decisión | Razón |
 |---|---|---|
-| Bot framework | python-telegram-bot se mantiene | aiogram = fase futura, migración costosa |
-| Frontend | SvelteKit se mantiene | no migrar a React |
-| Agent Loop | Custom Planner+Executor | LangGraph = over-engineering para esta escala |
-| Vector DB | Solo PGVector | Chroma es redundante, PostgreSQL ya existe |
-| Archivos | Sistema local | MinIO = fase futura (relevante en multi-tenant) |
-| Redis | Fase futura | sesiones en RAM por ahora son aceptables |
-| Skills | Sin plugin system | registro estático por ahora |
+| Bot framework | python-telegram-bot se mantiene | aiogram = fase futura |
+| Frontend | SvelteKit — nueva página `/agente` | WebSocket nativo |
+| Agent Loop | Custom Planner+Executor | LangGraph = over-engineering |
+| Vector DB | PGVector (pendiente activar) | PostgreSQL ya existe |
+| Redis | Fase futura | sesiones en RAM aceptables |
+| PDF | fpdf2 (ya instalado en v1) | sin dependencias nuevas |
+| Scheduler | APScheduler 3.x AsyncIOScheduler | independiente de PTB |
 
 ---
 
-## Agent Runtime — Detalle
-
-Solo **Planner** y **Synthesizer** llaman al LLM. El resto es Python puro.
-
-```
-TaskSpec (del Gateway)
-  → Agent Loop
-      → Router/Orchestrator     Python puro → selecciona DomainController
-      → DomainController        Python puro → prepara tools disponibles (máx 3-4)
-      → Planner                 LLM call 1  → [{tool, params}, ...]
-      → Executor                Python puro → ejecuta cada step
-      → Synthesizer             LLM call 2  → respuesta formateada
-  → Response (al Gateway)
-```
-
-**Resultado:** 2 LLM calls fijos por respuesta. Sin hallucination. Latencia predecible ~3-5s.
-
-### TaskSpec (contrato Gateway → Agent Runtime)
+## TaskSpec — contrato Gateway → Agent Runtime
 
 ```python
 class TaskSpec(BaseModel):
     channel: Literal["telegram", "web", "cli", "cron"]
-    domain: Literal["attendance", "homework", "cuotas", "web_search", "general"]
+    domain: Literal["attendance", "homework", "cuotas", "reports", "web_search", "general"]
     intent: Literal["query", "record", "delete", "search", "chat"]
     entities: list[str]
     raw_text: str
@@ -101,137 +94,142 @@ class TaskSpec(BaseModel):
     session_id: str
 ```
 
-### Domain Controllers
+---
 
-Cada controller tiene máximo 3-4 tools. Reemplazan los `skill_agents/` actuales:
+## Domain Controllers implementados
 
-| Controller | Tools |
-|---|---|
-| AttendanceController | record_attendance, query_attendance, list_courses |
-| HomeworkController | create_assignment, query_assignments, delete_assignment |
-| CuotasController | register_payment, activity_status, list_activities |
-| WebSearchController | web_search, save_web_page |
-| GeneralController | my_courses, my_schedule |
+| Controller | Tools | Delega a |
+|---|---|---|
+| AttendanceController | record_attendance, query_attendance, list_courses | `_tools/attendance.py` |
+| HomeworkController | create_assignment, query_assignments, delete_assignment | `_tools/homework.py` |
+| CuotasController | list_activities, activity_status, register_payment | `_tools/cuotas.py` |
+| ReportsController | attendance_pdf, homework_pdf | `_tools/reports.py` |
+| GeneralController | list_courses | `_tools/courses.py` |
 
 ---
 
-## Estructura de Archivos Nueva
+## Estructura de Archivos
 
 ```
 src/schoolai/
 ├── gateway/
-│   ├── app.py           FastAPI app del gateway
-│   ├── normalizer.py    mensaje crudo → TaskSpec
-│   ├── router.py        Structured Output LLM → domain/intent
-│   ├── auth.py          autenticación + rate limiting
-│   ├── session.py       manejo de sesión
+│   ├── app.py           FastAPI — HTTP + WebSocket + Webhook endpoints
+│   ├── normalizer.py    MessageSpec → TaskSpec
+│   ├── router.py        LLM classifier (llm_router = gemini-flash-lite)
+│   ├── auth.py          check_auth + rate limit (20 msg/60s, RAM)
+│   ├── session.py       session_id sha256 por user+canal+día
+│   ├── webhook.py       Telegram webhook handler + reply via Bot API
+│   ├── runner.py        uvicorn en puerto 8001 (schoolai-gateway)
 │   └── schemas.py       TaskSpec, MessageSpec, ResponseSpec
 │
 ├── agent/
-│   ├── loop.py          Agent Loop principal
-│   ├── orchestrator.py  Router (Python puro)
-│   ├── planner.py       LLM → plan JSON
-│   ├── executor.py      Python puro, ejecuta plan
-│   ├── synthesizer.py   LLM → respuesta final
-│   ├── context.py       Context Engine
-│   ├── schemas.py       PlanStep, ActionResult, AgentResponse
+│   ├── loop.py          ciclo principal con timing y logs
+│   ├── orchestrator.py  Router Python puro: domain → DomainController
+│   ├── planner.py       LLM #1 (llm_orchestrator/kimi-k2) → plan JSON
+│   ├── executor.py      Python puro — ejecuta steps, captura errores
+│   ├── synthesizer.py   LLM #2 (llm_router/gemini-flash) → respuesta ES
+│   ├── context.py       Context Engine RAM, 10 turnos/sesión
+│   ├── schemas.py       PlanStep, ActionResult, AgentContext, AgentResponse
 │   └── domains/
-│       ├── base.py
-│       ├── attendance.py
-│       ├── homework.py
-│       ├── cuotas.py
-│       ├── web_search.py
-│       └── general.py
+│       ├── base.py          BaseDomainController (ABC)
+│       ├── attendance.py    AttendanceController
+│       ├── homework.py      HomeworkController
+│       ├── cuotas.py        CuotasController
+│       ├── reports.py       ReportsController
+│       └── general.py       GeneralController (fallback)
 │
-└── skills/              (se mantiene — Executor los llama directamente)
-    ├── attendance/
-    ├── homework/
-    ├── cuotas/
-    └── ...
+├── cli/
+│   └── main.py          CLI interactivo con rich — chat HTTP al gateway
+│
+└── skills/
+    ├── autonomy/
+    │   ├── scheduler.py     AsyncIOScheduler singleton
+    │   ├── bot_registry.py  Registry bot → APScheduler jobs
+    │   └── jobs.py          register_jobs(bot) — reminders c/5min
+    │
+    ├── reports/
+    │   ├── _pdf.py          Helpers compartidos: init_pdf, safe, footer
+    │   ├── attendance.py    generate_attendance_pdf(AttendanceData) → bytes
+    │   └── homework.py      generate_homework_pdf(HomeworkData) → bytes
+    │
+    └── orchestrator/
+        └── _tools/
+            └── reports.py   _report_attendance_pdf, _report_homework_pdf
+
+ui/                          SvelteKit (copiado de ~/schoolaiUI)
+├── src/lib/api/gateway.ts   GatewaySocket — WebSocket con auto-reconnect
+└── src/routes/agente/       Chat UI tiempo real — burbujas, typing, tags
 ```
 
 ---
 
-## Fases de Migración
+## Fases de Implementación
 
-### Fase 1 — Gateway Hub Central
-**Objetivo:** punto de entrada único para todos los canales.
+### Fase 1 — Gateway Hub Central ✅
+Punto de entrada único. Message Normalizer → `TaskSpec`. Flag `GATEWAY_ENABLED` para correr en paralelo con v1.
+**Entregable:** Gateway recibe mensaje y produce `TaskSpec` válido.
 
-- Crear `src/schoolai/gateway/`
-- Message Normalizer convierte Telegram/Web/CLI → `TaskSpec`
-- Router con Structured Output reemplaza regex actual
-- Auth y Rate Limiting centralizados
-- Los 3 bots actuales pasan a ser adaptadores finos (solo reenvían al Gateway)
-- Switch con flag en `.env` — Gateway y sistema v1 corren en paralelo
+### Fase 2 — Agent Runtime ✅
+Loop → Router → Planner (LLM#1) → Executor → Synthesizer (LLM#2). 2 LLM calls fijos, sin hallucination.
+**Entregable:** respuesta <6s, domain controllers con firmas verificadas contra `_tools/`.
 
-**Entregable:** Gateway recibe mensaje Telegram y produce `TaskSpec` válido.
+### Fase 3 — Skills Expansion ✅
+APScheduler reemplaza PTB job_queue para reminders. Reports PDF con fpdf2 (attendance + homework).
+**Entregable:** APScheduler activo; PDFs generados correctamente.
 
----
-
-### Fase 2 — Agent Runtime Restructure
-**Objetivo:** separar razonamiento de ejecución.
-
-- Crear `src/schoolai/agent/`
-- Implementar Agent Loop, Router, Planner, Executor, Synthesizer, Context Engine
-- Implementar Domain Controllers (máx 3-4 tools cada uno)
-- Reusar `_tools/` existentes en el Executor sin modificarlos
-- 2 LLM calls fijos por respuesta
-
-**Entregable:** respuesta en <6s, sin hallucination de tools.
+### Fase 4 — Canales Adicionales ✅
+WebSocket (`ws://localhost:8001/gateway/ws/{user_id}`), CLI con rich, Webhooks Telegram.
+**Entregable:** SvelteKit recibe respuesta vía WebSocket en tiempo real.
 
 ---
 
-### Fase 3 — Skills Expansion
-**Objetivo:** nuevas capacidades sobre la base limpia.
+## Cómo Arrancar v2
 
-- `skills/reports/` — PDF/Excel (base ya existe)
-- `skills/notifications/` — Telegram + WhatsApp unificado
-- `skills/autonomy/` — APScheduler reemplaza PTB job queue
-- `skills/integrations/` — Google Classroom API
-- PGVector activado para memoria semántica
+```bash
+cd ~/schoolai2
 
-**Entregable:** APScheduler corre recordatorios; PDF generado correctamente.
+# Backend
+uv run schoolai-gateway          # Gateway en puerto 8001
+
+# Frontend
+cd ui && npm run dev             # SvelteKit en puerto 5173
+
+# CLI
+uv run schoolai-cli              # Chat interactivo en terminal
+```
+
+**Variables de entorno relevantes:**
+```
+GATEWAY_ENABLED=false    # true → bots Telegram también normalizan via gateway
+DATABASE_URL=postgresql+asyncpg://schoolai:1234@localhost:5432/schoolai_v2
+VITE_GATEWAY_URL=http://localhost:8001
+VITE_GATEWAY_WS=ws://localhost:8001
+```
 
 ---
 
-### Fase 4 — Canales Adicionales
-**Objetivo:** más puntos de entrada sobre el Gateway estable.
+## Calidad de Código
 
-- CLI con `rich` + HTTP al Gateway
-- SvelteKit conectado al Gateway vía WebSocket (respuestas en tiempo real)
-- Webhooks Telegram (reemplaza polling actual)
-
-**Entregable:** Web UI recibe respuesta vía WebSocket en tiempo real.
+- **ruff**: 0 errores
+- **pylint**: 9.98/10
 
 ---
 
-## Qué No Cambia en Ninguna Fase
+## Qué No Cambia
 
 | Componente | Estado |
 |---|---|
 | PostgreSQL + SQLAlchemy | Sin cambios |
-| SvelteKit frontend | Sin cambios hasta Fase 4 |
-| python-telegram-bot | Sin cambios hasta fase futura |
-| Sistema de configuración `.env` | Sin cambios |
-| `_tools/` existentes | Se reusan directamente en el Executor |
-| LLM providers actuales | Sin cambios |
+| `_tools/` existentes | Reutilizados directamente por el Executor |
+| LLM providers (groq, google, moonshot) | Sin cambios |
+| python-telegram-bot | Sin cambios (v1 en producción) |
 
 ---
 
-## Implementaciones Futuras (anotadas, no planificadas)
+## Implementaciones Futuras
 
-- **Redis** — sesiones persistentes + pub/sub para respuestas async; requiere plan de failover
-- **aiogram** — migración del bot framework para mejor performance async
-- **MinIO** — almacenamiento distribuido (relevante cuando haya multi-tenant / varias escuelas)
-- **Plugin system** — registro dinámico de skills como entry points
-
----
-
-## Criterio de Éxito por Fase
-
-| Fase | Criterio |
-|---|---|
-| 1 — Gateway | Gateway recibe mensaje Telegram y produce TaskSpec válido |
-| 2 — Runtime | Respuesta en <6s con 2 LLM calls, sin hallucination de tools |
-| 3 — Skills | APScheduler corre recordatorios; PDF generado correctamente |
-| 4 — Canales | SvelteKit recibe respuesta vía WebSocket en tiempo real |
+- **Redis** — sesiones persistentes + pub/sub; requiere plan de failover
+- **PGVector** — memoria semántica activando extensión en schoolai_v2
+- **Google Classroom API** — `skills/integrations/`
+- **aiogram** — migración bot framework para mejor async
+- **MinIO** — almacenamiento distribuido (multi-tenant)

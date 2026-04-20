@@ -22,7 +22,7 @@ async def execute(
             output = await controller.execute_tool(step.tool, step.params, user_id)
             results.append(ActionResult(tool=step.tool, params=step.params, output=output))
             logger.debug(f"[executor] {step.tool}({step.params}) → {output[:80]}")
-        except Exception as e:
+        except Exception as e:  # pylint: disable=broad-exception-caught
             logger.error(f"[executor] {step.tool} failed: {e}")
             results.append(
                 ActionResult(

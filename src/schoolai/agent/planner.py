@@ -59,6 +59,6 @@ async def plan(
         # Model may return {"steps": [...]} or directly [...]
         steps_raw = raw if isinstance(raw, list) else raw.get("steps", [])
         return [PlanStep(**s) for s in steps_raw]
-    except Exception as e:
+    except Exception as e:  # pylint: disable=broad-exception-caught
         logger.warning(f"[planner] JSON parse error: {e} — content={content[:200]}")
         return []

@@ -51,7 +51,7 @@ async def synthesize(
             temperature=0.3,
         )
         return response.choices[0].message.content or ""
-    except Exception as e:
+    except Exception as e:  # pylint: disable=broad-exception-caught
         logger.error(f"[synthesizer] LLM error: {e}")
         # Fallback: return raw tool output if available
         if results:

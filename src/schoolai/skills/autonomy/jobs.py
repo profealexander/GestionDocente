@@ -1,10 +1,9 @@
-"""
-Definición de jobs para APScheduler.
-Llamar register_jobs(bot) en el _post_init del bot para activarlos.
-"""
+"""Definición de jobs para APScheduler. Llamar register_jobs(bot) en _post_init."""
 from __future__ import annotations
 
 from loguru import logger
+
+from schoolai.skills.reminders.dispatcher import dispatch_due_reminders
 
 from . import bot_registry
 from .scheduler import add_interval_job, start
@@ -15,7 +14,6 @@ async def _job_dispatch_reminders() -> None:
     if bot is None:
         logger.warning("[autonomy:reminders] bot no registrado aún — skip")
         return
-    from schoolai.skills.reminders.dispatcher import dispatch_due_reminders
     await dispatch_due_reminders(bot)
 
 

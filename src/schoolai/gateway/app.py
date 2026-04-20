@@ -9,12 +9,14 @@ import json
 from fastapi import FastAPI, HTTPException, Request, WebSocket, WebSocketDisconnect
 from fastapi.middleware.cors import CORSMiddleware
 
+from schoolai.agent.loop import run as agent_run  # lazy-safe: imported at module level
 from schoolai.config import settings
 
 from .auth import AuthError, RateLimitError, check_auth, check_rate_limit
 from .normalizer import normalize
 from .schemas import AgentResponseOut, MessageSpec, TaskSpec
 from .session import get_session_id
+from .webhook import handle_telegram_webhook
 
 app = FastAPI(title="SchoolAI Gateway", version="2.0.0")
 
@@ -37,14 +39,12 @@ async def receive_message(msg: MessageSpec) -> AgentResponseOut:
         check_auth(msg.user_id)
         check_rate_limit(msg.user_id)
     except AuthError as e:
-        raise HTTPException(status_code=403, detail=str(e))
+        raise HTTPException(status_code=403, detail=str(e)) from e
     except RateLimitError as e:
-        raise HTTPException(status_code=429, detail=str(e))
+        raise HTTPException(status_code=429, detail=str(e)) from e
 
     task = await normalize(msg)
-
-    from schoolai.agent.loop import run
-    result = await run(task)
+    result = await agent_run(task)
     return AgentResponseOut(
         session_id=task.session_id,
         text=result.text,
@@ -60,9 +60,9 @@ async def classify_only(msg: MessageSpec) -> TaskSpec:
         check_auth(msg.user_id)
         check_rate_limit(msg.user_id)
     except AuthError as e:
-        raise HTTPException(status_code=403, detail=str(e))
+        raise HTTPException(status_code=403, detail=str(e)) from e
     except RateLimitError as e:
-        raise HTTPException(status_code=429, detail=str(e))
+        raise HTTPException(status_code=429, detail=str(e)) from e
 
     return await normalize(msg)
 
@@ -71,7 +71,7 @@ async def classify_only(msg: MessageSpec) -> TaskSpec:
 async def websocket_endpoint(websocket: WebSocket, user_id: str) -> None:
     """
     WebSocket para SvelteKit y CLI.
-    Cliente envía: {"text": "..."}
+    Cliente envía:   {"text": "..."}
     Servidor responde: {"text": "...", "domain": "...", "intent": "...", "session_id": "..."}
     """
     try:
@@ -82,14 +82,12 @@ async def websocket_endpoint(websocket: WebSocket, user_id: str) -> None:
 
     await websocket.accept()
 
-    from schoolai.agent.loop import run
-
     try:
         while True:
             raw = await websocket.receive_text()
             try:
                 data = json.loads(raw)
-                text = data.get("text", "").strip()
+                text = str(data.get("text", "")).strip()
             except (json.JSONDecodeError, AttributeError):
                 text = raw.strip()
 
@@ -103,10 +101,9 @@ async def websocket_endpoint(websocket: WebSocket, user_id: str) -> None:
                 continue
 
             session_id = get_session_id(user_id, "web")
-            from .schemas import MessageSpec
-            msg = MessageSpec(channel="web", user_id=user_id, session_id=session_id, text=text)
-            task = await normalize(msg)
-            result = await run(task)
+            ws_msg = MessageSpec(channel="web", user_id=user_id, session_id=session_id, text=text)
+            task = await normalize(ws_msg)
+            result = await agent_run(task)
 
             await websocket.send_json({
                 "text": result.text,
@@ -122,10 +119,10 @@ async def websocket_endpoint(websocket: WebSocket, user_id: str) -> None:
 @app.post("/gateway/telegram/{token}")
 async def telegram_webhook(token: str, request: Request) -> dict:
     """Telegram webhook endpoint — reemplaza polling."""
-    from .webhook import handle_telegram_webhook
     return await handle_telegram_webhook(token, request)
 
 
 @app.get("/gateway/health")
 async def health() -> dict:
+    """Health check endpoint."""
     return {"status": "ok", "version": "2.0.0"}
