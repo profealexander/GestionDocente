@@ -32,14 +32,14 @@ class Settings(BaseSettings):
     telegram_allowed_users: str = ""  # comma-separated user IDs
 
     # ── LLM model per skill (format: "provider/model") ────────────────────────
-    llm_extractor: str = "google/gemini-3.1-flash-lite-preview"  # extracción estructurada — benchmark 1451ms, 100% tool calling
+    llm_extractor: str = "google/gemini-3.1-flash-lite-preview"  # extracción estructurada — 990ms, 100% JSON noex, 500 RPD free
     llm_chat: str = "groq/compound-beta"  # chat general — búsqueda web nativa, 70K TPM
-    llm_chat_fallback: str = "mistral/mistral-small-latest"  # fallback chat — 882ms (benchmark 2026-04-15)
-    llm_vision: str = "openrouter/nvidia/nemotron-nano-12b-v2-vl:free"  # visión — rápido, 128K ctx
-    llm_vision_fallback: str = "openrouter/google/gemma-4-31b-it:free"  # visión fallback — más potente
-    llm_router: str = "google/gemini-3.1-flash-lite-preview"  # routing / clasificación
-    llm_orchestrator: str = "deepseek/deepseek-chat"  # orquestador multi-tool — 1899ms, 100% tool calling, estable en multi-turn
-    llm_orchestrator_fallback: str = "deepseek/deepseek-reasoner,google/gemini-2.5-flash-lite,groq/openai/gpt-oss-120b,mistral/mistral-large-latest"  # cadena de failover: R1 → Gemini 2.5 → gpt-oss-120b → mistral
+    llm_chat_fallback: str = "groq/qwen/qwen3-32b"  # fallback chat — 1038ms, 100% JSON noex, gratis
+    llm_vision: str = "openrouter/nvidia/nemotron-nano-12b-v2-vl:free"  # visión — 128K ctx, free
+    llm_vision_fallback: str = "openrouter/google/gemma-4-31b-it:free"  # visión fallback — free
+    llm_router: str = "google/gemini-3.1-flash-lite-preview"  # routing / clasificación — mismo modelo que extractor
+    llm_orchestrator: str = "moonshotai/kimi-k2-instruct"  # orquestador multi-tool — Groq free, 100% JSON noex
+    llm_orchestrator_fallback: str = "deepseek/deepseek-chat,deepseek/deepseek-reasoner,groq/openai/gpt-oss-120b,mistral/mistral-large-latest"  # failover: DeepSeek → gpt-oss-120b → Mistral
 
     # ── API keys ───────────────────────────────────────────────────────────────
     groq_api_key: str = ""  # Groq — Whisper + fallback LLM
@@ -52,6 +52,7 @@ class Settings(BaseSettings):
     nvidia_api_key: str = ""
     minimax_api_key: str = ""
     openrouter_api_key: str = ""
+    kilo_api_key: str = ""  # Kilo AI Gateway — OpenAI-compat, free tier
     openai_api_key: str = ""
     ollama_api_key: str = "ollama"  # OpenAI client requiere un valor; Ollama local suele ignorarlo
     ollama_base_url: str = "http://127.0.0.1:11434/v1/"  # endpoint OpenAI-compatible

@@ -598,36 +598,36 @@ Almacena el intent (`"attendance"` | `"homework"`), el resumen legible y el
 
 ## LLM — Estrategia por capas
 
-### Modelos activos (2026-04-14)
+### Modelos activos (2026-04-19)
 
-| Skill | Modelo | Quality | TTFT | Costo |
+| Skill | Modelo | JSON noex | TTFT | Costo |
 |---|---|---|---|---|
-| `LLM_EXTRACTOR` | `google/gemini-2.5-flash-lite` | 97% | ~638ms | Google AI Studio free |
-| `LLM_ROUTER` | `google/gemini-2.5-flash-lite` | 97% | ~638ms | Google AI Studio free |
-| `LLM_CHAT` | `groq/compound` | 96% | ~1,145ms | $0 (70K TPM, web search nativa) |
-| `LLM_CHAT_FALLBACK` | `mistral/mistral-small-latest` | 97% | ~421ms | ~$0.1/M tokens |
-| `LLM_ORCHESTRATOR` | `deepseek/deepseek-reasoner` | 100% | ~1007ms | $0.55/M tokens + reasoning |
-| Fallback 1 | `deepseek/deepseek-chat` | 93% | ~567ms | $0.27/M tokens |
-| Fallback 2 | `google/gemini-2.5-flash-lite` | 97% | ~638ms | free |
-| Fallback 3 | `groq/openai/gpt-oss-20b` | 82% | ~347ms | Groq free |
-| Fallback 4 | `mistral/mistral-large-latest` | 97% | ~856ms | $2/M tokens (último recurso) |
+| `LLM_EXTRACTOR` | `google/gemini-3.1-flash-lite-preview` | 100% | ~990ms | Google AI Studio free (500 RPD) |
+| `LLM_ROUTER` | `google/gemini-3.1-flash-lite-preview` | 100% | ~990ms | Google AI Studio free (500 RPD) |
+| `LLM_CHAT` | `groq/compound-beta` | — | ~1,200ms | $0 (web search nativa) |
+| `LLM_CHAT_FALLBACK` | `groq/qwen/qwen3-32b` | 100% | ~1,038ms | Groq free |
+| `LLM_ORCHESTRATOR` | `moonshotai/kimi-k2-instruct` | 100% | — | Groq free |
+| Fallback 1 | `deepseek/deepseek-chat` | 100% | ~1,825ms | $0.28/$0.42 /1M |
+| Fallback 2 | `deepseek/deepseek-reasoner` | 100% | ~4,292ms | $0.28/$0.42 /1M |
+| Fallback 3 | `groq/openai/gpt-oss-120b` | 100% | ~395ms | Groq free |
+| Fallback 4 | `mistral/mistral-large-latest` | 100% | ~1,436ms | $2/$6 /1M (último recurso) |
 
 ```python
-# config.py — defaults actuales
-llm_extractor             = "google/gemini-2.5-flash-lite"
-llm_router                = "google/gemini-2.5-flash-lite"
-llm_chat                  = "groq/compound"
-llm_chat_fallback         = "mistral/mistral-small-latest"
-llm_orchestrator          = "deepseek/deepseek-reasoner"
-llm_orchestrator_fallback = "deepseek/deepseek-chat,google/gemini-2.5-flash-lite,groq/openai/gpt-oss-20b,mistral/mistral-large-latest"
+# config.py — defaults actuales (2026-04-19)
+llm_extractor             = "google/gemini-3.1-flash-lite-preview"
+llm_router                = "google/gemini-3.1-flash-lite-preview"
+llm_chat                  = "groq/compound-beta"
+llm_chat_fallback         = "groq/qwen/qwen3-32b"
+llm_orchestrator          = "moonshotai/kimi-k2-instruct"
+llm_orchestrator_fallback = "deepseek/deepseek-chat,deepseek/deepseek-reasoner,groq/openai/gpt-oss-120b,mistral/mistral-large-latest"
 ```
 
 Capas de procesamiento (Modo Libre/Jornada):
 1. **Regex (<1ms, sin costo)** — cubre el 85-90% de mensajes estructurados
-2. **LLM extractor (Gemini 2.5 Flash-Lite, ~638ms)** — mensajes ambiguos → `via_llm=True`
+2. **LLM extractor (Gemini 3.1 Flash Lite, ~990ms)** — mensajes ambiguos → `via_llm=True`
 3. **Confirmación** — si `via_llm=True` o `supervised_mode=True`, el docente confirma
-4. **OrchestratorSkill (DeepSeek Reasoner)** — si ninguna skill regex matchea → ReAct multi-tool con razonamiento interno
-5. **ChatSkill (Groq Compound)** — conversación libre + web search nativa, último recurso. Fallback: Mistral Small
+4. **OrchestratorSkill (Kimi K2, Groq free)** — si ninguna skill regex matchea → ReAct multi-tool
+5. **ChatSkill** — sin web: Qwen3 32B (1038ms, gratis); con web: compound-beta (web search nativa)
 
 ### Structured Output portable (`skills/llm/structured.py`)
 
@@ -640,7 +640,7 @@ Módulo central para extracción estructurada compatible con todos los providers
 result = await llm_structured_output(
     prompt=...,
     model_cls=MyPydanticModel,   # define el schema via model_json_schema()
-    provider_model="google/gemini-2.5-flash-lite",
+    provider_model="google/gemini-3.1-flash-lite-preview",
     system_prefix="instrucciones adicionales",
     timeout=20.0,
     agent="context_categorizer",
@@ -772,21 +772,21 @@ Niveles: `DEBUG` (detalle interno) · `INFO` (intenciones, acciones DB) · `WARN
 TELEGRAM_BOT_TOKEN=...          # Bot Modo Libre
 DATABASE_URL=postgresql+asyncpg://user:pass@host/db
 DEEPSEEK_API_KEY=...            # Orchestrator primario (Reasoner + Chat fallback)
-GOOGLE_API_KEY=...              # Extractor, Router, SkillAgents (Gemini 2.5 Flash-Lite)
-MISTRAL_API_KEY=...             # Chat primario (Mistral Small) + fallback final
-GROQ_API_KEY=...                # GPT-OSS 20B fallback + Whisper transcripción
+GOOGLE_API_KEY=...              # Extractor, Router (Gemini 3.1 Flash Lite Preview)
+MISTRAL_API_KEY=...             # Fallback final orchestrator (Mistral Large)
+GROQ_API_KEY=...                # Chat (compound-beta + Qwen3 32B) + Orchestrator (Kimi K2) + Whisper
 
 # ── Bots adicionales ───────────────────────────────────────────
 TELEGRAM_BOT_TOKEN_JORNADA=...  # Bot Modo Jornada (opcional)
 TELEGRAM_BOT_TOKEN_AGENTE=...   # Bot Agente (opcional)
 
-# ── LLM — valores actuales ─────────────────────────────────────
-LLM_EXTRACTOR=google/gemini-2.5-flash-lite
-LLM_ROUTER=google/gemini-2.5-flash-lite
-LLM_CHAT=groq/compound
-LLM_CHAT_FALLBACK=mistral/mistral-small-latest
-LLM_ORCHESTRATOR=deepseek/deepseek-reasoner
-LLM_ORCHESTRATOR_FALLBACK=deepseek/deepseek-chat,google/gemini-2.5-flash-lite,groq/openai/gpt-oss-20b,mistral/mistral-large-latest
+# ── LLM — valores actuales (2026-04-19) ───────────────────────
+LLM_EXTRACTOR=google/gemini-3.1-flash-lite-preview
+LLM_ROUTER=google/gemini-3.1-flash-lite-preview
+LLM_CHAT=groq/compound-beta
+LLM_CHAT_FALLBACK=groq/qwen/qwen3-32b
+LLM_ORCHESTRATOR=moonshotai/kimi-k2-instruct
+LLM_ORCHESTRATOR_FALLBACK=deepseek/deepseek-chat,deepseek/deepseek-reasoner,groq/openai/gpt-oss-120b,mistral/mistral-large-latest
 
 # ── API Keys LLM adicionales (opcionales) ─────────────────────
 ZAI_API_KEY=...                 # Z.AI global — GLM-4.7-Flash (ReplAgent)
@@ -843,16 +843,15 @@ Un solo servicio firma y verifica. No hay microservicios que necesiten verificar
 **¿Por qué DeepSeek Reasoner como orchestrator principal?**
 Benchmark propio (2026-04-13): único modelo con 100% quality en tool calling multi-step. El reasoning interno (Chain of Thought embebido) mejora decisiones en escenarios complejos sin costo adicional de tokens en el prompt. El fallback chain (Chat → Gemini → GPT-OSS 20B → Mistral Large) cubre todos los escenarios de indisponibilidad a costo progresivo.
 
-**¿Por qué DeepSeek Reasoner para los SkillAgents especializados?**
-Los SkillAgents no tienen `llm_override` y heredan `settings.llm_orchestrator`. El reasoning interno de DeepSeek Reasoner mejora la toma de decisiones en multi-step tool calling (ej.: listar cursos → registrar asistencia → confirmar). El fallback chain del orchestrator actúa automáticamente si DeepSeek falla.
+**¿Por qué Kimi K2 (Groq) para orchestrator?**
+Los SkillAgents no tienen `llm_override` y heredan `settings.llm_orchestrator`. Kimi K2 vía Groq es gratis, con 100% JSON noex en benchmark 2026-04-19. Fallback chain: DeepSeek Chat → Reasoner → GPT-OSS 120B → Mistral Large.
 
 **¿Por qué GPT-OSS 20B (Groq) para python_repl?**
-Validado en benchmark propio (2026-04-14): 3/3 prompts generaron `await query(sql)` correcto, SQL bien formado, sin artefactos. Gemini y otros modelos generan `default_api.query()` que falla en el REPL restringido. GPT-OSS 120B falló en el prompt más complejo (2/3). DeepSeek Reasoner tuvo error de autenticación durante el test. GPT-OSS 20B es gratis en Groq, 890ms avg TTFT, ya configurado como provider. El campo `llm_override` en `SkillAgentBase` formaliza este patrón por agente.
+Validado en benchmark propio (2026-04-14): 3/3 prompts generaron `await query(sql)` correcto, SQL bien formado, sin artefactos. GPT-OSS 120B falló en el prompt más complejo (2/3). GPT-OSS 20B es gratis en Groq, 890ms avg TTFT. Mantener en `llm_override` aunque el extractor general migró a 120B.
 
-**⚠️ Nota de deprecación — modelos Gemini:**
-`gemini-2.5-flash-lite` y `gemini-2.5-flash` están programados para deprecarse el **17 jun 2026**.
-Migrar a `gemini-3-flash` (o equivalente GA) antes de esa fecha. Monitorear: `https://ai.google.dev/gemini-api/docs/changelog`.
-Los modelos Gemini 3.x (preview a mar 2026) no son production-ready aún por 429s en function calling.
+**✅ Migración Gemini completada (2026-04-19):**
+`gemini-2.5-flash-lite` migrado a `gemini-3.1-flash-lite-preview` en extractor, router y context extractor.
+Razones: deprecación 17 jun 2026 · RPD 500 vs ~20 anterior · 100% JSON noex confirmado en benchmark.
 
 ---
 
@@ -965,9 +964,11 @@ Ver benchmark completo: `docs/llm-benchmark-2026-04-13.md`
 | 2026-04 (inicial) | Orquestador: `groq/llama-3.3-70b-versatile` | Disponible, rápido, gratis |
 | 2026-04-07 | Extractor/Router: → `google/gemini-2.5-flash-lite` | 97% quality, latencia aceptable, free tier |
 | 2026-04-07 | Chat: → `mistral/mistral-small-latest` | 97% quality, 434ms TTFT, costo bajo |
-| 2026-04-14 | Chat: → `groq/compound` + fallback `mistral-small` | Web search nativa, 70K TPM gratis; Mistral Small como fallback (mismo quality, sin search) |
+| 2026-04-14 | Chat: → `groq/compound-beta` + fallback `mistral-small` | Web search nativa, 70K TPM gratis; Mistral Small como fallback |
 | 2026-04-13 | Orquestador: → `deepseek/deepseek-reasoner` | 100% quality en benchmark propio; reasoning interno |
-| 2026-04-13 | Fallback 3: + `groq/openai/gpt-oss-20b` | 82% quality, 347ms, gratis en Groq; reemplaza Step 3.5 Flash (22%) |
-| 2026-04-13 | ReplAgent: `zai/glm-4.7-flash` → `ollama/qwen3-coder:480b-cloud` | Código Python correcto (no instalado — ver siguiente) |
-| 2026-04-14 | ReplAgent: `ollama/qwen3-coder:480b-cloud` → `groq/openai/gpt-oss-20b` | Benchmark 3/3 `await query()` correcto; qwen3-coder no disponible en Ollama local |
-| Jun 2026 | **Pendiente**: `gemini-2.5-flash-lite` → deprecación | Migrar a `gemini-3-flash` antes del 17 jun 2026 |
+| 2026-04-13 | Fallback 3: + `groq/openai/gpt-oss-20b` | 82% quality, 347ms, gratis en Groq |
+| 2026-04-13 | ReplAgent: `zai/glm-4.7-flash` → `groq/openai/gpt-oss-20b` | Benchmark 3/3 `await query()` correcto |
+| 2026-04-19 | Extractor/Router: → `gemini-3.1-flash-lite-preview` | Deprecación jun 2026 · 100% JSON noex · 500 RPD vs ~20 |
+| 2026-04-19 | Orquestador: → `moonshotai/kimi-k2-instruct` (Groq) | 100% JSON noex, gratis; DeepSeek como fallback 1 |
+| 2026-04-19 | Fallback orq: `gemini-2.5-flash-lite` → `gpt-oss-120b` | RPD 20/día inútil en fallback; 120B gratis y 100% noex |
+| 2026-04-19 | Chat fallback: `mistral-small` → `groq/qwen3-32b` | 100% noex vs 80% · gratis vs pago · mismo proveedor Groq |

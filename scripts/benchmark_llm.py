@@ -53,6 +53,7 @@ NVIDIA_KEY     = _key("NVIDIA_API_KEY")
 MINIMAX_KEY    = _key("MINIMAX_API_KEY")
 MOONSHOT_KEY   = _key("MOONSHOT_API_KEY")
 ZHIPU_KEY      = _key("ZHIPU_API_KEY")
+KILO_KEY       = _key("KILO_API_KEY")
 OLLAMA_URL     = _key("OLLAMA_BASE_URL") or "http://127.0.0.1:11434/v1/"
 OLLAMA_MODEL   = _key("OLLAMA_MODEL")
 
@@ -101,7 +102,7 @@ class ModelDef:
 def _build_models() -> list[ModelDef]:
     models: list[ModelDef] = []
 
-    # ── Google (GOOGLE_API_KEY) — 30 RPM, sequential ─────────────────────────
+    # ── Google (GOOGLE_API_KEY) — RPM varía por modelo (ver comentarios) ──────
     _g_key = GOOGLE_KEY
     _g_url = "https://generativelanguage.googleapis.com/v1beta/openai/"
     _g_skip = "" if _g_key else "GOOGLE_API_KEY not set"
@@ -114,17 +115,9 @@ def _build_models() -> list[ModelDef]:
             pool="google", rpm_pool="google",
             base_url=_g_url, api_key=_g_key,
             role="extractor+router", in_use=True,
-            rpm=30, stream_usage=True, skip_reason=_g_skip,
+            rpm=10, stream_usage=True, skip_reason=_g_skip,  # 10 RPM real (AI Studio free tier)
         ),
-        ModelDef(
-            model_id="gemini-2.5-flash",
-            model_name="Gemini 2.5 Flash",
-            provider="Google",
-            pool="google", rpm_pool="google",
-            base_url=_g_url, api_key=_g_key,
-            role="candidate",
-            rpm=30, stream_usage=True, skip_reason=_g_skip,
-        ),
+        # Gemini 2.5 Flash eliminado — RPD 20/día, ya consumido en run 2026-04-19
         ModelDef(
             model_id="gemini-3.1-flash-lite-preview",
             model_name="Gemini 3.1 Flash Lite Preview",
@@ -132,7 +125,7 @@ def _build_models() -> list[ModelDef]:
             pool="google", rpm_pool="google",
             base_url=_g_url, api_key=_g_key,
             role="candidate",
-            rpm=30, stream_usage=True, skip_reason=_g_skip,
+            rpm=15, stream_usage=True, skip_reason=_g_skip,  # 15 RPM real (AI Studio free tier)
         ),
         ModelDef(
             model_id="gemma-4-26b-a4b-it",
@@ -141,7 +134,7 @@ def _build_models() -> list[ModelDef]:
             pool="google", rpm_pool="google",
             base_url=_g_url, api_key=_g_key,
             role="candidate",
-            rpm=30, stream_usage=True,  # thinking_config removed: Google OpenAI-compat rejects it for Gemma IT (400 — 2026-04-15)
+            rpm=15, stream_usage=True,  # 15 RPM real, RPD 1.5K, TPM ilimitado (AI Studio free tier — 2026-04-19). thinking_config removed: rejects it (400 — 2026-04-15)
             skip_reason=_g_skip,
         ),
         ModelDef(
@@ -151,7 +144,28 @@ def _build_models() -> list[ModelDef]:
             pool="google", rpm_pool="google",
             base_url=_g_url, api_key=_g_key,
             role="candidate",
-            rpm=30, stream_usage=True,  # thinking_config removed: Google OpenAI-compat rejects it for Gemma IT (400 — 2026-04-15)
+            rpm=15, stream_usage=True,  # 15 RPM real, RPD 1.5K, TPM ilimitado (AI Studio free tier — 2026-04-19). thinking_config removed: rejects it (400 — 2026-04-15)
+            skip_reason=_g_skip,
+        ),
+        # ── Gemma 3 — pool separado para no mezclar RPM con Gemma 4 (15 RPM) ──
+        ModelDef(
+            model_id="gemma-3-27b-it",
+            model_name="Gemma 3 27B",
+            provider="Google",
+            pool="google", rpm_pool="google-gemma3",
+            base_url=_g_url, api_key=_g_key,
+            role="candidate",
+            rpm=30, stream_usage=True,  # 30 RPM real, RPD 14.4K, TPM 15K (AI Studio free tier — 2026-04-19)
+            skip_reason=_g_skip,
+        ),
+        ModelDef(
+            model_id="gemma-3-12b-it",
+            model_name="Gemma 3 12B",
+            provider="Google",
+            pool="google", rpm_pool="google-gemma3",
+            base_url=_g_url, api_key=_g_key,
+            role="candidate",
+            rpm=30, stream_usage=True,  # 30 RPM real, RPD 14.4K, TPM 15K (AI Studio free tier — 2026-04-19)
             skip_reason=_g_skip,
         ),
     ]
@@ -240,13 +254,13 @@ def _build_models() -> list[ModelDef]:
     models += [
         ModelDef(
             model_id="deepseek-reasoner",
-            model_name="DeepSeek R1 (Reasoner)",
+            model_name="DeepSeek V3.2 Reasoner",
             provider="DeepSeek",
             pool="deepseek", rpm_pool="deepseek",
             base_url=_ds_url, api_key=_ds_key,
             role="orchestrator", in_use=True,
             rpm=60, thinking_budget=4000, strip_thinking=True,
-            reasoning_style="budget_tokens",  # DeepSeek: escala vía max_tokens
+            reasoning_style="budget_tokens",  # DeepSeek V3.2 thinking mode (ya no es R1 — 2026-04-19)
             skip_reason=_ds_skip,
         ),
         ModelDef(
@@ -330,6 +344,36 @@ def _build_models() -> list[ModelDef]:
             rpm=10,
             skip_reason="404 — ID no encontrado en OpenRouter free tier (verificado 2026-04-15). Verificar ID actual en openrouter.ai/models",
         ),
+        ModelDef(
+            model_id="arcee-ai/trinity-large-preview:free",
+            model_name="Arcee Trinity Large (OpenRouter free)",
+            provider="OpenRouter",
+            pool="openrouter", rpm_pool="openrouter-free",
+            base_url=_or_url, api_key=_or_key,
+            role="candidate",
+            rpm=10,
+            skip_reason=_or_skip,
+        ),
+        ModelDef(
+            model_id="stepfun/step-3.5-flash",
+            model_name="Stepfun Step-3.5 Flash (OpenRouter)",
+            provider="OpenRouter",
+            pool="openrouter", rpm_pool="openrouter",
+            base_url=_or_url, api_key=_or_key,
+            role="candidate",
+            rpm=20,
+            skip_reason=_or_skip,
+        ),
+        ModelDef(
+            model_id="bytedance-seed/seed-2.0-lite",
+            model_name="ByteDance Seed 2.0 Lite (OpenRouter)",
+            provider="OpenRouter",
+            pool="openrouter", rpm_pool="openrouter",
+            base_url=_or_url, api_key=_or_key,
+            role="candidate",
+            rpm=20,
+            skip_reason=_or_skip,
+        ),
     ]
 
     # ── Z.AI / GLM (ZAI_API_KEY) — 20 RPM, ⚠️ timeout frecuente desde WSL ────
@@ -363,6 +407,50 @@ def _build_models() -> list[ModelDef]:
             base_url=_nv_url, api_key=_nv_key,
             role="candidate",
             rpm=30, skip_reason=_nv_skip,
+        ),
+    ]
+
+    # ── Kilo AI Gateway (KILO_API_KEY) — OpenAI-compat, free tier ────────────
+    _kilo_key  = KILO_KEY
+    _kilo_url  = "https://api.kilo.ai/api/gateway/"
+    _kilo_skip = "" if _kilo_key else "KILO_API_KEY not set"
+
+    models += [
+        ModelDef(
+            model_id="bytedance-seed/dola-seed-2.0-pro:free",
+            model_name="ByteDance Dola Seed 2.0 Pro (Kilo free)",
+            provider="Kilo AI",
+            pool="kilo", rpm_pool="kilo",
+            base_url=_kilo_url, api_key=_kilo_key,
+            role="candidate",
+            rpm=20, skip_reason=_kilo_skip,
+        ),
+        ModelDef(
+            model_id="x-ai/grok-code-fast-1:optimized:free",
+            model_name="Grok Code Fast 1 (Kilo free)",
+            provider="Kilo AI",
+            pool="kilo", rpm_pool="kilo",
+            base_url=_kilo_url, api_key=_kilo_key,
+            role="candidate",
+            rpm=20, skip_reason=_kilo_skip,
+        ),
+        ModelDef(
+            model_id="nvidia/nemotron-3-super-120b-a12b:free",
+            model_name="Nemotron 3 Super 120B (Kilo free)",
+            provider="Kilo AI",
+            pool="kilo", rpm_pool="kilo",
+            base_url=_kilo_url, api_key=_kilo_key,
+            role="candidate",
+            rpm=20, skip_reason=_kilo_skip,
+        ),
+        ModelDef(
+            model_id="arcee-ai/trinity-large-thinking:free",
+            model_name="Arcee Trinity Large Thinking (Kilo free)",
+            provider="Kilo AI",
+            pool="kilo", rpm_pool="kilo",
+            base_url=_kilo_url, api_key=_kilo_key,
+            role="candidate",
+            rpm=20, skip_reason=_kilo_skip,
         ),
     ]
 
@@ -850,6 +938,163 @@ TOON_TESTS_NOEX: dict[str, dict] = {
     f"{k}_noex": v for k, v in TOON_TESTS.items()
 }
 
+# ── JSON tool calling ─────────────────────────────────────────────────────────
+_JSON_TOOLS_STR = json.dumps({"tools": _TOON_TOOL_DEFS}, indent=2, ensure_ascii=False)
+
+_JSON_SYSTEM_PROMPT = f"""\
+You are a school assistant helping a teacher log attendance and homework.
+When the teacher's message requires recording or querying data, respond ONLY with a JSON object.
+If no tool is needed (e.g., a general question), respond directly in plain text — do NOT use a tool.
+
+Available tools:
+{_JSON_TOOLS_STR}
+
+To call a tool, respond with exactly this format (no extra text before or after):
+{{"name": "<tool_name>", "arguments": {{<key>: <value>}}}}"""
+
+# noex: sin bloque de ejemplo — mide si el modelo infiere {"name":...,"arguments":...} solo
+_JSON_SYSTEM_PROMPT_NOEX = f"""\
+You are a school assistant helping a teacher log attendance and homework.
+When the teacher's message requires recording or querying data, respond ONLY with a JSON object.
+If no tool is needed (e.g., a general question), respond directly in plain text — do NOT use a tool.
+
+Available tools:
+{_JSON_TOOLS_STR}"""
+
+# JSON tests: mismos casos que TOON — sufijo _json / _json_noex
+JSON_TESTS: dict[str, dict] = {f"{k}_json": v for k, v in TOON_TESTS.items()}
+JSON_TESTS_NOEX: dict[str, dict] = {f"{k}_json_noex": v for k, v in TOON_TESTS.items()}
+
+_JSON_DECODER = json.JSONDecoder()
+
+
+def decode_json_response(text: str) -> tuple[str | None, dict]:
+    """Parse JSON tool call from model response. Returns (tool_name, args) or (None, {}).
+
+    Accepts multiple key schemas models use:
+      • {"name": "tool", "arguments": {...}}           ← canonical
+      • {"tool": "name", "parameters": {...}}          ← Mistral Medium style
+      • {"function": {"name": "tool", "arguments": {}}} ← some OpenAI-style models
+
+    Uses raw_decode() to properly handle nested braces (greedy, depth-aware).
+    """
+    clean = re.sub(r"```(?:json)?\s*", "", text).replace("```", "").strip()
+    i = 0
+    while i < len(clean):
+        idx = clean.find('{', i)
+        if idx == -1:
+            break
+        try:
+            obj, end = _JSON_DECODER.raw_decode(clean, idx)
+        except json.JSONDecodeError:
+            i = idx + 1
+            continue
+        if isinstance(obj, dict):
+            name = obj.get("name") or obj.get("tool") or obj.get("tool_name")
+            args = (obj.get("arguments") or obj.get("parameters")
+                    or obj.get("args") or obj.get("input") or {})
+            if not name and isinstance(obj.get("function"), dict):
+                name = obj["function"].get("name")
+                args = obj["function"].get("arguments", {})
+            if name and isinstance(args, dict):
+                return str(name), args
+        i = end
+    return None, {}
+
+
+async def call_json_test(model: ModelDef, test_id: str) -> BenchResult:
+    """Run a single JSON tool-calling test."""
+    noex = test_id.endswith("_json_noex")
+    base_id = test_id.removesuffix("_json_noex").removesuffix("_json")
+    test = TOON_TESTS[base_id]
+    system_prompt = _JSON_SYSTEM_PROMPT_NOEX if noex else _JSON_SYSTEM_PROMPT
+    messages = [
+        {"role": "system", "content": system_prompt},
+        {"role": "user", "content": test["prompt"]},
+    ]
+
+    orig_budget = model.thinking_budget
+    model.thinking_budget = max(orig_budget, 0)
+    max_tokens = 512 + orig_budget
+
+    client = AsyncOpenAI(api_key=model.api_key, base_url=model.base_url, timeout=CALL_TIMEOUT)
+    kwargs: dict = dict(model=model.model_id, messages=messages,
+                        max_tokens=max_tokens, temperature=0, stream=True)
+
+    t0 = time.monotonic()
+    ttft_ms: Optional[int] = None
+    content_parts: list[str] = []
+    output_tokens: Optional[int] = None
+    reasoning_tokens: Optional[int] = None
+    status = "ok"
+    error_str = ""
+    content = ""
+
+    try:
+        stream = await client.chat.completions.create(**kwargs)
+        async for chunk in stream:
+            if ttft_ms is None and chunk.choices and chunk.choices[0].delta.content:
+                ttft_ms = int((time.monotonic() - t0) * 1000)
+            if chunk.choices and chunk.choices[0].delta.content:
+                content_parts.append(chunk.choices[0].delta.content)
+            if chunk.usage:
+                output_tokens = chunk.usage.completion_tokens
+                if hasattr(chunk.usage, "completion_tokens_details") and chunk.usage.completion_tokens_details:
+                    d = chunk.usage.completion_tokens_details
+                    if hasattr(d, "reasoning_tokens") and d.reasoning_tokens:
+                        reasoning_tokens = d.reasoning_tokens
+
+        content = "".join(content_parts)
+        if not content:
+            status = "empty"
+        elif model.strip_thinking:
+            content = strip_thinking(content)
+    except Exception as exc:
+        status = "error"
+        error_str = str(exc)[:200]
+
+    total_ms = int((time.monotonic() - t0) * 1000)
+
+    toon_valid: Optional[bool] = None
+    correct_tool: Optional[bool] = None
+    correct_args: Optional[bool] = None
+    toon_raw = ""
+
+    if status == "ok":
+        expect_tool = test.get("expect_tool")
+        if expect_tool is None:
+            # no_tool: valid if response has no JSON tool call
+            tool_name, _ = decode_json_response(content)
+            toon_valid = tool_name is None
+            correct_tool = toon_valid
+            correct_args = toon_valid
+            toon_raw = content[:120]
+        else:
+            tool_name, args = decode_json_response(content)
+            toon_raw = content[:120]
+            toon_valid = tool_name is not None
+            correct_tool = toon_valid and tool_name == expect_tool
+            correct_args = correct_tool and _check_toon_args(args, test.get("expect_args", {}))
+
+    preview = content[:80].replace("\n", " ") if content else error_str[:80]
+    toon_score = ""
+    if toon_valid is not None:
+        toon_score = (f" | JSON {'✓' if toon_valid else '✗'}"
+                      f" tool {'✓' if correct_tool else '✗'}"
+                      f" args {'✓' if correct_args else '✗'}")
+    print(f"  [{model.pool}] {model.model_name} | {test_id} run1"
+          f" → {status} | TTFT {ttft_ms or '—'}ms | total {total_ms}ms{toon_score}")
+
+    return BenchResult(
+        model_id=model.model_id, model_name=model.model_name,
+        provider=model.provider, pool=model.pool, role=model.role, in_use=model.in_use,
+        test_id=test_id, status=status, ttft_ms=ttft_ms, total_ms=total_ms,
+        output_tokens=output_tokens, reasoning_tokens=reasoning_tokens,
+        content_preview=preview, error=error_str,
+        toon_valid=toon_valid, correct_tool=correct_tool, correct_args=correct_args,
+        toon_raw=toon_raw,
+    )
+
 
 def _check_toon_args(args: dict, expect_args: dict) -> bool:
     """Check that all expected arg key/values are present in actual args."""
@@ -1213,8 +1458,10 @@ async def run_model_tests(
 
     for tid in test_ids:
         is_toon = tid in TOON_TESTS or tid in TOON_TESTS_NOEX
-        if is_toon:
-            # compound-beta has no standard tool calling — skip TOON tests
+        is_json = tid in JSON_TESTS or tid in JSON_TESTS_NOEX
+        is_tool = is_toon or is_json
+        if is_tool:
+            # compound-beta has no standard tool calling — skip tool tests
             if model.compound_mode:
                 results.append(BenchResult(
                     model_id=model.model_id, model_name=model.model_name,
@@ -1234,27 +1481,17 @@ async def run_model_tests(
             await limiter.wait(model.rpm_pool, model.rpm)
             if is_toon:
                 r = await call_toon_test(model, tid)
+            elif is_json:
+                r = await call_json_test(model, tid)
             else:
                 r = await call_once(model, messages_arg)
                 r.test_id = tid
             run_results.append(r)
-            ttft = f"{r.ttft_ms}ms" if r.ttft_ms else "—"
-            toon_score = ""
-            if is_toon and r.toon_valid is not None:
-                toon_score = (
-                    f" | TOON {'✓' if r.toon_valid else '✗'}"
-                    f" tool {'✓' if r.correct_tool else '✗'}"
-                    f" args {'✓' if r.correct_args else '✗'}"
-                )
-            print(
-                f"  [{model.pool}] {model.model_name} | {tid} run{run_i+1} "
-                f"→ {r.status} | TTFT {ttft} | total {r.total_ms}ms{toon_score}"
-            )
             if delay_ms > 0 and run_i < runs - 1:
                 await asyncio.sleep(delay_ms / 1000)
 
-        # Keep best run: for TOON prefer correct_tool=True, then lowest total_ms
-        if is_toon:
+        # Keep best run: for tool tests prefer correct_tool=True, then lowest total_ms
+        if is_tool:
             correct = [r for r in run_results if r.correct_tool]
             best = min(correct, key=lambda r: r.total_ms) if correct else run_results[-1]
         else:
@@ -1494,7 +1731,8 @@ def save_json(results: list[BenchResult], extra: dict) -> Path:
 
 
 # ── CLI ───────────────────────────────────────────────────────────────────────
-_ALL_TEST_IDS = list(TESTS.keys()) + list(TOON_TESTS.keys()) + list(TOON_TESTS_NOEX.keys())
+_ALL_TEST_IDS = (list(TESTS.keys()) + list(TOON_TESTS.keys()) + list(TOON_TESTS_NOEX.keys())
+                 + list(JSON_TESTS.keys()) + list(JSON_TESTS_NOEX.keys()))
 
 
 def parse_args() -> argparse.Namespace:

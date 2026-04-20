@@ -1,23 +1,22 @@
 # Análisis de consumo LLM — SchoolAI
 
-**Fecha:** 2026-04-06  
-**Estado:** Solo análisis, sin cambios aplicados aún  
+**Fecha:** 2026-04-06 (análisis inicial) · **Actualizado:** 2026-04-19 (stack migrado)  
 **Objetivo:** Identificar fuentes de cargos en Gemini API y oportunidades de optimización de tokens
 
 ---
 
-## 1. Modelos actualmente en uso
+## 1. Modelos actualmente en uso (2026-04-19)
 
 | Variable config | Modelo | Proveedor | Costo |
 |---|---|---|---|
-| `llm_orchestrator` | `gemini-2.5-flash-lite` | Google | ⚠️ puede generar cargos |
-| `llm_orchestrator_fallback` | `gemini-2.5-flash` → `zai/glm-4.7-flash` → `groq/llama-3.3-70b-versatile` | Google primero | ⚠️ Gemini Flash es de pago |
-| `llm_extractor` | `groq/llama-3.1-8b-instant` | Groq | ✅ gratis |
-| `llm_chat` | `groq/llama-3.3-70b-versatile` | Groq | ✅ gratis |
-| `llm_router` | `groq/llama-3.1-8b-instant` | Groq | ✅ gratis |
+| `llm_extractor` | `gemini-3.1-flash-lite-preview` | Google AI Studio | ✅ gratis (500 RPD) |
+| `llm_router` | `gemini-3.1-flash-lite-preview` | Google AI Studio | ✅ gratis (500 RPD) |
+| `llm_chat` | `groq/compound-beta` | Groq | ✅ gratis (web search) |
+| `llm_chat_fallback` | `groq/qwen/qwen3-32b` | Groq | ✅ gratis |
+| `llm_orchestrator` | `moonshotai/kimi-k2-instruct` | Groq | ✅ gratis |
+| `llm_orchestrator_fallback` | `deepseek-chat → deepseek-reasoner → gpt-oss-120b → mistral-large` | DeepSeek/Groq/Mistral | ⚠️ DeepSeek pago ($0.28/$0.42/1M) si se activa |
 
-**Causa inmediata de cargos:** cuando `gemini-2.5-flash-lite` falla, el fallback activa
-`gemini-2.5-flash` (modelo de pago) antes de intentar GLM o Groq.
+**Stack mayormente gratuito.** Solo incurre costo si el orchestrator falla 3 veces y llega a DeepSeek, o si llega al fallback final Mistral Large.
 
 ---
 

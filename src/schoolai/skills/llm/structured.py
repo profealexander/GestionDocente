@@ -66,7 +66,7 @@ async def llm_structured_output(
     Args:
         prompt: Mensaje del usuario con los datos a estructurar.
         model_cls: Clase Pydantic BaseModel que define la estructura esperada.
-        provider_model: String "provider/model", e.g. "google/gemini-2.5-flash-lite".
+        provider_model: String "provider/model", e.g. "google/gemini-3.1-flash-lite-preview".
         system_prefix: Instrucciones adicionales antes del schema en el system prompt.
         temperature: Temperatura de generación (0 = determinista).
         timeout: Timeout en segundos para la llamada HTTP.

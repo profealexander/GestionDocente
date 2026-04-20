@@ -57,7 +57,7 @@ async def extract_from_file(file_bytes: bytes, mime_type: str) -> str:
 
     def _call():
         return client.chat.completions.create(
-            model="gemini-2.5-flash-lite",
+            model="gemini-3.1-flash-lite-preview",
             messages=[
                 {
                     "role": "user",
@@ -74,7 +74,7 @@ async def extract_from_file(file_bytes: bytes, mime_type: str) -> str:
         )
 
     response = await asyncio.to_thread(_call)
-    fire_record_usage(provider="google", model="gemini-2.5-flash-lite", response=response, agent="context_extractor")
+    fire_record_usage(provider="google", model="gemini-3.1-flash-lite-preview", response=response, agent="context_extractor")
     return (response.choices[0].message.content or "").strip()
 
 

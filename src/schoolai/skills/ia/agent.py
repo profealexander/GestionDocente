@@ -1,7 +1,7 @@
 """Skill IA — general conversation.
 
 Routing:
-  - mistral-small (llm_chat_fallback) como modelo por defecto — 882ms.
+  - qwen3-32b (llm_chat_fallback) como modelo por defecto — 1038ms, 100% noex, Groq free.
   - compound-beta (llm_chat) solo cuando el mensaje contiene señales de búsqueda web
     (noticias, precio, clima, resultados, eventos recientes, etc.).
 """
