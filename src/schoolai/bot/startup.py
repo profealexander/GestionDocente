@@ -41,8 +41,8 @@ async def common_post_init(
     await load_course_map()
 
     if register_reminders:
-        from schoolai.skills.reminders.dispatcher import job_dispatch_reminders
-        app.job_queue.run_repeating(job_dispatch_reminders, interval=300, first=60)
+        from schoolai.skills.autonomy.jobs import register_jobs
+        await register_jobs(app.bot)
 
     async def _cleanup_job(ctx) -> None:
         from schoolai.bot.state import cleanup_stale, clear_jornada_all_stale

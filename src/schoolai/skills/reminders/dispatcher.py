@@ -15,8 +15,8 @@ from schoolai.db.connection import async_session
 from schoolai.skills.reminders.repository import get_due_reminders, mark_sent
 
 
-async def job_dispatch_reminders(context: ContextTypes.DEFAULT_TYPE) -> None:
-    """Envía todos los recordatorios pendientes cuya hora ya llegó."""
+async def dispatch_due_reminders(bot) -> None:
+    """Envía todos los recordatorios pendientes cuya hora ya llegó. Sin dependencia de PTB."""
     async with async_session() as session:
         reminders = await get_due_reminders(session)
 
@@ -24,7 +24,12 @@ async def job_dispatch_reminders(context: ContextTypes.DEFAULT_TYPE) -> None:
         return
 
     logger.info(f"[reminders] dispatcher — {len(reminders)} recordatorio(s) pendiente(s)")
-    await asyncio.gather(*[_dispatch_one(r, context.bot) for r in reminders])
+    await asyncio.gather(*[_dispatch_one(r, bot) for r in reminders])
+
+
+async def job_dispatch_reminders(context: ContextTypes.DEFAULT_TYPE) -> None:
+    """PTB wrapper — mantiene compatibilidad con job_queue."""
+    await dispatch_due_reminders(context.bot)
 
 
 async def _dispatch_one(reminder, bot) -> None:

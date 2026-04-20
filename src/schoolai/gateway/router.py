@@ -13,7 +13,7 @@ _SYSTEM = """
 You are a classifier for a school management assistant.
 
 Given a teacher's message, return JSON with:
-- domain: one of [attendance, homework, cuotas, web_search, general]
+- domain: one of [attendance, homework, cuotas, reports, web_search, general]
 - intent: one of [query, record, delete, search, chat]
 - entities: list of names, dates, course codes, or other key tokens extracted from the message
 

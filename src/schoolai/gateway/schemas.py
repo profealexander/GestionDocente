@@ -7,7 +7,7 @@ from pydantic import BaseModel
 
 class TaskSpec(BaseModel):
     channel: Literal["telegram", "web", "cli", "cron"]
-    domain: Literal["attendance", "homework", "cuotas", "web_search", "general"]
+    domain: Literal["attendance", "homework", "cuotas", "reports", "web_search", "general"]
     intent: Literal["query", "record", "delete", "search", "chat"]
     entities: list[str]
     raw_text: str
