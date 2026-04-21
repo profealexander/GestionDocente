@@ -32,29 +32,31 @@ class Settings(BaseSettings):
     telegram_allowed_users: str = ""  # comma-separated user IDs
 
     # ── LLM model per skill (format: "provider/model") ────────────────────────
-    llm_extractor: str = "google/gemini-3.1-flash-lite-preview"  # extracción estructurada — 990ms, 100% JSON noex, 500 RPD free
-    llm_chat: str = "groq/compound-beta"  # chat general — búsqueda web nativa, 70K TPM
-    llm_chat_fallback: str = "groq/qwen/qwen3-32b"  # fallback chat — 1038ms, 100% JSON noex, gratis
+    # Scores: benchmark 2026-04-21 (JSON-full 35% · JSON-noex 35% · latencia 30%)
+    llm_extractor: str = "mistral/mistral-medium-latest"       # #1 score 95.3% — 100%/100%, 1992ms
+    llm_chat: str = "groq/compound-beta"                       # chat general — búsqueda web nativa, 70K TPM
+    llm_chat_fallback: str = "mistral/mistral-small-latest"    # #12 score 83.4% — 100%/60%, 1120ms
     llm_vision: str = "openrouter/nvidia/nemotron-nano-12b-v2-vl:free"  # visión — 128K ctx, free
     llm_vision_fallback: str = "openrouter/google/gemma-4-31b-it:free"  # visión fallback — free
-    llm_router: str = "google/gemini-3.1-flash-lite-preview"  # routing / clasificación — 100% JSON noex, 500 RPD free
-    llm_router_fallback: str = "groq/openai/gpt-oss-120b,deepseek/deepseek-chat"  # 457ms 100% JSON → 3069ms 100% JSON
-    llm_orchestrator: str = "groq/qwen/qwen3-32b"  # 1092ms, 100% JSON noex, gratis Groq — benchmark 2026-04-19
-    llm_orchestrator_fallback: str = "google/gemini-3.1-flash-lite-preview,deepseek/deepseek-chat,mistral/mistral-medium-latest"  # 100% JSON noex → fallback seguro
-    llm_context_agent: str = "groq/qwen/qwen3-32b"  # context skill agent — mismo tier que orchestrator, configurable independientemente
+    llm_router: str = "mistral/mistral-medium-latest"          # mismo que extractor — #1 score 95.3%
+    llm_router_fallback: str = "groq/openai/gpt-oss-120b,deepseek/deepseek-chat"  # #18 77.6% → #6 88.6%
+    llm_orchestrator: str = "moonshotai/kimi-k2-instruct"      # orquestador multi-tool — 100%/100%
+    llm_orchestrator_fallback: str = "deepseek/deepseek-chat,deepseek/deepseek-reasoner,groq/openai/gpt-oss-120b"  # #6 88.6% → #22 73.6% → #18 77.6%
+    llm_context_agent: str = "mistral/mistral-small-latest"    # context skill agent — #12 83.4%, 1120ms
 
     # ── API keys ───────────────────────────────────────────────────────────────
     groq_api_key: str = ""  # Groq — Whisper + fallback LLM
     zhipu_api_key: str = ""  # ZhipuAI China endpoint (legacy)
     zai_api_key: str = ""  # Z.AI global endpoint — GLM-4.7-Flash orquestador
-    google_api_key: str = ""  # Google AI Studio — Gemini models
-    mistral_api_key: str = ""  # Mistral — chat general + orquestación
+    google_api_key: str = ""  # Google AI Studio — Gemini/Gemma models (multimodal extractor)
+    mistral_api_key: str = ""  # Mistral — extractor + router + chat fallback (benchmark 2026-04-21)
     deepseek_api_key: str = ""
     moonshot_api_key: str = ""
     nvidia_api_key: str = ""
     minimax_api_key: str = ""
     openrouter_api_key: str = ""
     kilo_api_key: str = ""  # Kilo AI Gateway — OpenAI-compat, free tier
+    hf_token: str = ""      # HuggingFace Inference Providers (router.huggingface.co)
     openai_api_key: str = ""
     ollama_api_key: str = "ollama"  # OpenAI client requiere un valor; Ollama local suele ignorarlo
     ollama_base_url: str = "http://127.0.0.1:11434/v1/"  # endpoint OpenAI-compatible

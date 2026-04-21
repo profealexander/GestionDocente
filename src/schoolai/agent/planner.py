@@ -1,7 +1,7 @@
 """
 Planner — LLM call #1.
 Receives TaskSpec + available tools → returns [{tool, params}, ...].
-Uses llm_orchestrator (default: qwen3-32b/Groq) for reliable JSON tool selection.
+Uses llm_orchestrator (default: kimi-k2-instruct) for reliable JSON tool selection.
 """
 from __future__ import annotations
 

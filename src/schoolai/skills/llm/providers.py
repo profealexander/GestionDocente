@@ -56,4 +56,11 @@ PROVIDERS: dict[str, dict] = {
         "base_url": "http://127.0.0.1:11434/v1",
         "key": "ollama_api_key",
     },
+    # HuggingFace Inference Providers — router unificado (nscale, cerebras, sambanova, novita…)
+    # Modelo con provider específico: extra_body={"provider": "nscale"}
+    # Benchmark 2026-04-21: Qwen3-32B/nscale #4 91.1% (803ms, 254t/s)
+    "huggingface": {
+        "base_url": "https://router.huggingface.co/v1/",
+        "key": "hf_token",
+    },
 }
