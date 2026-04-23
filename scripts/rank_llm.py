@@ -1,12 +1,12 @@
 """
 SchoolAI LLM Ranking — Multi-criteria scorer sobre benchmark JSONs existentes.
 
-Mapa de roles vs. SchoolAI v2 (config.py):
+Mapa de roles (config.py):
   extractor  → llm_extractor + llm_router  (JSON output, response_format=json_object)
   orchestrator → llm_orchestrator          (ReAct multi-turno, tool_choice=auto, texto final al usuario)
   chat       → llm_chat                    (conversacional + web search, percepción de velocidad)
 
-Pesos v2 (extractor):
+Pesos (extractor):
   score = costo      × 0.22
         + json_noex  × 0.25   (router clasifica sin schema explícito)
         + json_full  × 0.20   (extractor necesita JSON completo correcto)
@@ -15,7 +15,7 @@ Pesos v2 (extractor):
         + español    × 0.12
         + disponib   × 0.08
 
-Pesos v2 (orchestrator):
+Pesos (orchestrator):
   score = json_full  × 0.28   (tool calling nativo = criterio crítico)
         + español    × 0.20   (genera el texto final al usuario)
         + json_noex  × 0.15
@@ -24,7 +24,7 @@ Pesos v2 (orchestrator):
         + costo      × 0.10
         + latencia   × 0.05
 
-Pesos v2 (chat):
+Pesos (chat):
   score = español    × 0.28   (calidad conversacional = criterio #1)
         + ttft       × 0.22   (primera respuesta = percepción de velocidad)
         + latencia   × 0.15
@@ -80,11 +80,11 @@ COST_TIER: dict[str, float] = {
     "Moonshot":      0.30,  # key inválida actualmente
 }
 
-# Mezcla de roles para ranking global (tráfico real SchoolAI v2)
+# Mezcla de roles para ranking global (distribución de tráfico real)
 # extractor/router se llama en CADA mensaje; orchestrator es el agente principal
 GLOBAL_MIX = {"extractor": 0.55, "orchestrator": 0.35, "chat": 0.10}
 
-# ── Pesos por rol (alineados con SchoolAI v2) ─────────────────────────────────
+# ── Pesos por rol ────────────────────────────────────────────────────────────
 WEIGHTS: dict[str, dict[str, float]] = {
     "extractor": {
         # llm_extractor + llm_router — JSON output, response_format=json_object

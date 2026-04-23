@@ -103,7 +103,7 @@ class ModelDef:
 
 # ── Model Catalog ─────────────────────────────────────────────────────────────
 def _build_models() -> list[ModelDef]:
-    """Catálogo organizado por función en SchoolAI v2.
+    """Catálogo organizado por función en SchoolAI.
 
     El campo pool= controla el rate-limiting (mismo pool = secuencial, pools distintos = paralelo).
     Los tests que corre cada modelo dependen de role= — ver _ROLE_SUITES.
@@ -135,7 +135,7 @@ def _build_models() -> list[ModelDef]:
     models: list[ModelDef] = []
 
     # ═════════════════════════════════════════════════════════════════════════
-    # 1. EXTRACTOR / ROUTER — llm_extractor + llm_router en SchoolAI v2
+    # 1. EXTRACTOR / ROUTER — llm_extractor + llm_router
     #    Tarea: clasificar intent y extraer JSON (response_format=json_object)
     #    Tests: latencia + JSON (json + json_noex)
     #    En uso: Mistral Medium → (fallback directo llm_router_fallback en config)
@@ -160,7 +160,7 @@ def _build_models() -> list[ModelDef]:
     ]
 
     # ═════════════════════════════════════════════════════════════════════════
-    # 2. ORCHESTRATOR / AGENTE — llm_orchestrator en SchoolAI v2
+    # 2. ORCHESTRATOR / AGENTE — llm_orchestrator
     #    Tarea: loop ReAct multi-turno, tool_choice=auto, respuesta final al usuario
     #    Tests: latencia + TOON + native tool calling (_nat)
     #    En uso: DeepSeek Reasoner → DeepSeek Chat → GPT-OSS 120B (Groq)
@@ -324,7 +324,7 @@ def _build_models() -> list[ModelDef]:
 
     # ═════════════════════════════════════════════════════════════════════════
     # 5. CANDIDATOS — evaluación completa (latencia + JSON + TOON + native)
-    #    Sin rol asignado en v2 — benchmark completo para determinar el mejor fit.
+    #    Sin rol asignado — benchmark completo para determinar el mejor fit.
     # ═════════════════════════════════════════════════════════════════════════
 
     # ── Google AI Studio (GOOGLE_API_KEY) — free tier ─────────────────────────
@@ -978,7 +978,7 @@ JSON_TESTS_NOEX: dict[str, dict] = {f"{k}_json_noex": v for k, v in TOON_TESTS.i
 
 # ── Native OpenAI function calling tests (_nat) ───────────────────────────────
 # Mismos casos que TOON_TESTS pero usando el API nativo de tool calling
-# (tools=[], tool_choice="auto") — replica exactamente lo que hace llm_orchestrator en v2.
+# (tools=[], tool_choice="auto") — replica exactamente lo que hace llm_orchestrator.
 _NATIVE_TOOL_DEFS_OPENAI = [
     {
         "type": "function",
@@ -1072,7 +1072,7 @@ _NATIVE_SYSTEM = (
 
 NATIVE_TESTS: dict[str, dict] = {f"{k}_nat": v for k, v in TOON_TESTS.items()}
 
-# ── Test suite por rol SchoolAI v2 ────────────────────────────────────────────
+# ── Test suite por rol ────────────────────────────────────────────────────────
 # Cada rol corre solo los tests relevantes para su función real en producción.
 # "candidate" = sin rol asignado → evaluación completa para determinar el mejor fit.
 _SUITE_LATENCY = frozenset(TESTS)
@@ -1437,7 +1437,7 @@ async def call_compound(model: ModelDef) -> BenchResult:
 async def call_native_test(model: ModelDef, test_id: str) -> BenchResult:
     """Llama al modelo con function calling nativo (tools=[], tool_choice=auto).
 
-    Replica exactamente lo que hace llm_orchestrator en v2 (base.py ReAct loop).
+    Replica exactamente lo que hace llm_orchestrator (base.py ReAct loop).
     El test_id debe terminar en _nat y estar en NATIVE_TESTS.
     """
     base_id = test_id.removesuffix("_nat")
@@ -1712,7 +1712,7 @@ async def run_model_tests(
         results.append(r)
         return results
 
-    # ── Filtrar tests según el rol del modelo en SchoolAI v2 ─────────────────
+    # ── Filtrar tests según el rol del modelo ────────────────────────────────
     allowed = _get_suite(model.role)
     effective_ids = [t for t in test_ids if t in allowed]
     skipped_ids   = [t for t in test_ids if t not in allowed]
