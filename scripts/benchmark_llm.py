@@ -75,7 +75,7 @@ class ModelDef:
     api_key: str
 
     # Role
-    role: str              # "extractor" | "router" | "chat" | "orchestrator" | "vision" | "candidate"
+    role: str              # "classifier" | "planner" | "synthesizer" | "vision" | "candidate" | *_fallback
     in_use: bool = False
 
     # Behaviour
@@ -135,18 +135,18 @@ def _build_models() -> list[ModelDef]:
     models: list[ModelDef] = []
 
     # ═════════════════════════════════════════════════════════════════════════
-    # 1. EXTRACTOR / ROUTER — llm_extractor + llm_router
-    #    Tarea: clasificar intent y extraer JSON (response_format=json_object)
+    # 1. CLASSIFIER — llm_router (gateway/router.py)
+    #    Tarea: classify {domain, intent, entities} en JSON — cada mensaje
     #    Tests: latencia + JSON (json + json_noex)
-    #    En uso: Mistral Medium → (fallback directo llm_router_fallback en config)
+    #    En uso: Mistral Medium → GPT-OSS 120B / DeepSeek Chat (llm_router_fallback)
     # ═════════════════════════════════════════════════════════════════════════
     models += [
-        # Mistral Medium — en uso como extractor+router (100%/100% JSON, 1992ms)
+        # Mistral Medium — en uso como classifier (100%/100% JSON, 1992ms)
         ModelDef(
             model_id="mistral-medium-latest", model_name="Mistral Medium",
             provider="Mistral", pool="mistral", rpm_pool="mistral",
             base_url=_ms_url, api_key=_ms_key,
-            role="extractor+router", in_use=True,
+            role="classifier", in_use=True,
             rpm=12, skip_reason=_ms_skip,
         ),
         # Mistral Large — candidato extractor (100%/100% pero más caro)
@@ -160,39 +160,48 @@ def _build_models() -> list[ModelDef]:
     ]
 
     # ═════════════════════════════════════════════════════════════════════════
-    # 2. ORCHESTRATOR / AGENTE — llm_orchestrator
-    #    Tarea: loop ReAct multi-turno, tool_choice=auto, respuesta final al usuario
-    #    Tests: latencia + TOON + native tool calling (_nat)
-    #    En uso: DeepSeek Reasoner → DeepSeek Chat → GPT-OSS 120B (Groq)
+    # 2. PLANNER — llm_orchestrator (agent/planner.py)
+    #    Tarea: genera plan [{tool, params}] con response_format=json_object
+    #    NO usa tool_choice=auto — es JSON planning, no native tool calling
+    #    Tests: latencia + JSON (json + json_noex)
+    #    En uso: Kimi K2 → DeepSeek Chat → DeepSeek Reasoner → GPT-OSS 120B
     # ═════════════════════════════════════════════════════════════════════════
     models += [
-        # DeepSeek Reasoner — orchestrator primario (llm_orchestrator en config.py)
+        # Kimi K2 — planner primario (llm_orchestrator en config.py)
         ModelDef(
-            model_id="deepseek-reasoner", model_name="DeepSeek V3.2 Reasoner",
-            provider="DeepSeek", pool="deepseek", rpm_pool="deepseek",
-            base_url=_ds_url, api_key=_ds_key,
-            role="orchestrator", in_use=True,
-            rpm=60, thinking_budget=4000, strip_thinking=True,
-            reasoning_style="budget_tokens",
-            skip_reason=_ds_skip,
+            model_id="moonshotai/kimi-k2-instruct", model_name="Kimi K2",
+            provider="OpenRouter", pool="openrouter", rpm_pool="openrouter",
+            base_url=_or_url, api_key=_or_key,
+            role="planner", in_use=True,
+            rpm=20, skip_reason=_or_skip,
         ),
-        # DeepSeek Chat — orchestrator fallback #1
+        # DeepSeek Chat — planner fallback #1
         ModelDef(
             model_id="deepseek-chat", model_name="DeepSeek V3.2 (Chat)",
             provider="DeepSeek", pool="deepseek", rpm_pool="deepseek",
             base_url=_ds_url, api_key=_ds_key,
-            role="orchestrator_fallback", in_use=True,
+            role="planner_fallback", in_use=True,
             rpm=60, skip_reason=_ds_skip,
         ),
-        # GPT-OSS 120B (Groq) — orchestrator fallback #2
+        # DeepSeek Reasoner — planner fallback #2
+        ModelDef(
+            model_id="deepseek-reasoner", model_name="DeepSeek V3.2 Reasoner",
+            provider="DeepSeek", pool="deepseek", rpm_pool="deepseek",
+            base_url=_ds_url, api_key=_ds_key,
+            role="planner_fallback", in_use=True,
+            rpm=60, thinking_budget=4000, strip_thinking=True,
+            reasoning_style="budget_tokens",
+            skip_reason=_ds_skip,
+        ),
+        # GPT-OSS 120B (Groq) — planner fallback #3
         ModelDef(
             model_id="openai/gpt-oss-120b", model_name="GPT-OSS 120B",
             provider="Groq", pool="groq", rpm_pool="groq",
             base_url=_gr_url, api_key=_gr_key,
-            role="orchestrator_fallback", in_use=True,
+            role="planner_fallback", in_use=True,
             rpm=20, skip_reason=_gr_skip,
         ),
-        # Qwen3 32B (Groq) — candidato orchestrator fuerte (solo TOON/native, sin JSON)
+        # Qwen3 32B (Groq) — candidato planner
         ModelDef(
             model_id="qwen/qwen3-32b", model_name="Qwen3 32B",
             provider="Groq", pool="groq", rpm_pool="groq",
@@ -202,7 +211,7 @@ def _build_models() -> list[ModelDef]:
             reasoning_style="",
             skip_reason=_gr_skip,
         ),
-        # Llama 4 Scout 17B (Groq) — candidato orchestrator ligero
+        # Llama 4 Scout 17B (Groq) — candidato planner ligero
         ModelDef(
             model_id="meta-llama/llama-4-scout-17b-16e-instruct", model_name="Llama 4 Scout 17B",
             provider="Groq", pool="groq", rpm_pool="groq",
@@ -215,11 +224,11 @@ def _build_models() -> list[ModelDef]:
             model_id="meta-llama/llama-3.3-70b-versatile", model_name="Llama 3.3 70B (Groq)",
             provider="Groq", pool="groq", rpm_pool="groq",
             base_url=_gr_url, api_key=_gr_key,
-            role="orchestrator_fallback", in_use=True,
+            role="planner_fallback", in_use=True,
             rpm=20,
             skip_reason="404 — modelo retirado de Groq API (2026-04-15). Verificar ID en console.groq.com",
         ),
-        # Kimi K2.5 (Ollama Cloud) — candidato orchestrator top (agentic)
+        # Kimi K2.5 (Ollama Cloud) — candidato planner agentic
         ModelDef(
             model_id="kimi-k2.5:cloud", model_name="Kimi K2.5 (Ollama Cloud)",
             provider="Ollama Cloud", pool="ollama", rpm_pool="ollama",
@@ -228,7 +237,7 @@ def _build_models() -> list[ModelDef]:
             rpm=999, thinking_budget=2000, strip_thinking=True,
             reasoning_style="budget_tokens",
         ),
-        # GPT-OSS 120B (Ollama Cloud) — sweep reasoning modes para orchestrator
+        # GPT-OSS 120B (Ollama Cloud) — sweep reasoning modes
         ModelDef(
             model_id="gpt-oss:120b-cloud", model_name="GPT-OSS 120B [medium]",
             provider="Ollama Cloud", pool="ollama", rpm_pool="ollama",
@@ -243,7 +252,7 @@ def _build_models() -> list[ModelDef]:
             role="candidate",
             rpm=999, strip_thinking=True, reasoning_mode="off",
         ),
-        # GPT-OSS 20B (Ollama Cloud) — candidato orchestrator ligero
+        # GPT-OSS 20B (Ollama Cloud) — candidato planner ligero
         ModelDef(
             model_id="gpt-oss:20b-cloud", model_name="GPT-OSS 20B (Ollama Cloud)",
             provider="Ollama Cloud", pool="ollama", rpm_pool="ollama",
@@ -254,27 +263,28 @@ def _build_models() -> list[ModelDef]:
     ]
 
     # ═════════════════════════════════════════════════════════════════════════
-    # 3. CHAT — llm_chat + llm_chat_fallback + llm_context_agent
-    #    Tarea: conversacional directo, web search, respuesta rápida al usuario
-    #    Tests: latencia únicamente (sin tool calling)
-    #    En uso: compound-beta (Groq) → Mistral Small
+    # 3. SYNTHESIZER — llm_router (agent/synthesizer.py)
+    #    Tarea: genera respuesta final en español al docente — conversacional
+    #    Nota: mismo config key que classifier (llm_router sirve dos funciones)
+    #    Tests: latencia únicamente (sin tool calling, sin JSON)
+    #    En uso: Mistral Medium → GPT-OSS 120B / DeepSeek Chat (fallback)
     # ═════════════════════════════════════════════════════════════════════════
     models += [
-        # compound-beta — chat primario con web search nativo
+        # compound-beta — síntesis con web search nativo (si se activa en synthesizer)
         ModelDef(
             model_id="compound-beta", model_name="Compound Beta (web agent)",
             provider="Groq", pool="groq", rpm_pool="groq",
             base_url=_gr_url, api_key=_gr_key,
-            role="chat", in_use=True,
+            role="synthesizer",
             rpm=20, compound_mode=True, web_search=True,
             skip_reason=_gr_skip,
         ),
-        # Mistral Small — chat_fallback + context_agent
+        # Mistral Small — candidato synthesizer rápido
         ModelDef(
             model_id="mistral-small-latest", model_name="Mistral Small",
             provider="Mistral", pool="mistral", rpm_pool="mistral",
             base_url=_ms_url, api_key=_ms_key,
-            role="chat_fallback", in_use=True,
+            role="synthesizer_fallback",
             rpm=12, skip_reason=_ms_skip,
         ),
         # GPT-OSS 20B (Groq) — candidato chat rápido (694ms)
@@ -1081,22 +1091,27 @@ _SUITE_TOON    = frozenset(TOON_TESTS) | frozenset(TOON_TESTS_NOEX)
 _SUITE_NATIVE  = frozenset(NATIVE_TESTS)
 
 _ROLE_SUITES: dict[str, frozenset] = {
-    # Extractor / Router: JSON output via response_format=json_object
-    "extractor":         _SUITE_LATENCY | _SUITE_JSON,
-    "router":            _SUITE_LATENCY | _SUITE_JSON,
-    "extractor+router":  _SUITE_LATENCY | _SUITE_JSON,
-    "context_agent":     _SUITE_LATENCY | _SUITE_JSON,
-    # Orchestrator: loop ReAct con tool_choice=auto — TOON + native
-    "orchestrator":           _SUITE_LATENCY | _SUITE_TOON | _SUITE_NATIVE,
-    "orchestrator_fallback":  _SUITE_LATENCY | _SUITE_TOON | _SUITE_NATIVE,
-    # Chat: conversacional — sin tool calling estructurado
-    "chat":          _SUITE_LATENCY,
-    "chat_fallback": _SUITE_LATENCY,
+    # Classifier: gateway/router.py — classify {domain,intent,entities} via JSON
+    "classifier":          _SUITE_LATENCY | _SUITE_JSON,
+    "classifier_fallback": _SUITE_LATENCY | _SUITE_JSON,
+    # Planner: agent/planner.py — JSON plan [{tool,params}], NO tool_choice=auto
+    "planner":          _SUITE_LATENCY | _SUITE_JSON,
+    "planner_fallback": _SUITE_LATENCY | _SUITE_JSON,
+    # Synthesizer: agent/synthesizer.py — respuesta conversacional en español
+    "synthesizer":          _SUITE_LATENCY,
+    "synthesizer_fallback": _SUITE_LATENCY,
     # Vision: modelos multimodales — sin tests de texto estructurado
     "vision":          _SUITE_LATENCY,
     "vision_fallback": _SUITE_LATENCY,
     # Candidate: evaluación completa para determinar mejor fit
     "candidate": _SUITE_LATENCY | _SUITE_JSON | _SUITE_TOON | _SUITE_NATIVE,
+    # Aliases legacy (compat con JSONs de benchmark anteriores)
+    "extractor":         _SUITE_LATENCY | _SUITE_JSON,
+    "extractor+router":  _SUITE_LATENCY | _SUITE_JSON,
+    "orchestrator":           _SUITE_LATENCY | _SUITE_TOON | _SUITE_NATIVE,
+    "orchestrator_fallback":  _SUITE_LATENCY | _SUITE_TOON | _SUITE_NATIVE,
+    "chat":          _SUITE_LATENCY,
+    "chat_fallback": _SUITE_LATENCY,
 }
 
 

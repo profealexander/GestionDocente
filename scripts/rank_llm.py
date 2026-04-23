@@ -1,37 +1,44 @@
 """
 SchoolAI LLM Ranking — Multi-criteria scorer sobre benchmark JSONs existentes.
 
-Mapa de roles (config.py):
-  extractor  → llm_extractor + llm_router  (JSON output, response_format=json_object)
-  orchestrator → llm_orchestrator          (ReAct multi-turno, tool_choice=auto, texto final al usuario)
-  chat       → llm_chat                    (conversacional + web search, percepción de velocidad)
+Roles alineados con el Agent Runtime de schoolai2 (config.py):
 
-Pesos (extractor):
-  score = costo      × 0.22
-        + json_noex  × 0.25   (router clasifica sin schema explícito)
-        + json_full  × 0.20   (extractor necesita JSON completo correcto)
-        + latencia   × 0.08   (no en camino directo al usuario)
-        + ttft       × 0.05
-        + español    × 0.12
+  classifier  → llm_router     (gateway/router.py — classify intent+domain en cada mensaje)
+                                JSON: {domain, intent, entities} — response_format=json_object
+  planner     → llm_orchestrator (agent/planner.py — genera plan [{tool, params}])
+                                JSON array — response_format=json_object, NO tool_choice=auto
+  synthesizer → llm_router     (agent/synthesizer.py — respuesta final en español al docente)
+                                Conversacional, sin JSON
+
+Nota: llm_router sirve dos funciones distintas (classifier + synthesizer).
+      llm_chat y llm_orchestrator nativo (tool_choice=auto) no se usan en schoolai2.
+
+Pesos (classifier):
+  score = json_noex  × 0.28   (clasifica sin schema explícito → criterio #1)
+        + json_full  × 0.22   (fiabilidad parse JSON completo)
+        + costo      × 0.20   (cada mensaje = mayor volumen)
+        + latencia   × 0.12   (suma a la latencia de cada respuesta)
+        + disponib   × 0.10
+        + ttft       × 0.05   (no streaming en classify)
+        + español    × 0.03   (output es JSON, no texto)
+
+Pesos (planner):
+  score = json_full  × 0.35   (plan incorrecto = ejecución incorrecta → criterio #1)
+        + json_noex  × 0.22   (flexibilidad sin schema estricto)
+        + disponib   × 0.15   (no puede fallar a mitad de respuesta)
+        + costo      × 0.12
+        + ttft       × 0.08
+        + latencia   × 0.06
+        + español    × 0.02   (output es JSON, no texto)
+
+Pesos (synthesizer):
+  score = español    × 0.35   (genera el texto que lee el docente → criterio #1)
+        + ttft       × 0.25   (docente esperando → velocidad percibida → criterio #2)
+        + latencia   × 0.18
+        + costo      × 0.12
         + disponib   × 0.08
-
-Pesos (orchestrator):
-  score = json_full  × 0.28   (tool calling nativo = criterio crítico)
-        + español    × 0.20   (genera el texto final al usuario)
-        + json_noex  × 0.15
-        + disponib   × 0.12
-        + ttft       × 0.10
-        + costo      × 0.10
-        + latencia   × 0.05
-
-Pesos (chat):
-  score = español    × 0.28   (calidad conversacional = criterio #1)
-        + ttft       × 0.22   (primera respuesta = percepción de velocidad)
-        + latencia   × 0.15
-        + costo      × 0.18
-        + disponib   × 0.07
-        + json_full  × 0.05
-        + json_noex  × 0.05
+        + json_full  × 0.01   (no aplica — respuesta conversacional)
+        + json_noex  × 0.01
 
 Tests cubiertos por criterio:
   json_full  → *_json, *_nat (native tool calling), TOON sin sufijo (ej: att_absent)
@@ -46,9 +53,9 @@ No añade tests nuevos — trabaja 100% sobre los JSONs de benchmark existentes.
 Uso:
     uv run python scripts/rank_llm.py
     uv run python scripts/rank_llm.py --json scripts/benchmark-*.json
-    uv run python scripts/rank_llm.py --role orchestrator
-    uv run python scripts/rank_llm.py --role extractor
-    uv run python scripts/rank_llm.py --role chat
+    uv run python scripts/rank_llm.py --role classifier
+    uv run python scripts/rank_llm.py --role planner
+    uv run python scripts/rank_llm.py --role synthesizer
 """
 from __future__ import annotations
 
@@ -80,43 +87,43 @@ COST_TIER: dict[str, float] = {
     "Moonshot":      0.30,  # key inválida actualmente
 }
 
-# Mezcla de roles para ranking global (distribución de tráfico real)
-# extractor/router se llama en CADA mensaje; orchestrator es el agente principal
-GLOBAL_MIX = {"extractor": 0.55, "orchestrator": 0.35, "chat": 0.10}
+# Mezcla de roles para ranking global (distribución de tráfico en schoolai2)
+# classifier se llama en cada mensaje; planner y synthesizer en cada respuesta del agente
+GLOBAL_MIX = {"classifier": 0.40, "planner": 0.35, "synthesizer": 0.25}
 
 # ── Pesos por rol ────────────────────────────────────────────────────────────
 WEIGHTS: dict[str, dict[str, float]] = {
-    "extractor": {
-        # llm_extractor + llm_router — JSON output, response_format=json_object
-        # No es latency-critical (procesamiento interno, no tiempo percibido)
-        "costo":     0.22,
-        "json_noex": 0.25,  # router clasifica sin schema explícito → criterio #1
-        "json_full": 0.20,  # extractor necesita JSON completo correcto
-        "latencia":  0.08,
-        "ttft":      0.05,
-        "español":   0.12,
+    "classifier": {
+        # gateway/router.py — classify {domain, intent, entities} en cada mensaje
+        "costo":     0.20,  # mayor volumen → costo importa
+        "json_noex": 0.28,  # clasifica sin schema explícito → criterio #1
+        "json_full": 0.22,  # fiabilidad parse JSON completo
+        "latencia":  0.12,  # suma a la latencia de toda respuesta
+        "ttft":      0.05,  # no streaming en classify
+        "español":   0.03,  # output es JSON, no texto
+        "disponib":  0.10,
+    },
+    "planner": {
+        # agent/planner.py — genera [{tool, params}] con response_format=json_object
+        # plan incorrecto = ejecución incorrecta; no usa tool_choice=auto
+        "costo":     0.12,
+        "json_noex": 0.22,  # flexibilidad sin schema estricto
+        "json_full": 0.35,  # fiabilidad del plan → criterio #1
+        "latencia":  0.06,
+        "ttft":      0.08,
+        "español":   0.02,  # output es JSON, no texto
+        "disponib":  0.15,  # no puede fallar a mitad de respuesta
+    },
+    "synthesizer": {
+        # agent/synthesizer.py — respuesta final en español al docente
+        # llm_router también sirve este rol en la arquitectura actual
+        "costo":     0.12,
+        "json_noex": 0.01,  # no aplica — respuesta conversacional
+        "json_full": 0.01,  # no aplica
+        "latencia":  0.18,
+        "ttft":      0.25,  # docente esperando → velocidad percibida → criterio #2
+        "español":   0.35,  # genera el texto que lee el docente → criterio #1
         "disponib":  0.08,
-    },
-    "orchestrator": {
-        # llm_orchestrator — ReAct multi-turno, tool_choice=auto, respuesta final al usuario
-        # Tool calling correcto es el criterio más crítico
-        "costo":     0.10,
-        "json_noex": 0.15,
-        "json_full": 0.28,  # tool calling nativo = criterio crítico #1
-        "latencia":  0.05,
-        "ttft":      0.10,  # TTFT importa en streaming multi-turno
-        "español":   0.20,  # genera el texto final al usuario → criterio #2
-        "disponib":  0.12,
-    },
-    "chat": {
-        # llm_chat — conversacional directo, web search, respuesta percibida rápida
-        "costo":     0.18,
-        "json_noex": 0.05,
-        "json_full": 0.05,
-        "latencia":  0.15,
-        "ttft":      0.22,  # primera respuesta = percepción de velocidad → criterio #2
-        "español":   0.28,  # calidad conversacional en español → criterio #1
-        "disponib":  0.07,
     },
 }
 
@@ -240,8 +247,11 @@ def score_models(results: list[dict], role: str) -> list[dict]:
             + av     * w["disponib"]
         )
 
-    # Excluir modelos sin datos de tool calling (jf y jn ambos None = no corrieron JSON tests)
-    records = [r for r in records if r["jf_score"] is not None or r["jn_score"] is not None]
+    # Para roles JSON (classifier/planner) excluir modelos que no corrieron JSON tests.
+    # Para synthesizer los scores JSON son None por diseño — no filtrar.
+    _json_roles = {"classifier", "planner", "extractor", "orchestrator"}
+    if role in _json_roles:
+        records = [r for r in records if r["jf_score"] is not None or r["jn_score"] is not None]
 
     records.sort(key=lambda r: -r["score"])
     return records
@@ -300,7 +310,7 @@ def main() -> None:
     parser.add_argument(
         "--role", default="global",
         choices=list(WEIGHTS.keys()) + ["global"],
-        help="Rol a evaluar (default: global)",
+        help="Rol a evaluar: classifier | planner | synthesizer | global (default: global)",
     )
     args = parser.parse_args()
 
@@ -334,8 +344,8 @@ def main() -> None:
         global_records.sort(key=lambda r: -r["score"])
 
         # Peso efectivo combinado para el header
-        eff_w = {k: sum(WEIGHTS[r][k] * w for r, w in GLOBAL_MIX.items()) for k in WEIGHTS["extractor"]}
-        print_ranking(global_records, "GLOBAL (ext×60% + orch×30% + chat×10%)", eff_w)
+        eff_w = {k: sum(WEIGHTS[r][k] * w for r, w in GLOBAL_MIX.items()) for k in WEIGHTS["classifier"]}
+        print_ranking(global_records, "GLOBAL (classifier×40% + planner×35% + synthesizer×25%)", eff_w)
     else:
         records = score_models(results, args.role)
         print_ranking(records, args.role, WEIGHTS[args.role])
