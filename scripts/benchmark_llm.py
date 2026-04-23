@@ -53,9 +53,11 @@ NVIDIA_KEY     = _key("NVIDIA_API_KEY")
 MINIMAX_KEY    = _key("MINIMAX_API_KEY")
 MOONSHOT_KEY   = _key("MOONSHOT_API_KEY")
 ZHIPU_KEY      = _key("ZHIPU_API_KEY")
-KILO_KEY       = _key("KILO_API_KEY")
-OLLAMA_URL     = _key("OLLAMA_BASE_URL") or "http://127.0.0.1:11434/v1/"
-OLLAMA_MODEL   = _key("OLLAMA_MODEL")
+KILO_KEY          = _key("KILO_API_KEY")
+HF_KEY            = _key("HF_TOKEN")
+MULEROUTER_KEY    = _key("MULEROUTER_API_KEY")
+OLLAMA_URL        = _key("OLLAMA_BASE_URL") or "http://127.0.0.1:11434/v1/"
+OLLAMA_MODEL      = _key("OLLAMA_MODEL")
 
 
 # ── ModelDef ──────────────────────────────────────────────────────────────────
@@ -86,6 +88,7 @@ class ModelDef:
     reasoning_mode: str = "medium"     # "high" | "medium" | "low" | "off" — controls thinking depth
     reasoning_style: str = ""          # "budget_tokens" | "effort" | "qwen" | "" — how to apply mode
     web_search: bool = False           # model has built-in web search (informational flag)
+    hf_provider: str = ""             # HuggingFace router: provider hint ("nscale", "cerebras", …)
 
     # Skip
     skip_reason: str = ""             # non-empty → skip this model
@@ -100,569 +103,577 @@ class ModelDef:
 
 # ── Model Catalog ─────────────────────────────────────────────────────────────
 def _build_models() -> list[ModelDef]:
+    """Catálogo organizado por función en SchoolAI v2.
+
+    El campo pool= controla el rate-limiting (mismo pool = secuencial, pools distintos = paralelo).
+    Los tests que corre cada modelo dependen de role= — ver _ROLE_SUITES.
+    """
+    # ── Credenciales por proveedor ─────────────────────────────────────────────
+    _g_key    = GOOGLE_KEY;      _g_url    = "https://generativelanguage.googleapis.com/v1beta/openai/"
+    _gr_key   = GROQ_KEY;        _gr_url   = "https://api.groq.com/openai/v1/"
+    _ds_key   = DEEPSEEK_KEY;    _ds_url   = "https://api.deepseek.com/v1/"
+    _ms_key   = MISTRAL_KEY;     _ms_url   = "https://api.mistral.ai/v1/"
+    _or_key   = OPENROUTER_KEY;  _or_url   = "https://openrouter.ai/api/v1/"
+    _zai_key  = ZAI_KEY;         _zai_url  = "https://api.z.ai/api/paas/v4/"
+    _nv_key   = NVIDIA_KEY;      _nv_url   = "https://integrate.api.nvidia.com/v1/"
+    _kilo_key = KILO_KEY;        _kilo_url = "https://api.kilo.ai/api/gateway/"
+    _hf_key   = HF_KEY;          _hf_url   = "https://router.huggingface.co/v1/"
+    _mr_key   = MULEROUTER_KEY;  _mr_url   = "https://api.mulerouter.ai/vendors/openai/v1/"
+    _ol_url   = "http://localhost:11434/v1/"
+
+    _g_skip    = "" if _g_key    else "GOOGLE_API_KEY not set"
+    _gr_skip   = "" if _gr_key   else "GROQ_API_KEY not set"
+    _ds_skip   = "" if _ds_key   else "DEEPSEEK_API_KEY not set"
+    _ms_skip   = "" if _ms_key   else "MISTRAL_API_KEY not set"
+    _or_skip   = "" if _or_key   else "OPENROUTER_API_KEY not set"
+    _zai_skip  = "" if _zai_key  else "ZAI_API_KEY not set"
+    _nv_skip   = "" if _nv_key   else "NVIDIA_API_KEY not set"
+    _kilo_skip = "" if _kilo_key else "KILO_API_KEY not set"
+    _hf_skip   = "" if _hf_key   else "HF_TOKEN not set"
+    _mr_skip   = "" if _mr_key   else "MULEROUTER_API_KEY not set"
+
     models: list[ModelDef] = []
 
-    # ── Google (GOOGLE_API_KEY) — RPM varía por modelo (ver comentarios) ──────
-    _g_key = GOOGLE_KEY
-    _g_url = "https://generativelanguage.googleapis.com/v1beta/openai/"
-    _g_skip = "" if _g_key else "GOOGLE_API_KEY not set"
-
+    # ═════════════════════════════════════════════════════════════════════════
+    # 1. EXTRACTOR / ROUTER — llm_extractor + llm_router en SchoolAI v2
+    #    Tarea: clasificar intent y extraer JSON (response_format=json_object)
+    #    Tests: latencia + JSON (json + json_noex)
+    #    En uso: Mistral Medium → (fallback directo llm_router_fallback en config)
+    # ═════════════════════════════════════════════════════════════════════════
     models += [
+        # Mistral Medium — en uso como extractor+router (100%/100% JSON, 1992ms)
         ModelDef(
-            model_id="gemini-2.5-flash-lite",
-            model_name="Gemini 2.5 Flash Lite",
-            provider="Google",
-            pool="google", rpm_pool="google",
-            base_url=_g_url, api_key=_g_key,
+            model_id="mistral-medium-latest", model_name="Mistral Medium",
+            provider="Mistral", pool="mistral", rpm_pool="mistral",
+            base_url=_ms_url, api_key=_ms_key,
             role="extractor+router", in_use=True,
-            rpm=10, stream_usage=True, skip_reason=_g_skip,  # 10 RPM real (AI Studio free tier)
+            rpm=12, skip_reason=_ms_skip,
         ),
-        # Gemini 2.5 Flash eliminado — RPD 20/día, ya consumido en run 2026-04-19
+        # Mistral Large — candidato extractor (100%/100% pero más caro)
         ModelDef(
-            model_id="gemini-3.1-flash-lite-preview",
-            model_name="Gemini 3.1 Flash Lite Preview",
-            provider="Google",
-            pool="google", rpm_pool="google",
-            base_url=_g_url, api_key=_g_key,
+            model_id="mistral-large-latest", model_name="Mistral Large",
+            provider="Mistral", pool="mistral", rpm_pool="mistral",
+            base_url=_ms_url, api_key=_ms_key,
             role="candidate",
-            rpm=15, stream_usage=True, skip_reason=_g_skip,  # 15 RPM real (AI Studio free tier)
-        ),
-        ModelDef(
-            model_id="gemma-4-26b-a4b-it",
-            model_name="Gemma 4 26B",
-            provider="Google",
-            pool="google", rpm_pool="google",
-            base_url=_g_url, api_key=_g_key,
-            role="candidate",
-            rpm=15, stream_usage=True,  # 15 RPM real, RPD 1.5K, TPM ilimitado (AI Studio free tier — 2026-04-19). thinking_config removed: rejects it (400 — 2026-04-15)
-            skip_reason=_g_skip,
-        ),
-        ModelDef(
-            model_id="gemma-4-31b-it",
-            model_name="Gemma 4 31B",
-            provider="Google",
-            pool="google", rpm_pool="google",
-            base_url=_g_url, api_key=_g_key,
-            role="candidate",
-            rpm=15, stream_usage=True,  # 15 RPM real, RPD 1.5K, TPM ilimitado (AI Studio free tier — 2026-04-19). thinking_config removed: rejects it (400 — 2026-04-15)
-            skip_reason=_g_skip,
-        ),
-        # ── Gemma 3 — pool separado para no mezclar RPM con Gemma 4 (15 RPM) ──
-        ModelDef(
-            model_id="gemma-3-27b-it",
-            model_name="Gemma 3 27B",
-            provider="Google",
-            pool="google", rpm_pool="google-gemma3",
-            base_url=_g_url, api_key=_g_key,
-            role="candidate",
-            rpm=30, stream_usage=True,  # 30 RPM real, RPD 14.4K, TPM 15K (AI Studio free tier — 2026-04-19)
-            skip_reason=_g_skip,
-        ),
-        ModelDef(
-            model_id="gemma-3-12b-it",
-            model_name="Gemma 3 12B",
-            provider="Google",
-            pool="google", rpm_pool="google-gemma3",
-            base_url=_g_url, api_key=_g_key,
-            role="candidate",
-            rpm=30, stream_usage=True,  # 30 RPM real, RPD 14.4K, TPM 15K (AI Studio free tier — 2026-04-19)
-            skip_reason=_g_skip,
+            rpm=12, skip_reason=_ms_skip,
         ),
     ]
 
-    # ── Groq (GROQ_API_KEY) — 20 RPM, sequential ─────────────────────────────
-    _gr_key = GROQ_KEY
-    _gr_url = "https://api.groq.com/openai/v1/"
-    _gr_skip = "" if _gr_key else "GROQ_API_KEY not set"
-
+    # ═════════════════════════════════════════════════════════════════════════
+    # 2. ORCHESTRATOR / AGENTE — llm_orchestrator en SchoolAI v2
+    #    Tarea: loop ReAct multi-turno, tool_choice=auto, respuesta final al usuario
+    #    Tests: latencia + TOON + native tool calling (_nat)
+    #    En uso: DeepSeek Reasoner → DeepSeek Chat → GPT-OSS 120B (Groq)
+    # ═════════════════════════════════════════════════════════════════════════
     models += [
+        # DeepSeek Reasoner — orchestrator primario (llm_orchestrator en config.py)
         ModelDef(
-            model_id="openai/gpt-oss-20b",
-            model_name="GPT-OSS 20B",
-            provider="Groq",
-            pool="groq", rpm_pool="groq",
-            base_url=_gr_url, api_key=_gr_key,
-            role="fallback", in_use=True,
-            rpm=20, skip_reason=_gr_skip,
+            model_id="deepseek-reasoner", model_name="DeepSeek V3.2 Reasoner",
+            provider="DeepSeek", pool="deepseek", rpm_pool="deepseek",
+            base_url=_ds_url, api_key=_ds_key,
+            role="orchestrator", in_use=True,
+            rpm=60, thinking_budget=4000, strip_thinking=True,
+            reasoning_style="budget_tokens",
+            skip_reason=_ds_skip,
         ),
+        # DeepSeek Chat — orchestrator fallback #1
         ModelDef(
-            model_id="openai/gpt-oss-120b",
-            model_name="GPT-OSS 120B",
-            provider="Groq",
-            pool="groq", rpm_pool="groq",
-            base_url=_gr_url, api_key=_gr_key,
-            role="candidate",
-            rpm=20, skip_reason=_gr_skip,
+            model_id="deepseek-chat", model_name="DeepSeek V3.2 (Chat)",
+            provider="DeepSeek", pool="deepseek", rpm_pool="deepseek",
+            base_url=_ds_url, api_key=_ds_key,
+            role="orchestrator_fallback", in_use=True,
+            rpm=60, skip_reason=_ds_skip,
         ),
+        # GPT-OSS 120B (Groq) — orchestrator fallback #2
         ModelDef(
-            model_id="meta-llama/llama-4-scout-17b-16e-instruct",
-            model_name="Llama 4 Scout 17B",
-            provider="Groq",
-            pool="groq", rpm_pool="groq",
-            base_url=_gr_url, api_key=_gr_key,
-            role="candidate",
-            rpm=20, skip_reason=_gr_skip,
-        ),
-        ModelDef(
-            model_id="meta-llama/llama-3.3-70b-versatile",
-            model_name="Llama 3.3 70B",
-            provider="Groq",
-            pool="groq", rpm_pool="groq",
+            model_id="openai/gpt-oss-120b", model_name="GPT-OSS 120B",
+            provider="Groq", pool="groq", rpm_pool="groq",
             base_url=_gr_url, api_key=_gr_key,
             role="orchestrator_fallback", in_use=True,
-            rpm=20,
-            skip_reason="404 — modelo retirado de Groq API (verificado 2026-04-15). Verificar ID actual en console.groq.com",
+            rpm=20, skip_reason=_gr_skip,
         ),
+        # Qwen3 32B (Groq) — candidato orchestrator fuerte (solo TOON/native, sin JSON)
         ModelDef(
-            model_id="meta-llama/llama-3.1-8b-instant",
-            model_name="Llama 3.1 8B",
-            provider="Groq",
-            pool="groq", rpm_pool="groq",
-            base_url=_gr_url, api_key=_gr_key,
-            role="candidate",
-            rpm=20,
-            skip_reason="404 — modelo retirado de Groq API (verificado 2026-04-15). Verificar ID actual en console.groq.com",
-        ),
-        ModelDef(
-            model_id="qwen/qwen3-32b",
-            model_name="Qwen3 32B",
-            provider="Groq",
-            pool="groq", rpm_pool="groq",
+            model_id="qwen/qwen3-32b", model_name="Qwen3 32B",
+            provider="Groq", pool="groq", rpm_pool="groq",
             base_url=_gr_url, api_key=_gr_key,
             role="candidate",
             rpm=20, thinking_budget=2000, strip_thinking=True,
-            reasoning_style="",  # enable_thinking removed: Groq rejected "property unsupported" (2026-04-15)
+            reasoning_style="",
             skip_reason=_gr_skip,
         ),
+        # Llama 4 Scout 17B (Groq) — candidato orchestrator ligero
         ModelDef(
-            model_id="compound-beta",
-            model_name="Compound Beta (web agent)",
-            provider="Groq",
-            pool="groq", rpm_pool="groq",
+            model_id="meta-llama/llama-4-scout-17b-16e-instruct", model_name="Llama 4 Scout 17B",
+            provider="Groq", pool="groq", rpm_pool="groq",
+            base_url=_gr_url, api_key=_gr_key,
+            role="candidate",
+            rpm=20, skip_reason=_gr_skip,
+        ),
+        # Llama 3.3 70B (Groq) — skipped (retirado de API 2026-04-15)
+        ModelDef(
+            model_id="meta-llama/llama-3.3-70b-versatile", model_name="Llama 3.3 70B (Groq)",
+            provider="Groq", pool="groq", rpm_pool="groq",
+            base_url=_gr_url, api_key=_gr_key,
+            role="orchestrator_fallback", in_use=True,
+            rpm=20,
+            skip_reason="404 — modelo retirado de Groq API (2026-04-15). Verificar ID en console.groq.com",
+        ),
+        # Kimi K2.5 (Ollama Cloud) — candidato orchestrator top (agentic)
+        ModelDef(
+            model_id="kimi-k2.5:cloud", model_name="Kimi K2.5 (Ollama Cloud)",
+            provider="Ollama Cloud", pool="ollama", rpm_pool="ollama",
+            base_url=_ol_url, api_key="ollama",
+            role="candidate",
+            rpm=999, thinking_budget=2000, strip_thinking=True,
+            reasoning_style="budget_tokens",
+        ),
+        # GPT-OSS 120B (Ollama Cloud) — sweep reasoning modes para orchestrator
+        ModelDef(
+            model_id="gpt-oss:120b-cloud", model_name="GPT-OSS 120B [medium]",
+            provider="Ollama Cloud", pool="ollama", rpm_pool="ollama",
+            base_url=_ol_url, api_key="ollama",
+            role="candidate",
+            rpm=999, strip_thinking=True, reasoning_mode="medium",
+        ),
+        ModelDef(
+            model_id="gpt-oss:120b-cloud", model_name="GPT-OSS 120B [off]",
+            provider="Ollama Cloud", pool="ollama", rpm_pool="ollama",
+            base_url=_ol_url, api_key="ollama",
+            role="candidate",
+            rpm=999, strip_thinking=True, reasoning_mode="off",
+        ),
+        # GPT-OSS 20B (Ollama Cloud) — candidato orchestrator ligero
+        ModelDef(
+            model_id="gpt-oss:20b-cloud", model_name="GPT-OSS 20B (Ollama Cloud)",
+            provider="Ollama Cloud", pool="ollama", rpm_pool="ollama",
+            base_url=_ol_url, api_key="ollama",
+            role="candidate",
+            rpm=999,
+        ),
+    ]
+
+    # ═════════════════════════════════════════════════════════════════════════
+    # 3. CHAT — llm_chat + llm_chat_fallback + llm_context_agent
+    #    Tarea: conversacional directo, web search, respuesta rápida al usuario
+    #    Tests: latencia únicamente (sin tool calling)
+    #    En uso: compound-beta (Groq) → Mistral Small
+    # ═════════════════════════════════════════════════════════════════════════
+    models += [
+        # compound-beta — chat primario con web search nativo
+        ModelDef(
+            model_id="compound-beta", model_name="Compound Beta (web agent)",
+            provider="Groq", pool="groq", rpm_pool="groq",
             base_url=_gr_url, api_key=_gr_key,
             role="chat", in_use=True,
             rpm=20, compound_mode=True, web_search=True,
             skip_reason=_gr_skip,
         ),
-    ]
-
-    # ── DeepSeek (DEEPSEEK_API_KEY) — 60 RPM, sequential ─────────────────────
-    _ds_key = DEEPSEEK_KEY
-    _ds_url = "https://api.deepseek.com/v1/"
-    _ds_skip = "" if _ds_key else "DEEPSEEK_API_KEY not set"
-
-    models += [
+        # Mistral Small — chat_fallback + context_agent
         ModelDef(
-            model_id="deepseek-reasoner",
-            model_name="DeepSeek V3.2 Reasoner",
-            provider="DeepSeek",
-            pool="deepseek", rpm_pool="deepseek",
-            base_url=_ds_url, api_key=_ds_key,
-            role="orchestrator", in_use=True,
-            rpm=60, thinking_budget=4000, strip_thinking=True,
-            reasoning_style="budget_tokens",  # DeepSeek V3.2 thinking mode (ya no es R1 — 2026-04-19)
-            skip_reason=_ds_skip,
-        ),
-        ModelDef(
-            model_id="deepseek-chat",
-            model_name="DeepSeek V3.2 (Chat)",
-            provider="DeepSeek",
-            pool="deepseek", rpm_pool="deepseek",
-            base_url=_ds_url, api_key=_ds_key,
-            role="fallback", in_use=True,
-            rpm=60, skip_reason=_ds_skip,
-        ),
-    ]
-
-    # ── Mistral (MISTRAL_API_KEY) — 60 RPM, sequential ───────────────────────
-    _ms_key = MISTRAL_KEY
-    _ms_url = "https://api.mistral.ai/v1/"
-    _ms_skip = "" if _ms_key else "MISTRAL_API_KEY not set"
-
-    models += [
-        ModelDef(
-            model_id="mistral-small-latest",
-            model_name="Mistral Small",
-            provider="Mistral",
-            pool="mistral", rpm_pool="mistral",
+            model_id="mistral-small-latest", model_name="Mistral Small",
+            provider="Mistral", pool="mistral", rpm_pool="mistral",
             base_url=_ms_url, api_key=_ms_key,
             role="chat_fallback", in_use=True,
-            rpm=12, skip_reason=_ms_skip,  # 12 RPM: pool compartido 3 modelos — 429 a 20 RPM (2026-04-15)
-        ),
-        ModelDef(
-            model_id="mistral-large-latest",
-            model_name="Mistral Large",
-            provider="Mistral",
-            pool="mistral", rpm_pool="mistral",
-            base_url=_ms_url, api_key=_ms_key,
-            role="fallback", in_use=True,
             rpm=12, skip_reason=_ms_skip,
         ),
+        # GPT-OSS 20B (Groq) — candidato chat rápido (694ms)
         ModelDef(
-            model_id="mistral-medium-latest",
-            model_name="Mistral Medium",
-            provider="Mistral",
-            pool="mistral", rpm_pool="mistral",
-            base_url=_ms_url, api_key=_ms_key,
+            model_id="openai/gpt-oss-20b", model_name="GPT-OSS 20B",
+            provider="Groq", pool="groq", rpm_pool="groq",
+            base_url=_gr_url, api_key=_gr_key,
             role="candidate",
-            rpm=12, skip_reason=_ms_skip,
+            rpm=20, skip_reason=_gr_skip,
+        ),
+        # Llama 3.1 8B (Groq) — candidato chat ligero, skipped (retirado)
+        ModelDef(
+            model_id="meta-llama/llama-3.1-8b-instant", model_name="Llama 3.1 8B (Groq)",
+            provider="Groq", pool="groq", rpm_pool="groq",
+            base_url=_gr_url, api_key=_gr_key,
+            role="candidate",
+            rpm=20,
+            skip_reason="404 — modelo retirado de Groq API (2026-04-15). Verificar ID en console.groq.com",
         ),
     ]
 
-    # ── OpenRouter (OPENROUTER_API_KEY) — 10 RPM shared free tier ────────────
-    _or_key = OPENROUTER_KEY
-    _or_url = "https://openrouter.ai/api/v1/"
-    _or_skip = "" if _or_key else "OPENROUTER_API_KEY not set"
-
+    # ═════════════════════════════════════════════════════════════════════════
+    # 4. VISION — llm_vision + llm_vision_fallback
+    #    Tarea: extracción desde imágenes (multimodal)
+    #    Tests: latencia únicamente
+    #    En uso: Nemotron Nano 12B VL → Gemma 4 31B (OpenRouter free)
+    # ═════════════════════════════════════════════════════════════════════════
     models += [
+        # Nemotron Nano 12B VL — vision en uso (128K ctx)
         ModelDef(
-            model_id="nvidia/nemotron-nano-12b-v2-vl:free",
-            model_name="Nemotron Nano 12B VL",
-            provider="OpenRouter",
-            pool="openrouter", rpm_pool="openrouter-free",
+            model_id="nvidia/nemotron-nano-12b-v2-vl:free", model_name="Nemotron Nano 12B VL",
+            provider="OpenRouter", pool="openrouter", rpm_pool="openrouter-free",
             base_url=_or_url, api_key=_or_key,
             role="vision", in_use=True,
             rpm=10, skip_reason=_or_skip,
         ),
+        # Gemma 4 31B (OpenRouter free) — vision fallback
         ModelDef(
-            model_id="google/gemma-4-31b-it:free",
-            model_name="Gemma 4 31B (OpenRouter free)",
-            provider="OpenRouter",
-            pool="openrouter", rpm_pool="openrouter-free",
+            model_id="google/gemma-4-31b-it:free", model_name="Gemma 4 31B (OpenRouter free)",
+            provider="OpenRouter", pool="openrouter", rpm_pool="openrouter-free",
             base_url=_or_url, api_key=_or_key,
             role="vision_fallback", in_use=True,
             rpm=10, thinking_budget=1500, strip_thinking=True,
             skip_reason=_or_skip,
         ),
-        ModelDef(
-            model_id="meta-llama/llama-4-scout:free",
-            model_name="Llama 4 Scout (OpenRouter free)",
-            provider="OpenRouter",
-            pool="openrouter", rpm_pool="openrouter-free",
-            base_url=_or_url, api_key=_or_key,
-            role="candidate",
-            rpm=10,
-            skip_reason="404 — ID no encontrado en OpenRouter free tier (verificado 2026-04-15). Verificar ID actual en openrouter.ai/models",
-        ),
-        ModelDef(
-            model_id="arcee-ai/trinity-large-preview:free",
-            model_name="Arcee Trinity Large (OpenRouter free)",
-            provider="OpenRouter",
-            pool="openrouter", rpm_pool="openrouter-free",
-            base_url=_or_url, api_key=_or_key,
-            role="candidate",
-            rpm=10,
-            skip_reason=_or_skip,
-        ),
-        ModelDef(
-            model_id="stepfun/step-3.5-flash",
-            model_name="Stepfun Step-3.5 Flash (OpenRouter)",
-            provider="OpenRouter",
-            pool="openrouter", rpm_pool="openrouter",
-            base_url=_or_url, api_key=_or_key,
-            role="candidate",
-            rpm=20,
-            skip_reason=_or_skip,
-        ),
-        ModelDef(
-            model_id="bytedance-seed/seed-2.0-lite",
-            model_name="ByteDance Seed 2.0 Lite (OpenRouter)",
-            provider="OpenRouter",
-            pool="openrouter", rpm_pool="openrouter",
-            base_url=_or_url, api_key=_or_key,
-            role="candidate",
-            rpm=20,
-            skip_reason=_or_skip,
-        ),
     ]
 
-    # ── Z.AI / GLM (ZAI_API_KEY) — 20 RPM, ⚠️ timeout frecuente desde WSL ────
-    _zai_key = ZAI_KEY
-    _zai_url = "https://api.z.ai/api/paas/v4/"
-    _zai_skip = "" if _zai_key else "ZAI_API_KEY not set"
+    # ═════════════════════════════════════════════════════════════════════════
+    # 5. CANDIDATOS — evaluación completa (latencia + JSON + TOON + native)
+    #    Sin rol asignado en v2 — benchmark completo para determinar el mejor fit.
+    # ═════════════════════════════════════════════════════════════════════════
 
+    # ── Google AI Studio (GOOGLE_API_KEY) — free tier ─────────────────────────
+    # 15 RPM Gemma 4, 30 RPM Gemma 3; pool separado para no mezclar RPM
     models += [
         ModelDef(
-            model_id="glm-4v-flash",
-            model_name="GLM-4V Flash",
-            provider="Z.AI",
-            pool="zai", rpm_pool="zai",
-            base_url=_zai_url, api_key=_zai_key,
+            model_id="gemini-2.5-flash-lite", model_name="Gemini 2.5 Flash Lite",
+            provider="Google", pool="google", rpm_pool="google",
+            base_url=_g_url, api_key=_g_key,
             role="candidate",
-            rpm=20, skip_reason=_zai_skip,
+            rpm=10, stream_usage=True, skip_reason=_g_skip,
+        ),
+        ModelDef(
+            model_id="gemini-3.1-flash-lite-preview", model_name="Gemini 3.1 Flash Lite Preview",
+            provider="Google", pool="google", rpm_pool="google",
+            base_url=_g_url, api_key=_g_key,
+            role="candidate",
+            rpm=15, stream_usage=True, skip_reason=_g_skip,
+        ),
+        ModelDef(
+            model_id="gemma-4-26b-a4b-it", model_name="Gemma 4 26B",
+            provider="Google", pool="google", rpm_pool="google",
+            base_url=_g_url, api_key=_g_key,
+            role="candidate",
+            rpm=15, stream_usage=True, skip_reason=_g_skip,
+        ),
+        ModelDef(
+            model_id="gemma-4-31b-it", model_name="Gemma 4 31B",
+            provider="Google", pool="google", rpm_pool="google",
+            base_url=_g_url, api_key=_g_key,
+            role="candidate",
+            rpm=15, stream_usage=True, skip_reason=_g_skip,
+        ),
+        ModelDef(
+            model_id="gemma-3-27b-it", model_name="Gemma 3 27B",
+            provider="Google", pool="google", rpm_pool="google-gemma3",
+            base_url=_g_url, api_key=_g_key,
+            role="candidate",
+            rpm=30, stream_usage=True, skip_reason=_g_skip,
+        ),
+        ModelDef(
+            model_id="gemma-3-12b-it", model_name="Gemma 3 12B",
+            provider="Google", pool="google", rpm_pool="google-gemma3",
+            base_url=_g_url, api_key=_g_key,
+            role="candidate",
+            rpm=30, stream_usage=True, skip_reason=_g_skip,
         ),
     ]
 
-    # ── NVIDIA NIM (NVIDIA_API_KEY) — 30 RPM, free tier throttled ────────────
-    _nv_key = NVIDIA_KEY
-    _nv_url = "https://integrate.api.nvidia.com/v1/"
-    _nv_skip = "" if _nv_key else "NVIDIA_API_KEY not set"
-
+    # ── HuggingFace Inference Providers (HF_TOKEN) ─────────────────────────────
     models += [
         ModelDef(
-            model_id="meta/llama-3.3-70b-instruct",
-            model_name="Llama 3.3 70B (NVIDIA NIM)",
-            provider="NVIDIA",
-            pool="nvidia", rpm_pool="nvidia",
-            base_url=_nv_url, api_key=_nv_key,
-            role="candidate",
-            rpm=30, skip_reason=_nv_skip,
+            model_id="Qwen/Qwen3-8B", model_name="Qwen3 8B (HF/nscale)",
+            provider="HuggingFace", pool="hf", rpm_pool="hf-nscale",
+            base_url=_hf_url, api_key=_hf_key,
+            role="candidate", hf_provider="nscale",
+            rpm=20, strip_thinking=True, skip_reason=_hf_skip,
+        ),
+        ModelDef(
+            model_id="Qwen/Qwen3-14B", model_name="Qwen3 14B (HF/nscale)",
+            provider="HuggingFace", pool="hf", rpm_pool="hf-nscale",
+            base_url=_hf_url, api_key=_hf_key,
+            role="candidate", hf_provider="nscale",
+            rpm=20, strip_thinking=True, skip_reason=_hf_skip,
+        ),
+        ModelDef(
+            model_id="Qwen/Qwen3-32B", model_name="Qwen3 32B (HF/nscale)",
+            provider="HuggingFace", pool="hf", rpm_pool="hf-nscale",
+            base_url=_hf_url, api_key=_hf_key,
+            role="candidate", hf_provider="nscale",
+            rpm=20, strip_thinking=True, skip_reason=_hf_skip,
+        ),
+        ModelDef(
+            model_id="google/gemma-3-27b-it", model_name="Gemma 3 27B (HF/nscale)",
+            provider="HuggingFace", pool="hf", rpm_pool="hf-nscale",
+            base_url=_hf_url, api_key=_hf_key,
+            role="candidate", hf_provider="nscale",
+            rpm=20, skip_reason=_hf_skip,
+        ),
+        ModelDef(
+            model_id="deepseek-ai/DeepSeek-R1-Distill-Qwen-7B",
+            model_name="DeepSeek R1 Distill 7B (HF/nscale)",
+            provider="HuggingFace", pool="hf", rpm_pool="hf-nscale",
+            base_url=_hf_url, api_key=_hf_key,
+            role="candidate", hf_provider="nscale",
+            rpm=20, strip_thinking=True, skip_reason=_hf_skip,
+        ),
+        ModelDef(
+            model_id="meta-llama/Llama-3.1-8B-Instruct",
+            model_name="Llama 3.1 8B (HF/cerebras)",
+            provider="HuggingFace", pool="hf", rpm_pool="hf-cerebras",
+            base_url=_hf_url, api_key=_hf_key,
+            role="candidate", hf_provider="cerebras",
+            rpm=30, skip_reason=_hf_skip,
+        ),
+        ModelDef(
+            model_id="meta-llama/Llama-3.3-70B-Instruct",
+            model_name="Llama 3.3 70B (HF/cerebras)",
+            provider="HuggingFace", pool="hf", rpm_pool="hf-cerebras",
+            base_url=_hf_url, api_key=_hf_key,
+            role="candidate", hf_provider="cerebras",
+            rpm=30, skip_reason=_hf_skip,
+        ),
+        ModelDef(
+            model_id="meta-llama/Llama-3.3-70B-Instruct",
+            model_name="Llama 3.3 70B (HF/sambanova)",
+            provider="HuggingFace", pool="hf", rpm_pool="hf-sambanova",
+            base_url=_hf_url, api_key=_hf_key,
+            role="candidate", hf_provider="sambanova",
+            rpm=20, skip_reason=_hf_skip,
         ),
     ]
 
-    # ── Kilo AI Gateway (KILO_API_KEY) — OpenAI-compat, free tier ────────────
-    _kilo_key  = KILO_KEY
-    _kilo_url  = "https://api.kilo.ai/api/gateway/"
-    _kilo_skip = "" if _kilo_key else "KILO_API_KEY not set"
-
+    # ── Kilo AI Gateway (KILO_API_KEY) — free tier ─────────────────────────────
     models += [
         ModelDef(
             model_id="bytedance-seed/dola-seed-2.0-pro:free",
             model_name="ByteDance Dola Seed 2.0 Pro (Kilo free)",
-            provider="Kilo AI",
-            pool="kilo", rpm_pool="kilo",
+            provider="Kilo AI", pool="kilo", rpm_pool="kilo",
             base_url=_kilo_url, api_key=_kilo_key,
-            role="candidate",
-            rpm=20, skip_reason=_kilo_skip,
+            role="candidate", rpm=20, skip_reason=_kilo_skip,
         ),
         ModelDef(
             model_id="x-ai/grok-code-fast-1:optimized:free",
             model_name="Grok Code Fast 1 (Kilo free)",
-            provider="Kilo AI",
-            pool="kilo", rpm_pool="kilo",
+            provider="Kilo AI", pool="kilo", rpm_pool="kilo",
             base_url=_kilo_url, api_key=_kilo_key,
-            role="candidate",
-            rpm=20, skip_reason=_kilo_skip,
+            role="candidate", rpm=20, skip_reason=_kilo_skip,
         ),
         ModelDef(
             model_id="nvidia/nemotron-3-super-120b-a12b:free",
             model_name="Nemotron 3 Super 120B (Kilo free)",
-            provider="Kilo AI",
-            pool="kilo", rpm_pool="kilo",
+            provider="Kilo AI", pool="kilo", rpm_pool="kilo",
             base_url=_kilo_url, api_key=_kilo_key,
-            role="candidate",
-            rpm=20, skip_reason=_kilo_skip,
+            role="candidate", rpm=20, skip_reason=_kilo_skip,
         ),
         ModelDef(
             model_id="arcee-ai/trinity-large-thinking:free",
             model_name="Arcee Trinity Large Thinking (Kilo free)",
-            provider="Kilo AI",
-            pool="kilo", rpm_pool="kilo",
+            provider="Kilo AI", pool="kilo", rpm_pool="kilo",
             base_url=_kilo_url, api_key=_kilo_key,
-            role="candidate",
-            rpm=20, skip_reason=_kilo_skip,
+            role="candidate", rpm=20, skip_reason=_kilo_skip,
         ),
     ]
 
-    # ── Skipped pools (no balance / invalid key) ──────────────────────────────
+    # ── NVIDIA NIM (NVIDIA_API_KEY) ─────────────────────────────────────────────
     models += [
         ModelDef(
-            model_id="MiniMax-M1",
-            model_name="MiniMax M1",
-            provider="MiniMax",
-            pool="minimax", rpm_pool="minimax",
+            model_id="meta/llama-3.3-70b-instruct",
+            model_name="Llama 3.3 70B (NVIDIA NIM)",
+            provider="NVIDIA", pool="nvidia", rpm_pool="nvidia",
+            base_url=_nv_url, api_key=_nv_key,
+            role="candidate", rpm=30, skip_reason=_nv_skip,
+        ),
+    ]
+
+    # ── Z.AI / GLM (ZAI_API_KEY) ────────────────────────────────────────────────
+    models += [
+        ModelDef(
+            model_id="glm-4v-flash", model_name="GLM-4V Flash",
+            provider="Z.AI", pool="zai", rpm_pool="zai",
+            base_url=_zai_url, api_key=_zai_key,
+            role="candidate", rpm=20, skip_reason=_zai_skip,
+        ),
+    ]
+
+    # ── OpenRouter — candidatos generales ───────────────────────────────────────
+    models += [
+        ModelDef(
+            model_id="arcee-ai/trinity-large-preview:free",
+            model_name="Arcee Trinity Large (OpenRouter free)",
+            provider="OpenRouter", pool="openrouter", rpm_pool="openrouter-free",
+            base_url=_or_url, api_key=_or_key,
+            role="candidate", rpm=10, skip_reason=_or_skip,
+        ),
+        ModelDef(
+            model_id="meta-llama/llama-4-scout:free",
+            model_name="Llama 4 Scout (OpenRouter free)",
+            provider="OpenRouter", pool="openrouter", rpm_pool="openrouter-free",
+            base_url=_or_url, api_key=_or_key,
+            role="candidate", rpm=10,
+            skip_reason="404 — ID no encontrado en OpenRouter free tier (2026-04-15). Verificar en openrouter.ai/models",
+        ),
+        ModelDef(
+            model_id="stepfun/step-3.5-flash",
+            model_name="Stepfun Step-3.5 Flash (OpenRouter)",
+            provider="OpenRouter", pool="openrouter", rpm_pool="openrouter",
+            base_url=_or_url, api_key=_or_key,
+            role="candidate", rpm=20, skip_reason=_or_skip,
+        ),
+        ModelDef(
+            model_id="bytedance-seed/seed-2.0-lite",
+            model_name="ByteDance Seed 2.0 Lite (OpenRouter)",
+            provider="OpenRouter", pool="openrouter", rpm_pool="openrouter",
+            base_url=_or_url, api_key=_or_key,
+            role="candidate", rpm=20, skip_reason=_or_skip,
+        ),
+    ]
+
+    # ── Ollama Cloud — candidatos con sweep de reasoning modes ─────────────────
+    # Modelos con sufijo :cloud se ejecutan remotamente vía `ollama signin`.
+    models += [
+        ModelDef(
+            model_id="glm-5.1:cloud", model_name="GLM 5.1 [medium]",
+            provider="Ollama Cloud", pool="ollama", rpm_pool="ollama",
+            base_url=_ol_url, api_key="ollama", role="candidate",
+            rpm=999, thinking_budget=2000, strip_thinking=True,
+            reasoning_mode="medium", reasoning_style="budget_tokens",
+        ),
+        ModelDef(
+            model_id="glm-5.1:cloud", model_name="GLM 5.1 [low]",
+            provider="Ollama Cloud", pool="ollama", rpm_pool="ollama",
+            base_url=_ol_url, api_key="ollama", role="candidate",
+            rpm=999, thinking_budget=2000, strip_thinking=True,
+            reasoning_mode="low", reasoning_style="budget_tokens",
+        ),
+        ModelDef(
+            model_id="gemma4:31b-cloud", model_name="Gemma 4 31B [medium]",
+            provider="Ollama Cloud", pool="ollama", rpm_pool="ollama",
+            base_url=_ol_url, api_key="ollama", role="candidate",
+            rpm=999, thinking_budget=1500, strip_thinking=True,
+            reasoning_mode="medium", reasoning_style="budget_tokens",
+        ),
+        ModelDef(
+            model_id="gemma4:31b-cloud", model_name="Gemma 4 31B [low]",
+            provider="Ollama Cloud", pool="ollama", rpm_pool="ollama",
+            base_url=_ol_url, api_key="ollama", role="candidate",
+            rpm=999, thinking_budget=1500, strip_thinking=True,
+            reasoning_mode="low", reasoning_style="budget_tokens",
+        ),
+        ModelDef(
+            model_id="gemma4:31b-cloud", model_name="Gemma 4 31B [off]",
+            provider="Ollama Cloud", pool="ollama", rpm_pool="ollama",
+            base_url=_ol_url, api_key="ollama", role="candidate",
+            rpm=999, thinking_budget=1500, strip_thinking=True,
+            reasoning_mode="off", reasoning_style="budget_tokens",
+        ),
+        ModelDef(
+            model_id="minimax-m2.7:cloud", model_name="MiniMax M2.7 (Ollama Cloud)",
+            provider="Ollama Cloud", pool="ollama", rpm_pool="ollama",
+            base_url=_ol_url, api_key="ollama", role="candidate",
+            rpm=999, thinking_budget=2000, strip_thinking=True,
+            reasoning_style="budget_tokens",
+        ),
+        ModelDef(
+            model_id="minimax-m2.7:cloud", model_name="MiniMax M2.7 [off]",
+            provider="Ollama Cloud", pool="ollama", rpm_pool="ollama",
+            base_url=_ol_url, api_key="ollama", role="candidate",
+            rpm=999, thinking_budget=2000, strip_thinking=True,
+            reasoning_mode="off", reasoning_style="budget_tokens",
+        ),
+        ModelDef(
+            model_id="nemotron-3-super:cloud",
+            model_name="Nemotron 3 Super 120B (Ollama Cloud)",
+            provider="Ollama Cloud", pool="ollama", rpm_pool="ollama",
+            base_url=_ol_url, api_key="ollama", role="candidate", rpm=999,
+        ),
+        ModelDef(
+            model_id="gemini-3-flash-preview:cloud",
+            model_name="Gemini 3 Flash Preview (Ollama Cloud)",
+            provider="Ollama Cloud", pool="ollama", rpm_pool="ollama",
+            base_url=_ol_url, api_key="ollama", role="candidate", rpm=999,
+        ),
+    ]
+
+    # ── MuleRouter (MULEROUTER_API_KEY) — Qwen con reasoning_effort ─────────────
+    # reasoning_style="effort" → _build_extra envía reasoning_effort param.
+    models += [
+        ModelDef(
+            model_id="qwen-flash", model_name="Qwen Flash [high]",
+            provider="MuleRouter", pool="mulerouter", rpm_pool="mulerouter",
+            base_url=_mr_url, api_key=_mr_key, role="candidate",
+            rpm=20, reasoning_mode="high", reasoning_style="effort",
+            skip_reason=_mr_skip,
+        ),
+        ModelDef(
+            model_id="qwen-flash", model_name="Qwen Flash [medium]",
+            provider="MuleRouter", pool="mulerouter", rpm_pool="mulerouter",
+            base_url=_mr_url, api_key=_mr_key, role="candidate",
+            rpm=20, reasoning_mode="medium", reasoning_style="effort",
+            skip_reason=_mr_skip,
+        ),
+        ModelDef(
+            model_id="qwen-flash", model_name="Qwen Flash [low]",
+            provider="MuleRouter", pool="mulerouter", rpm_pool="mulerouter",
+            base_url=_mr_url, api_key=_mr_key, role="candidate",
+            rpm=20, reasoning_mode="low", reasoning_style="effort",
+            skip_reason=_mr_skip,
+        ),
+        ModelDef(
+            model_id="qwen-plus", model_name="Qwen Plus [medium]",
+            provider="MuleRouter", pool="mulerouter", rpm_pool="mulerouter",
+            base_url=_mr_url, api_key=_mr_key, role="candidate",
+            rpm=20, reasoning_mode="medium", reasoning_style="effort",
+            skip_reason=_mr_skip,
+        ),
+        ModelDef(
+            model_id="qwen3-max", model_name="Qwen3 Max [high]",
+            provider="MuleRouter", pool="mulerouter", rpm_pool="mulerouter",
+            base_url=_mr_url, api_key=_mr_key, role="candidate",
+            rpm=20, reasoning_mode="high", reasoning_style="effort",
+            skip_reason=_mr_skip,
+        ),
+        ModelDef(
+            model_id="qwen3-max", model_name="Qwen3 Max [medium]",
+            provider="MuleRouter", pool="mulerouter", rpm_pool="mulerouter",
+            base_url=_mr_url, api_key=_mr_key, role="candidate",
+            rpm=20, reasoning_mode="medium", reasoning_style="effort",
+            skip_reason=_mr_skip,
+        ),
+        ModelDef(
+            model_id="qwen3-max", model_name="Qwen3 Max [low]",
+            provider="MuleRouter", pool="mulerouter", rpm_pool="mulerouter",
+            base_url=_mr_url, api_key=_mr_key, role="candidate",
+            rpm=20, reasoning_mode="low", reasoning_style="effort",
+            skip_reason=_mr_skip,
+        ),
+    ]
+
+    # ── Sin balance / key inválida — skipped automáticamente ────────────────────
+    models += [
+        ModelDef(
+            model_id="MiniMax-M1", model_name="MiniMax M1",
+            provider="MiniMax", pool="minimax", rpm_pool="minimax",
             base_url="https://api.minimax.io/v1/", api_key=MINIMAX_KEY,
             role="candidate", rpm=30,
             skip_reason="sin saldo — 429 insufficient_balance (recargar en api.minimax.io)",
         ),
         ModelDef(
-            model_id="moonshot-v1-8k",
-            model_name="Moonshot v1 8K",
-            provider="Moonshot",
-            pool="moonshot", rpm_pool="moonshot",
+            model_id="moonshot-v1-8k", model_name="Moonshot v1 8K",
+            provider="Moonshot", pool="moonshot", rpm_pool="moonshot",
             base_url="https://api.moonshot.cn/v1/", api_key=MOONSHOT_KEY,
             role="candidate", rpm=30,
             skip_reason="key inválida — regenerar en platform.moonshot.cn",
         ),
         ModelDef(
-            model_id="glm-4-air",
-            model_name="GLM-4 Air (ZhipuAI Legacy)",
-            provider="ZhipuAI",
-            pool="zhipu", rpm_pool="zhipu",
+            model_id="glm-4-air", model_name="GLM-4 Air (ZhipuAI Legacy)",
+            provider="ZhipuAI", pool="zhipu", rpm_pool="zhipu",
             base_url="https://open.bigmodel.cn/api/paas/v4/", api_key=ZHIPU_KEY,
             role="candidate", rpm=30,
             skip_reason="legacy endpoint China — reemplazado por ZAI",
         ),
     ]
 
-    # ── Ollama Cloud (localhost:11434 → ollama.com cloud inference) ──────────
-    # Modelos con sufijo -cloud se ejecutan remotamente vía `ollama signin`.
-    # ping a /api/tags determina en runtime si el servidor está activo.
-    # Los modelos no descargados darán 404 → skipped automáticamente.
-    _ol_url = "http://localhost:11434/v1/"
-
-    # ── Kimi K2.5 (Moonshot via Ollama Cloud) ─────────────────────────────────
-    models += [
-        ModelDef(
-            model_id="kimi-k2.5:cloud",
-            model_name="Kimi K2.5 (Ollama Cloud)",
-            provider="Ollama Cloud",
-            pool="ollama", rpm_pool="ollama",
-            base_url=_ol_url, api_key="ollama",
-            role="candidate",
-            rpm=999, thinking_budget=2000, strip_thinking=True,
-            reasoning_style="budget_tokens",
-        ),
-    ]
-
-    # ── GLM 5.1 — medium y low (testing reasoning modes) ────────────────────
-    models += [
-        ModelDef(
-            model_id="glm-5.1:cloud",
-            model_name="GLM 5.1 [medium]",
-            provider="Ollama Cloud",
-            pool="ollama", rpm_pool="ollama",
-            base_url=_ol_url, api_key="ollama",
-            role="candidate",
-            rpm=999, thinking_budget=2000, strip_thinking=True,
-            reasoning_mode="medium", reasoning_style="budget_tokens",
-        ),
-        ModelDef(
-            model_id="glm-5.1:cloud",
-            model_name="GLM 5.1 [low]",
-            provider="Ollama Cloud",
-            pool="ollama", rpm_pool="ollama",
-            base_url=_ol_url, api_key="ollama",
-            role="candidate",
-            rpm=999, thinking_budget=2000, strip_thinking=True,
-            reasoning_mode="low", reasoning_style="budget_tokens",
-        ),
-    ]
-
-    # ── Gemma 4 31B — medium / low / off (reasoning sweep) ───────────────────
-    models += [
-        ModelDef(
-            model_id="gemma4:31b-cloud",
-            model_name="Gemma 4 31B [medium]",
-            provider="Ollama Cloud",
-            pool="ollama", rpm_pool="ollama",
-            base_url=_ol_url, api_key="ollama",
-            role="candidate",
-            rpm=999, thinking_budget=1500, strip_thinking=True,
-            reasoning_mode="medium", reasoning_style="budget_tokens",
-        ),
-        ModelDef(
-            model_id="gemma4:31b-cloud",
-            model_name="Gemma 4 31B [low]",
-            provider="Ollama Cloud",
-            pool="ollama", rpm_pool="ollama",
-            base_url=_ol_url, api_key="ollama",
-            role="candidate",
-            rpm=999, thinking_budget=1500, strip_thinking=True,
-            reasoning_mode="low", reasoning_style="budget_tokens",
-        ),
-        ModelDef(
-            model_id="gemma4:31b-cloud",
-            model_name="Gemma 4 31B [off]",
-            provider="Ollama Cloud",
-            pool="ollama", rpm_pool="ollama",
-            base_url=_ol_url, api_key="ollama",
-            role="candidate",
-            rpm=999, thinking_budget=1500, strip_thinking=True,
-            reasoning_mode="off", reasoning_style="budget_tokens",
-        ),
-    ]
-
-    # ── GPT-OSS 120B — medium / off ───────────────────────────────────────────
-    models += [
-        ModelDef(
-            model_id="gpt-oss:120b-cloud",
-            model_name="GPT-OSS 120B [medium]",
-            provider="Ollama Cloud",
-            pool="ollama", rpm_pool="ollama",
-            base_url=_ol_url, api_key="ollama",
-            role="candidate",
-            rpm=999, strip_thinking=True,
-            reasoning_mode="medium",
-        ),
-        ModelDef(
-            model_id="gpt-oss:120b-cloud",
-            model_name="GPT-OSS 120B [off]",
-            provider="Ollama Cloud",
-            pool="ollama", rpm_pool="ollama",
-            base_url=_ol_url, api_key="ollama",
-            role="candidate",
-            rpm=999, strip_thinking=True,
-            reasoning_mode="off",
-        ),
-    ]
-
-    # ── GPT-OSS 20B — baseline ────────────────────────────────────────────────
-    models += [
-        ModelDef(
-            model_id="gpt-oss:20b-cloud",
-            model_name="GPT-OSS 20B (Ollama Cloud)",
-            provider="Ollama Cloud",
-            pool="ollama", rpm_pool="ollama",
-            base_url=_ol_url, api_key="ollama",
-            role="candidate",
-            rpm=999,
-        ),
-    ]
-
-    # ── MiniMax M2.7 ──────────────────────────────────────────────────────────
-    # 10B active / 230B total MoE — SWE-Pro 56.22%, Terminal-Bench 57%.
-    # Versión más reciente de la serie M2, superior en agentic/coding.
-    models += [
-        ModelDef(
-            model_id="minimax-m2.7:cloud",
-            model_name="MiniMax M2.7 (Ollama Cloud)",
-            provider="Ollama Cloud",
-            pool="ollama", rpm_pool="ollama",
-            base_url=_ol_url, api_key="ollama",
-            role="candidate",
-            rpm=999, thinking_budget=2000, strip_thinking=True,
-            reasoning_style="budget_tokens",
-        ),
-        # [off] — sin thinking para medir latencia real sin reasoning budget
-        ModelDef(
-            model_id="minimax-m2.7:cloud",
-            model_name="MiniMax M2.7 [off]",
-            provider="Ollama Cloud",
-            pool="ollama", rpm_pool="ollama",
-            base_url=_ol_url, api_key="ollama",
-            role="candidate",
-            rpm=999, thinking_budget=2000, strip_thinking=True,
-            reasoning_mode="off", reasoning_style="budget_tokens",
-        ),
-    ]
-
-    # ── Nemotron 3 Super 120B ─────────────────────────────────────────────────
-    # 120B MoE, solo 12B activos — balance ideal velocidad/calidad.
-    # NVIDIA Nemotron 3rd gen con tool calling mejorado.
-    models += [
-        ModelDef(
-            model_id="nemotron-3-super:cloud",
-            model_name="Nemotron 3 Super 120B (Ollama Cloud)",
-            provider="Ollama Cloud",
-            pool="ollama", rpm_pool="ollama",
-            base_url=_ol_url, api_key="ollama",
-            role="candidate",
-            rpm=999,
-        ),
-    ]
-
-    # ── Gemini 3 Flash Preview ────────────────────────────────────────────────
-    # Gemini 3 (más nuevo que 2.5 Flash). "Frontier intelligence, built for speed."
-    models += [
-        ModelDef(
-            model_id="gemini-3-flash-preview:cloud",
-            model_name="Gemini 3 Flash Preview (Ollama Cloud)",
-            provider="Ollama Cloud",
-            pool="ollama", rpm_pool="ollama",
-            base_url=_ol_url, api_key="ollama",
-            role="candidate",
-            rpm=999,
-        ),
-    ]
-
-    # ── Ollama local model (OLLAMA_MODEL env var, opcional) ───────────────────
+    # ── Ollama local (OLLAMA_MODEL env var, opcional) ────────────────────────────
     if OLLAMA_MODEL and not any(m.model_id == OLLAMA_MODEL for m in models):
         models.append(ModelDef(
-            model_id=OLLAMA_MODEL,
-            model_name=f"Ollama/{OLLAMA_MODEL}",
-            provider="Ollama",
-            pool="ollama", rpm_pool="ollama",
+            model_id=OLLAMA_MODEL, model_name=f"Ollama/{OLLAMA_MODEL}",
+            provider="Ollama", pool="ollama", rpm_pool="ollama",
             base_url=OLLAMA_URL, api_key="ollama",
             role="candidate", rpm=999,
         ))
@@ -965,6 +976,135 @@ Available tools:
 JSON_TESTS: dict[str, dict] = {f"{k}_json": v for k, v in TOON_TESTS.items()}
 JSON_TESTS_NOEX: dict[str, dict] = {f"{k}_json_noex": v for k, v in TOON_TESTS.items()}
 
+# ── Native OpenAI function calling tests (_nat) ───────────────────────────────
+# Mismos casos que TOON_TESTS pero usando el API nativo de tool calling
+# (tools=[], tool_choice="auto") — replica exactamente lo que hace llm_orchestrator en v2.
+_NATIVE_TOOL_DEFS_OPENAI = [
+    {
+        "type": "function",
+        "function": {
+            "name": "mark_attendance",
+            "description": "Records absences, tardiness, or justified absences for students in a course.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "nombres": {
+                        "type": "array",
+                        "items": {"type": "string"},
+                        "description": "Last/first names of absent students. Empty list if all present.",
+                    },
+                    "curso": {
+                        "type": "string",
+                        "description": "Course abbreviation, e.g.: 3bt, 8egb, prep, 2bt",
+                    },
+                    "fecha": {
+                        "type": "string",
+                        "description": "today | yesterday | YYYY-MM-DD (default: today)",
+                    },
+                    "status": {
+                        "type": "string",
+                        "enum": ["absent", "late", "justified", "all_present"],
+                    },
+                },
+                "required": ["nombres", "curso"],
+            },
+        },
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "query_attendance",
+            "description": "Queries the attendance record for one or more courses.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "cursos": {
+                        "type": "array",
+                        "items": {"type": "string"},
+                        "description": "Course abbreviations, e.g.: ['3bt', '8egb']",
+                    },
+                    "period": {
+                        "type": "string",
+                        "description": "today | yesterday | week | month | trimester_1 | trimester_2 | trimester_3",
+                    },
+                },
+                "required": ["cursos"],
+            },
+        },
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "mark_homework",
+            "description": "Records a new homework assignment or activity for a course.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "descripcion": {
+                        "type": "string",
+                        "description": "Full description of the assignment",
+                    },
+                    "curso": {
+                        "type": "string",
+                        "description": "Course abbreviation, e.g.: 3bt",
+                    },
+                    "materias": {
+                        "type": "array",
+                        "items": {"type": "string"},
+                        "description": "Subjects involved, e.g.: ['Math', 'Science']",
+                    },
+                    "fecha_entrega": {
+                        "type": "string",
+                        "description": "Due date YYYY-MM-DD or day name (optional)",
+                    },
+                },
+                "required": ["descripcion", "curso"],
+            },
+        },
+    },
+]
+
+_NATIVE_SYSTEM = (
+    "You are a school assistant helping a teacher log attendance and homework. "
+    "Use the provided tools when needed. "
+    "If no tool is needed (e.g., a general knowledge question), respond directly in plain text."
+)
+
+NATIVE_TESTS: dict[str, dict] = {f"{k}_nat": v for k, v in TOON_TESTS.items()}
+
+# ── Test suite por rol SchoolAI v2 ────────────────────────────────────────────
+# Cada rol corre solo los tests relevantes para su función real en producción.
+# "candidate" = sin rol asignado → evaluación completa para determinar el mejor fit.
+_SUITE_LATENCY = frozenset(TESTS)
+_SUITE_JSON    = frozenset(JSON_TESTS) | frozenset(JSON_TESTS_NOEX)
+_SUITE_TOON    = frozenset(TOON_TESTS) | frozenset(TOON_TESTS_NOEX)
+_SUITE_NATIVE  = frozenset(NATIVE_TESTS)
+
+_ROLE_SUITES: dict[str, frozenset] = {
+    # Extractor / Router: JSON output via response_format=json_object
+    "extractor":         _SUITE_LATENCY | _SUITE_JSON,
+    "router":            _SUITE_LATENCY | _SUITE_JSON,
+    "extractor+router":  _SUITE_LATENCY | _SUITE_JSON,
+    "context_agent":     _SUITE_LATENCY | _SUITE_JSON,
+    # Orchestrator: loop ReAct con tool_choice=auto — TOON + native
+    "orchestrator":           _SUITE_LATENCY | _SUITE_TOON | _SUITE_NATIVE,
+    "orchestrator_fallback":  _SUITE_LATENCY | _SUITE_TOON | _SUITE_NATIVE,
+    # Chat: conversacional — sin tool calling estructurado
+    "chat":          _SUITE_LATENCY,
+    "chat_fallback": _SUITE_LATENCY,
+    # Vision: modelos multimodales — sin tests de texto estructurado
+    "vision":          _SUITE_LATENCY,
+    "vision_fallback": _SUITE_LATENCY,
+    # Candidate: evaluación completa para determinar mejor fit
+    "candidate": _SUITE_LATENCY | _SUITE_JSON | _SUITE_TOON | _SUITE_NATIVE,
+}
+
+
+def _get_suite(role: str) -> frozenset:
+    """Test IDs válidos para el rol dado. Roles desconocidos → suite completa."""
+    return _ROLE_SUITES.get(role, _SUITE_LATENCY | _SUITE_JSON | _SUITE_TOON | _SUITE_NATIVE)
+
+
 _JSON_DECODER = json.JSONDecoder()
 
 
@@ -1013,13 +1153,16 @@ async def call_json_test(model: ModelDef, test_id: str) -> BenchResult:
         {"role": "user", "content": test["prompt"]},
     ]
 
-    orig_budget = model.thinking_budget
-    model.thinking_budget = max(orig_budget, 0)
-    max_tokens = 512 + orig_budget
+    max_tokens = 512 + model.effective_thinking_budget()
 
     client = AsyncOpenAI(api_key=model.api_key, base_url=model.base_url, timeout=CALL_TIMEOUT)
     kwargs: dict = dict(model=model.model_id, messages=messages,
                         max_tokens=max_tokens, temperature=0, stream=True)
+    extra_body, messages = _build_extra(model, messages)
+    if extra_body:
+        kwargs["extra_body"] = extra_body
+    if model.stream_usage:
+        kwargs["stream_options"] = {"include_usage": True}
 
     t0 = time.monotonic()
     ttft_ms: Optional[int] = None
@@ -1149,6 +1292,36 @@ class BenchResult:
 CALL_TIMEOUT = 45.0  # seconds
 
 
+def _build_extra(model: ModelDef, messages: list[dict]) -> tuple[dict, list[dict]]:
+    """Return (extra_body, messages) with provider-specific reasoning config applied.
+
+    Centralises thinking_config / enable_thinking / reasoning_effort so that
+    call_once, call_json_test and call_toon_test all behave identically.
+    """
+    extra_body: dict = {}
+    effective_budget = model.effective_thinking_budget()
+
+    if model.reasoning_style == "qwen":
+        enable = model.reasoning_mode != "off"
+        extra_body["enable_thinking"] = enable
+        if not enable and messages and messages[-1]["role"] == "user":
+            messages = messages[:-1] + [
+                {**messages[-1], "content": "/no_think\n" + messages[-1]["content"]}
+            ]
+    elif model.reasoning_style == "effort":
+        effort_map = {"high": "high", "medium": "medium", "low": "low", "off": "low"}
+        extra_body["reasoning_effort"] = effort_map.get(model.reasoning_mode, "medium")
+    elif model.reasoning_style == "budget_tokens":
+        # Gemma 4 / Ollama: thinkingConfig. DeepSeek: budget via max_tokens only.
+        if effective_budget > 0:
+            extra_body["thinking_config"] = {"thinking_budget": effective_budget}
+
+    if model.hf_provider:
+        extra_body["provider"] = model.hf_provider
+
+    return extra_body, messages
+
+
 async def call_once(
     model: ModelDef,
     messages: list[dict],
@@ -1173,28 +1346,7 @@ async def call_once(
     if extra_headers:
         kwargs["extra_headers"] = extra_headers
 
-    # ── Provider-specific reasoning mode config ───────────────────────────────
-    extra_body: dict = {}
-    if model.reasoning_style == "qwen":
-        # Groq Qwen3: enable_thinking controls thinking mode
-        enable = model.reasoning_mode != "off"
-        extra_body["enable_thinking"] = enable
-        if not enable:
-            # Also inject /no_think prefix in the last user message as fallback
-            if messages and messages[-1]["role"] == "user":
-                messages = messages[:-1] + [
-                    {**messages[-1], "content": "/no_think\n" + messages[-1]["content"]}
-                ]
-    elif model.reasoning_style == "effort":
-        # OpenAI o-series: reasoning_effort parameter
-        effort_map = {"high": "high", "medium": "medium", "low": "low", "off": "low"}
-        extra_body["reasoning_effort"] = effort_map.get(model.reasoning_mode, "medium")
-    elif model.reasoning_style == "budget_tokens":
-        # Google Gemini 2.5 Flash / Gemma 4: thinkingConfig via extra_body
-        if effective_budget > 0:
-            extra_body["thinking_config"] = {"thinking_budget": effective_budget}
-        # For DeepSeek R1 the budget is controlled via max_tokens only (no extra param)
-
+    extra_body, messages = _build_extra(model, messages)
     if extra_body:
         kwargs["extra_body"] = extra_body
 
@@ -1282,6 +1434,108 @@ async def call_compound(model: ModelDef) -> BenchResult:
     return result
 
 
+async def call_native_test(model: ModelDef, test_id: str) -> BenchResult:
+    """Llama al modelo con function calling nativo (tools=[], tool_choice=auto).
+
+    Replica exactamente lo que hace llm_orchestrator en v2 (base.py ReAct loop).
+    El test_id debe terminar en _nat y estar en NATIVE_TESTS.
+    """
+    base_id = test_id.removesuffix("_nat")
+    test = TOON_TESTS[base_id]
+    expect_tool = test.get("expect_tool")
+
+    messages = [
+        {"role": "system", "content": _NATIVE_SYSTEM},
+        {"role": "user", "content": test["prompt"]},
+    ]
+
+    client = AsyncOpenAI(api_key=model.api_key, base_url=model.base_url, timeout=CALL_TIMEOUT)
+    kwargs: dict = dict(
+        model=model.model_id,
+        messages=messages,
+        tools=_NATIVE_TOOL_DEFS_OPENAI,
+        tool_choice="auto",
+        temperature=0,
+    )
+    if model.max_tokens:
+        kwargs["max_tokens"] = model.max_tokens
+
+    t0 = time.monotonic()
+    status = "ok"
+    error_str = ""
+    toon_valid: Optional[bool] = None
+    correct_tool: Optional[bool] = None
+    correct_args: Optional[bool] = None
+    toon_raw = ""
+    ttft_ms: Optional[int] = None
+
+    try:
+        response = await client.chat.completions.create(**kwargs)
+        total_ms = int((time.monotonic() - t0) * 1000)
+        msg = response.choices[0].message
+
+        if msg.tool_calls:
+            ttft_ms = total_ms  # non-streaming: todo llega junto
+            tc = msg.tool_calls[0]
+            tool_name = tc.function.name
+            try:
+                args = json.loads(tc.function.arguments)
+            except json.JSONDecodeError:
+                args = {}
+            toon_raw = f"{tool_name}({tc.function.arguments[:80]})"
+
+            if expect_tool is None:
+                # no_tool test — no debería haber llamado una herramienta
+                toon_valid = False
+                correct_tool = False
+                correct_args = False
+            else:
+                toon_valid = True
+                correct_tool = tool_name == expect_tool
+                correct_args = correct_tool and _check_toon_args(args, test.get("expect_args", {}))
+        else:
+            # El modelo respondió con texto
+            content = (msg.content or "").strip()
+            toon_raw = content[:80]
+            if expect_tool is None:
+                # no_tool test — correcto
+                toon_valid = True
+                correct_tool = True
+                correct_args = True
+            else:
+                # Esperaba tool call pero el modelo respondió en texto
+                toon_valid = False
+                correct_tool = False
+                correct_args = False
+            status = "ok" if toon_valid else "error"
+
+    except Exception as exc:
+        total_ms = int((time.monotonic() - t0) * 1000)
+        status = "error"
+        error_str = str(exc)[:200]
+
+    toon_score = ""
+    if toon_valid is not None:
+        toon_score = (
+            f" | NAT {'✓' if toon_valid else '✗'}"
+            f" tool {'✓' if correct_tool else '✗'}"
+            f" args {'✓' if correct_args else '✗'}"
+        )
+    print(
+        f"  [{model.pool}] {model.model_name} | {test_id}"
+        f" → {status} | TTFT {ttft_ms or '—'}ms | total {total_ms}ms{toon_score}"
+    )
+
+    return BenchResult(
+        model_id=model.model_id, model_name=model.model_name,
+        provider=model.provider, pool=model.pool, role=model.role, in_use=model.in_use,
+        test_id=test_id, status=status, ttft_ms=ttft_ms, total_ms=total_ms,
+        content_preview=toon_raw, error=error_str,
+        toon_valid=toon_valid, correct_tool=correct_tool, correct_args=correct_args,
+        toon_raw=toon_raw,
+    )
+
+
 async def call_toon_test(model: ModelDef, test_id: str) -> BenchResult:
     """Run a single TOON tool-calling test. Uses TOON system prompt, parses response.
 
@@ -1298,10 +1552,7 @@ async def call_toon_test(model: ModelDef, test_id: str) -> BenchResult:
         {"role": "user", "content": test["prompt"]},
     ]
 
-    # TOON needs more tokens for YAML output
-    orig_budget = model.thinking_budget
-    model.thinking_budget = max(orig_budget, 0)
-    toon_max_tokens = 512 + orig_budget
+    toon_max_tokens = 512 + model.effective_thinking_budget()
 
     client = AsyncOpenAI(
         api_key=model.api_key,
@@ -1315,6 +1566,11 @@ async def call_toon_test(model: ModelDef, test_id: str) -> BenchResult:
         temperature=0,
         stream=True,
     )
+    extra_body, messages = _build_extra(model, messages)
+    if extra_body:
+        kwargs["extra_body"] = extra_body
+    if model.stream_usage:
+        kwargs["stream_options"] = {"include_usage": True}
 
     t0 = time.monotonic()
     ttft_ms: Optional[int] = None
@@ -1456,10 +1712,23 @@ async def run_model_tests(
         results.append(r)
         return results
 
-    for tid in test_ids:
-        is_toon = tid in TOON_TESTS or tid in TOON_TESTS_NOEX
-        is_json = tid in JSON_TESTS or tid in JSON_TESTS_NOEX
-        is_tool = is_toon or is_json
+    # ── Filtrar tests según el rol del modelo en SchoolAI v2 ─────────────────
+    allowed = _get_suite(model.role)
+    effective_ids = [t for t in test_ids if t in allowed]
+    skipped_ids   = [t for t in test_ids if t not in allowed]
+    for tid in skipped_ids:
+        results.append(BenchResult(
+            model_id=model.model_id, model_name=model.model_name,
+            provider=model.provider, pool=model.pool, role=model.role,
+            in_use=model.in_use, test_id=tid, status="skipped",
+            skip_reason=f"role={model.role!r} no requiere este test",
+        ))
+
+    for tid in effective_ids:
+        is_toon   = tid in TOON_TESTS or tid in TOON_TESTS_NOEX
+        is_json   = tid in JSON_TESTS or tid in JSON_TESTS_NOEX
+        is_native = tid in NATIVE_TESTS
+        is_tool   = is_toon or is_json or is_native
         if is_tool:
             # compound-beta has no standard tool calling — skip tool tests
             if model.compound_mode:
@@ -1479,7 +1748,9 @@ async def run_model_tests(
 
         for run_i in range(runs):
             await limiter.wait(model.rpm_pool, model.rpm)
-            if is_toon:
+            if is_native:
+                r = await call_native_test(model, tid)
+            elif is_toon:
                 r = await call_toon_test(model, tid)
             elif is_json:
                 r = await call_json_test(model, tid)
@@ -1731,8 +2002,14 @@ def save_json(results: list[BenchResult], extra: dict) -> Path:
 
 
 # ── CLI ───────────────────────────────────────────────────────────────────────
-_ALL_TEST_IDS = (list(TESTS.keys()) + list(TOON_TESTS.keys()) + list(TOON_TESTS_NOEX.keys())
-                 + list(JSON_TESTS.keys()) + list(JSON_TESTS_NOEX.keys()))
+_ALL_TEST_IDS = (
+    list(TESTS.keys())
+    + list(JSON_TESTS.keys())
+    + list(JSON_TESTS_NOEX.keys())
+    + list(TOON_TESTS.keys())        # TOON text format
+    + list(TOON_TESTS_NOEX.keys())
+    + list(NATIVE_TESTS.keys())      # native OpenAI function calling (_nat)
+)
 
 
 def parse_args() -> argparse.Namespace:
@@ -1784,6 +2061,7 @@ async def main() -> None:
 
     latency_ids = [t for t in test_ids if t in TESTS]
     toon_ids    = [t for t in test_ids if t in TOON_TESTS]
+    native_ids  = [t for t in test_ids if t in NATIVE_TESTS]
 
     all_models = _build_models()
     if pool_filter:
@@ -1795,6 +2073,8 @@ async def main() -> None:
         print(f"  Latency: {', '.join(latency_ids)}")
     if toon_ids:
         print(f"  TOON   : {', '.join(toon_ids)}")
+    if native_ids:
+        print(f"  Native : {', '.join(native_ids)}")
     print(f"  Runs  : {args.runs}")
     print(f"  Models: {len(all_models)} across {len(_group_by_pool(all_models))} pools")
     print(f"{'═'*70}")
