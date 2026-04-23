@@ -130,13 +130,18 @@ WEIGHTS: dict[str, dict[str, float]] = {
 LATENCY_TESTS = {"simple", "format", "multilang", "spanish_input"}
 SPANISH_TEST  = "spanish_input"
 
-# json_full: tests con ejemplo de formato — *_json, *_nat (native tool calling),
-#            TOON sin sufijo (ej: att_absent). El filtro toon_valid is not None excluye
-#            tests de latencia y compound_web_search automáticamente.
+# json_full: tests que requieren JSON correcto y completo.
+#   *_json       — JSON text tests con ejemplo de formato
+#   *_nat        — native OpenAI tool calling
+#   pln_*        — planner [{tool,params}] tests (schoolai2 agent/planner.py)
+#   TOON sin sufijo (ej: att_absent) — catch-all, excluye latencia y compound.
+# El filtro toon_valid is not None excluye tests de latencia automáticamente.
 JSON_FULL_SFXS = lambda t: (
     (t.endswith("_json") and not t.endswith("_noex"))       # JSON text tests
     or t.endswith("_nat")                                    # native OpenAI tool calling
+    or t.startswith("pln_")                                  # planner JSON plan tests
     or (not t.endswith(("_json", "_noex", "_nat"))
+        and not t.startswith("pln_")
         and t not in LATENCY_TESTS)                         # TOON full (sin sufijo)
 )
 

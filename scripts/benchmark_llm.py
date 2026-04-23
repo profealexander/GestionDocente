@@ -1082,6 +1082,152 @@ _NATIVE_SYSTEM = (
 
 NATIVE_TESTS: dict[str, dict] = {f"{k}_nat": v for k, v in TOON_TESTS.items()}
 
+# ── Planner tests (_pln) ──────────────────────────────────────────────────────
+# Replica agent/planner.py: mismo system prompt, response_format=json_object,
+# espera JSON array [{tool, params}] — NO tool_choice=auto.
+# Cubre los domain controllers reales de schoolai2: attendance y homework.
+
+_PLANNER_SYSTEM = """\
+You are a planning assistant for a school management system.
+
+Given a teacher's request and the available tools, return a JSON array of steps to execute.
+Each step: {{"tool": "<name>", "params": {{<key>: <value>}}}}
+
+Rules:
+- Return ONLY a JSON array wrapped in a JSON object key "steps". No explanation.
+- Use only tools from the provided list.
+- Minimum steps needed — no redundant calls.
+- If the request is conversational (no action needed), return {{"steps": []}}.
+
+Available tools:
+{tools}"""
+
+_PLANNER_TOOLS_ATTENDANCE = [
+    {
+        "name": "record_attendance",
+        "description": "Register absent, late, or justified students in a course.",
+        "parameters": {
+            "names": {"type": "array", "items": {"type": "string"}, "description": "Student names"},
+            "course": {"type": "string", "description": "Course code or name, e.g. '3BT'"},
+            "date": {"type": "string", "description": "Date: 'today', 'yesterday', or DD/MM/YYYY", "default": "today"},
+            "status": {"type": "string", "enum": ["absent", "late", "justified", "all_present"], "default": "absent"},
+        },
+        "required": ["names", "course"],
+    },
+    {
+        "name": "query_attendance",
+        "description": "Query attendance records for a course on a given period.",
+        "parameters": {
+            "course": {"type": "string", "description": "Course code or name"},
+            "period": {"type": "string", "description": "Period: 'today', 'yesterday', 'week', 'month'", "default": "today"},
+        },
+        "required": ["course"],
+    },
+    {
+        "name": "list_courses",
+        "description": "List available courses, optionally filtered by level.",
+        "parameters": {
+            "level": {"type": "string", "description": "Optional level filter"},
+        },
+        "required": [],
+    },
+]
+
+_PLANNER_TOOLS_HOMEWORK = [
+    {
+        "name": "create_assignment",
+        "description": "Create a homework assignment for a course.",
+        "parameters": {
+            "course": {"type": "string", "description": "Course code or name"},
+            "subject": {"type": "string", "description": "Subject name"},
+            "description": {"type": "string", "description": "Assignment description"},
+            "due_date": {"type": "string", "description": "Due date: 'tomorrow', day name, or DD/MM/YYYY"},
+        },
+        "required": ["course", "description"],
+    },
+    {
+        "name": "query_assignments",
+        "description": "List pending homework assignments for a course.",
+        "parameters": {
+            "course": {"type": "string", "description": "Course code or name"},
+            "period": {"type": "string", "description": "Period: 'trimestre', 'week', 'month'", "default": "trimestre"},
+        },
+        "required": ["course"],
+    },
+    {
+        "name": "delete_assignment",
+        "description": "Delete a homework assignment by number.",
+        "parameters": {
+            "number": {"type": "integer", "description": "Assignment number from the list"},
+            "course": {"type": "string", "description": "Course code or name"},
+        },
+        "required": ["number", "course"],
+    },
+]
+
+_PLANNER_TOOLS_GENERAL = [
+    {
+        "name": "list_courses",
+        "description": "List available courses.",
+        "parameters": {
+            "level": {"type": "string", "description": "Optional level filter"},
+        },
+        "required": [],
+    },
+]
+
+_PLANNER_TOOLS: dict[str, list] = {
+    "attendance": _PLANNER_TOOLS_ATTENDANCE,
+    "homework":   _PLANNER_TOOLS_HOMEWORK,
+    "general":    _PLANNER_TOOLS_GENERAL,
+}
+
+PLANNER_TESTS: dict[str, dict] = {
+    # Attendance — registro de ausencias
+    "pln_att_absent": {
+        "domain": "attendance",
+        "message": "Falta Tatiana y Mario en 3BT",
+        "expect_tool": "record_attendance",
+        "expect_params": ["names", "course"],
+    },
+    # Attendance — registro tardanza
+    "pln_att_late": {
+        "domain": "attendance",
+        "message": "Tatiana llegó atrasada en primero BT",
+        "expect_tool": "record_attendance",
+        "expect_params": ["names", "course"],
+        "expect_status": "late",
+    },
+    # Attendance — consulta
+    "pln_att_query": {
+        "domain": "attendance",
+        "message": "Muéstrame las faltas de hoy en 2do A",
+        "expect_tool": "query_attendance",
+        "expect_params": ["course"],
+    },
+    # Homework — crear tarea
+    "pln_hw_create": {
+        "domain": "homework",
+        "message": "Registra tarea de matemáticas para el viernes para 3BT: ejercicios capítulo 5",
+        "expect_tool": "create_assignment",
+        "expect_params": ["course", "description"],
+    },
+    # Homework — consultar tareas pendientes
+    "pln_hw_query": {
+        "domain": "homework",
+        "message": "Qué tareas tienen pendientes los de 2BT?",
+        "expect_tool": "query_assignments",
+        "expect_params": ["course"],
+    },
+    # No-action — saludo → plan vacío
+    "pln_no_action": {
+        "domain": "general",
+        "message": "Hola, buenos días profe",
+        "expect_tool": None,
+        "expect_params": [],
+    },
+}
+
 # ── Test suite por rol ────────────────────────────────────────────────────────
 # Cada rol corre solo los tests relevantes para su función real en producción.
 # "candidate" = sin rol asignado → evaluación completa para determinar el mejor fit.
@@ -1089,14 +1235,15 @@ _SUITE_LATENCY = frozenset(TESTS)
 _SUITE_JSON    = frozenset(JSON_TESTS) | frozenset(JSON_TESTS_NOEX)
 _SUITE_TOON    = frozenset(TOON_TESTS) | frozenset(TOON_TESTS_NOEX)
 _SUITE_NATIVE  = frozenset(NATIVE_TESTS)
+_SUITE_PLANNER = frozenset(PLANNER_TESTS)
 
 _ROLE_SUITES: dict[str, frozenset] = {
     # Classifier: gateway/router.py — classify {domain,intent,entities} via JSON
     "classifier":          _SUITE_LATENCY | _SUITE_JSON,
     "classifier_fallback": _SUITE_LATENCY | _SUITE_JSON,
     # Planner: agent/planner.py — JSON plan [{tool,params}], NO tool_choice=auto
-    "planner":          _SUITE_LATENCY | _SUITE_JSON,
-    "planner_fallback": _SUITE_LATENCY | _SUITE_JSON,
+    "planner":          _SUITE_LATENCY | _SUITE_JSON | _SUITE_PLANNER,
+    "planner_fallback": _SUITE_LATENCY | _SUITE_JSON | _SUITE_PLANNER,
     # Synthesizer: agent/synthesizer.py — respuesta conversacional en español
     "synthesizer":          _SUITE_LATENCY,
     "synthesizer_fallback": _SUITE_LATENCY,
@@ -1104,7 +1251,7 @@ _ROLE_SUITES: dict[str, frozenset] = {
     "vision":          _SUITE_LATENCY,
     "vision_fallback": _SUITE_LATENCY,
     # Candidate: evaluación completa para determinar mejor fit
-    "candidate": _SUITE_LATENCY | _SUITE_JSON | _SUITE_TOON | _SUITE_NATIVE,
+    "candidate": _SUITE_LATENCY | _SUITE_JSON | _SUITE_TOON | _SUITE_NATIVE | _SUITE_PLANNER,
     # Aliases legacy (compat con JSONs de benchmark anteriores)
     "extractor":         _SUITE_LATENCY | _SUITE_JSON,
     "extractor+router":  _SUITE_LATENCY | _SUITE_JSON,
@@ -1551,6 +1698,113 @@ async def call_native_test(model: ModelDef, test_id: str) -> BenchResult:
     )
 
 
+async def call_planner_test(model: ModelDef, test_id: str) -> BenchResult:
+    """Replica agent/planner.py: response_format=json_object, espera [{tool,params}].
+
+    Usa el mismo system prompt y tool definitions que el planner real de schoolai2.
+    Parsea siguiendo la misma lógica: array directo, step único, o wrapped {steps:[...]}.
+    """
+    test = PLANNER_TESTS[test_id]
+    domain = test["domain"]
+    tools_desc = json.dumps(_PLANNER_TOOLS[domain], ensure_ascii=False, indent=2)
+    system = _PLANNER_SYSTEM.format(tools=tools_desc)
+
+    messages = [
+        {"role": "system", "content": system},
+        {"role": "user", "content": test["message"]},
+    ]
+
+    client = AsyncOpenAI(api_key=model.api_key, base_url=model.base_url, timeout=CALL_TIMEOUT)
+    pln_max_tokens = 512 + model.effective_thinking_budget()
+    kwargs: dict = dict(
+        model=model.model_id,
+        messages=messages,
+        temperature=0,
+        max_tokens=pln_max_tokens,
+        response_format={"type": "json_object"},
+    )
+
+    t0 = time.monotonic()
+    status = "ok"
+    error_str = ""
+    toon_valid: Optional[bool] = None
+    correct_tool: Optional[bool] = None
+    correct_args: Optional[bool] = None
+    toon_raw = ""
+    ttft_ms: Optional[int] = None
+
+    try:
+        response = await client.chat.completions.create(**kwargs)
+        total_ms = int((time.monotonic() - t0) * 1000)
+        ttft_ms = total_ms  # non-streaming: todo llega junto
+        content = response.choices[0].message.content or "{}"
+        toon_raw = content[:120]
+
+        # Parsear siguiendo la misma lógica que agent/planner.py
+        raw = json.loads(content)
+        if isinstance(raw, list):
+            steps = raw
+        elif isinstance(raw, dict) and "tool" in raw:
+            steps = [raw]
+        else:
+            steps = next((v for v in raw.values() if isinstance(v, list)), [])
+
+        expect_tool = test.get("expect_tool")
+        expect_params: list[str] = test.get("expect_params", [])
+        toon_valid = True  # JSON parseable
+
+        if expect_tool is None:
+            # Saludo → plan vacío
+            correct_tool = len(steps) == 0
+            correct_args = correct_tool
+        elif steps:
+            first = steps[0]
+            got_tool   = first.get("tool", "")
+            got_params = first.get("params", {})
+            correct_tool = got_tool == expect_tool
+            correct_args = correct_tool and all(p in got_params for p in expect_params)
+            if correct_args and "expect_status" in test:
+                correct_args = got_params.get("status") == test["expect_status"]
+        else:
+            correct_tool = False
+            correct_args = False
+
+        status = "ok" if correct_tool else "error"
+
+    except json.JSONDecodeError as exc:
+        total_ms = int((time.monotonic() - t0) * 1000)
+        toon_valid = False
+        correct_tool = False
+        correct_args = False
+        status = "error"
+        error_str = f"JSON parse: {exc}"
+    except Exception as exc:
+        total_ms = int((time.monotonic() - t0) * 1000)
+        status = "error"
+        error_str = str(exc)[:200]
+
+    pln_score = ""
+    if toon_valid is not None:
+        pln_score = (
+            f" | PLN {'✓' if toon_valid else '✗'}"
+            f" tool {'✓' if correct_tool else '✗'}"
+            f" args {'✓' if correct_args else '✗'}"
+        )
+    print(
+        f"  [{model.pool}] {model.model_name} | {test_id}"
+        f" → {status} | total {total_ms}ms{pln_score}"
+    )
+
+    return BenchResult(
+        model_id=model.model_id, model_name=model.model_name,
+        provider=model.provider, pool=model.pool, role=model.role, in_use=model.in_use,
+        test_id=test_id, status=status, ttft_ms=ttft_ms, total_ms=total_ms,
+        content_preview=toon_raw, error=error_str,
+        toon_valid=toon_valid, correct_tool=correct_tool, correct_args=correct_args,
+        toon_raw=toon_raw,
+    )
+
+
 async def call_toon_test(model: ModelDef, test_id: str) -> BenchResult:
     """Run a single TOON tool-calling test. Uses TOON system prompt, parses response.
 
@@ -1740,10 +1994,11 @@ async def run_model_tests(
         ))
 
     for tid in effective_ids:
-        is_toon   = tid in TOON_TESTS or tid in TOON_TESTS_NOEX
-        is_json   = tid in JSON_TESTS or tid in JSON_TESTS_NOEX
-        is_native = tid in NATIVE_TESTS
-        is_tool   = is_toon or is_json or is_native
+        is_toon    = tid in TOON_TESTS or tid in TOON_TESTS_NOEX
+        is_json    = tid in JSON_TESTS or tid in JSON_TESTS_NOEX
+        is_native  = tid in NATIVE_TESTS
+        is_planner = tid in PLANNER_TESTS
+        is_tool    = is_toon or is_json or is_native or is_planner
         if is_tool:
             # compound-beta has no standard tool calling — skip tool tests
             if model.compound_mode:
@@ -1765,6 +2020,8 @@ async def run_model_tests(
             await limiter.wait(model.rpm_pool, model.rpm)
             if is_native:
                 r = await call_native_test(model, tid)
+            elif is_planner:
+                r = await call_planner_test(model, tid)
             elif is_toon:
                 r = await call_toon_test(model, tid)
             elif is_json:
@@ -2024,6 +2281,7 @@ _ALL_TEST_IDS = (
     + list(TOON_TESTS.keys())        # TOON text format
     + list(TOON_TESTS_NOEX.keys())
     + list(NATIVE_TESTS.keys())      # native OpenAI function calling (_nat)
+    + list(PLANNER_TESTS.keys())     # planner JSON plan [{tool,params}] (_pln)
 )
 
 
@@ -2061,6 +2319,11 @@ def parse_args() -> argparse.Namespace:
         action="store_true",
         help="Skip JSON output",
     )
+    parser.add_argument(
+        "--inuse",
+        action="store_true",
+        help="Solo modelos marcados in_use=True",
+    )
     return parser.parse_args()
 
 
@@ -2081,6 +2344,8 @@ async def main() -> None:
     all_models = _build_models()
     if pool_filter:
         all_models = [m for m in all_models if m.pool in pool_filter]
+    if args.inuse:
+        all_models = [m for m in all_models if m.in_use]
 
     print(f"\n{'═'*70}")
     print("  SchoolAI LLM Benchmark — Phase 1+2")
