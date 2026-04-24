@@ -49,13 +49,17 @@ class Settings(BaseSettings):
     # #2 synthesizer 94.4% — 694ms TTFT, español 100%, Groq free (20 RPM)
     llm_synthesizer: str = "groq/meta-llama/llama-4-scout-17b-16e-instruct"
     # free (ollama cloud) → paid (mistral small)
-    llm_synthesizer_fallback: str = "ollama/gemini-3-flash-preview:cloud,mistral/mistral-small-latest"
+    llm_synthesizer_fallback: str = (
+        "ollama/gemini-3-flash-preview:cloud,mistral/mistral-small-latest"
+    )
 
     # PLANNER — agent/planner.py: genera plan JSON [{tool, params}]
     # #1 planner 94.6% — 437ms, JSON perfecto, Groq free (20 RPM, cuota distinta a synthesizer)
     llm_orchestrator: str = "groq/openai/gpt-oss-120b"
     # free (ollama cloud) → paid (deepseek reasoner)
-    llm_orchestrator_fallback: str = "ollama/gemini-3-flash-preview:cloud,deepseek/deepseek-reasoner"
+    llm_orchestrator_fallback: str = (
+        "ollama/gemini-3-flash-preview:cloud,deepseek/deepseek-reasoner"
+    )
 
     llm_context_agent: str = "mistral/mistral-small-latest"    # context skill agent
 

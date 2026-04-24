@@ -110,16 +110,26 @@ def _build_models() -> list[ModelDef]:
     Los tests que corre cada modelo dependen de role= — ver _ROLE_SUITES.
     """
     # ── Credenciales por proveedor ─────────────────────────────────────────────
-    _g_key    = GOOGLE_KEY;      _g_url    = "https://generativelanguage.googleapis.com/v1beta/openai/"
-    _gr_key   = GROQ_KEY;        _gr_url   = "https://api.groq.com/openai/v1/"
-    _ds_key   = DEEPSEEK_KEY;    _ds_url   = "https://api.deepseek.com/v1/"
-    _ms_key   = MISTRAL_KEY;     _ms_url   = "https://api.mistral.ai/v1/"
-    _or_key   = OPENROUTER_KEY;  _or_url   = "https://openrouter.ai/api/v1/"
-    _zai_key  = ZAI_KEY;         _zai_url  = "https://api.z.ai/api/paas/v4/"
-    _nv_key   = NVIDIA_KEY;      _nv_url   = "https://integrate.api.nvidia.com/v1/"
-    _kilo_key = KILO_KEY;        _kilo_url = "https://api.kilo.ai/api/gateway/"
-    _hf_key   = HF_KEY;          _hf_url   = "https://router.huggingface.co/v1/"
-    _mr_key   = MULEROUTER_KEY;  _mr_url   = "https://api.mulerouter.ai/vendors/openai/v1/"
+    _g_key    = GOOGLE_KEY
+    _g_url    = "https://generativelanguage.googleapis.com/v1beta/openai/"
+    _gr_key   = GROQ_KEY
+    _gr_url   = "https://api.groq.com/openai/v1/"
+    _ds_key   = DEEPSEEK_KEY
+    _ds_url   = "https://api.deepseek.com/v1/"
+    _ms_key   = MISTRAL_KEY
+    _ms_url   = "https://api.mistral.ai/v1/"
+    _or_key   = OPENROUTER_KEY
+    _or_url   = "https://openrouter.ai/api/v1/"
+    _zai_key  = ZAI_KEY
+    _zai_url  = "https://api.z.ai/api/paas/v4/"
+    _nv_key   = NVIDIA_KEY
+    _nv_url   = "https://integrate.api.nvidia.com/v1/"
+    _kilo_key = KILO_KEY
+    _kilo_url = "https://api.kilo.ai/api/gateway/"
+    _hf_key   = HF_KEY
+    _hf_url   = "https://router.huggingface.co/v1/"
+    _mr_key   = MULEROUTER_KEY
+    _mr_url   = "https://api.mulerouter.ai/vendors/openai/v1/"
     _ol_url   = "http://localhost:11434/v1/"
 
     _g_skip    = "" if _g_key    else "GOOGLE_API_KEY not set"
@@ -2496,7 +2506,7 @@ async def main() -> None:
         print(f"\n  JSON saved → {out_path.name}")
         if _g_partial_path and _g_partial_path.exists():
             _g_partial_path.unlink()
-            print(f"  Partial file removed")
+            print("  Partial file removed")
 
 
 if __name__ == "__main__":

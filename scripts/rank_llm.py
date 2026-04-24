@@ -136,20 +136,19 @@ SPANISH_TEST  = "spanish_input"
 #   pln_*        — planner [{tool,params}] tests (schoolai2 agent/planner.py)
 #   TOON sin sufijo (ej: att_absent) — catch-all, excluye latencia y compound.
 # El filtro toon_valid is not None excluye tests de latencia automáticamente.
-JSON_FULL_SFXS = lambda t: (
-    (t.endswith("_json") and not t.endswith("_noex"))       # JSON text tests
-    or t.endswith("_nat")                                    # native OpenAI tool calling
-    or t.startswith("pln_")                                  # planner JSON plan tests
-    or (not t.endswith(("_json", "_noex", "_nat"))
-        and not t.startswith("pln_")
-        and t not in LATENCY_TESTS)                         # TOON full (sin sufijo)
-)
+def JSON_FULL_SFXS(t: str) -> bool:
+    return (
+        (t.endswith("_json") and not t.endswith("_noex"))   # JSON text tests
+        or t.endswith("_nat")                                # native OpenAI tool calling
+        or t.startswith("pln_")                              # planner JSON plan tests
+        or (not t.endswith(("_json", "_noex", "_nat"))
+            and not t.startswith("pln_")
+            and t not in LATENCY_TESTS)                      # TOON full (sin sufijo)
+    )
 
-# json_noex: tests sin ejemplo de formato — *_json_noex, *_noex (TOON noex)
-JSON_NOEX_SFXS = lambda t: (
-    t.endswith("_json_noex")
-    or (t.endswith("_noex") and not t.endswith("_json_noex"))
-)
+
+def JSON_NOEX_SFXS(t: str) -> bool:
+    return t.endswith("_json_noex") or (t.endswith("_noex") and not t.endswith("_json_noex"))
 
 
 def load_results(paths: list[Path]) -> list[dict]:
@@ -298,7 +297,7 @@ def print_ranking(records: list[dict], role: str, w: dict) -> None:
         )
 
     # ── Destacados por criterio ───────────────────────────────────────────────
-    print(f"\n  Destacados:")
+    print("\n  Destacados:")
     best_cost  = min(records, key=lambda r: -r["cost"])
     best_noex  = max((r for r in records if r["jn_score"] is not None), key=lambda r: (r["jn_score"], -(r["lat_avg"] or 0)))
     best_lat   = min((r for r in records if r["lat_avg"] is not None), key=lambda r: r["lat_avg"])

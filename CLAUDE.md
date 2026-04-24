@@ -96,6 +96,34 @@ Key rules in `skills/utils/extract_rules.py`:
 - `bot/jornada/` — Jornada bot: schedule card, helpers, keyboards, notifications
 - `bot/channels/` — channel adapters: `TelegramChannel`, `WhatsAppChannel`
 
+### LLM stack (benchmark 2026-04-23)
+
+| Variable | Primary | Fallback 1 | Fallback 2 | Rol |
+|---|---|---|---|---|
+| `llm_router` | `mistral/mistral-medium-latest` | `deepseek/deepseek-reasoner` | — | Classifier |
+| `llm_synthesizer` | `groq/meta-llama/llama-4-scout-17b-16e-instruct` | `ollama/gemini-3-flash-preview:cloud` | `mistral/mistral-small-latest` | Synthesizer |
+| `llm_orchestrator` | `groq/openai/gpt-oss-120b` | `ollama/gemini-3-flash-preview:cloud` | `deepseek/deepseek-reasoner` | Planner |
+
+Groq free tier: 20 RPM por modelo — planner y synthesizer usan modelos distintos, cuotas independientes.
+
+### Benchmark LLM
+
+```bash
+# Correr benchmark completo (excluye google — cuelga)
+uv run python scripts/benchmark_llm.py --models deepseek,groq,hf,kilo,mistral,nvidia,ollama,openrouter,zai,mulerouter
+
+# Solo modelos en uso
+uv run python scripts/benchmark_llm.py --inuse
+
+# Ranking
+uv run python scripts/rank_llm.py --json scripts/<file>.json
+uv run python scripts/rank_llm.py --json scripts/<file>.json --role classifier
+uv run python scripts/rank_llm.py --json scripts/<file>.json --role planner
+uv run python scripts/rank_llm.py --json scripts/<file>.json --role synthesizer
+```
+
+JSON vigente: `scripts/benchmark-schoolai-20260423-200745.json`
+
 ### Orchestrator (Bot Agente)
 
 `skills/orchestrator/_tools/` — individual tool modules loaded by `OrchestratorSkill`. Uses GLM-4.7-Flash (Z.AI) with tool calling. Session history stored in Redis (falls back to in-process dict if `REDIS_URL` not set). Fallback provider: Groq llama-3.3-70b-versatile.
