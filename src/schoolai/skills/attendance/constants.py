@@ -1,0 +1,3 @@
+ABSENT = "F"
+LATE = "AT"
+JUSTIFIED = "J"
