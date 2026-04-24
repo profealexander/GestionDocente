@@ -17,6 +17,7 @@ import asyncio
 import json
 import os
 import re
+import signal
 import sys
 import yaml
 import time
@@ -598,6 +599,27 @@ def _build_models() -> list[ModelDef]:
             provider="Ollama Cloud", pool="ollama", rpm_pool="ollama",
             base_url=_ol_url, api_key="ollama", role="candidate", rpm=999,
         ),
+        ModelDef(
+            model_id="qwen3-coder:480b-cloud", model_name="Qwen3 Coder 480B [medium]",
+            provider="Ollama Cloud", pool="ollama", rpm_pool="ollama",
+            base_url=_ol_url, api_key="ollama", role="candidate",
+            rpm=999, thinking_budget=2000, strip_thinking=True,
+            reasoning_mode="medium", reasoning_style="budget_tokens",
+        ),
+        ModelDef(
+            model_id="qwen3-coder:480b-cloud", model_name="Qwen3 Coder 480B [low]",
+            provider="Ollama Cloud", pool="ollama", rpm_pool="ollama",
+            base_url=_ol_url, api_key="ollama", role="candidate",
+            rpm=999, thinking_budget=1500, strip_thinking=True,
+            reasoning_mode="low", reasoning_style="budget_tokens",
+        ),
+        ModelDef(
+            model_id="qwen3-coder:480b-cloud", model_name="Qwen3 Coder 480B [off]",
+            provider="Ollama Cloud", pool="ollama", rpm_pool="ollama",
+            base_url=_ol_url, api_key="ollama", role="candidate",
+            rpm=999, thinking_budget=2000, strip_thinking=True,
+            reasoning_mode="off", reasoning_style="budget_tokens",
+        ),
     ]
 
     # ── MuleRouter (MULEROUTER_API_KEY) — Qwen con reasoning_effort ─────────────
@@ -726,6 +748,32 @@ _THINK_RE = re.compile(
 def strip_thinking(text: str) -> str:
     """Remove <think>/<thought>/<thinking> blocks from reasoning model output."""
     return _THINK_RE.sub("", text).strip()
+
+
+# ── Incremental save + status ticker ─────────────────────────────────────────
+
+async def _append_partial(new_results: list[BenchResult]) -> None:
+    global _g_done_count
+    if _g_lock is None:
+        return
+    async with _g_lock:
+        _g_results.extend(new_results)
+        _g_done_count += sum(1 for r in new_results if r.status != "skipped")
+        if _g_partial_path:
+            _g_partial_path.write_text(json.dumps(
+                {"partial": True, "timestamp": datetime.now().isoformat(),
+                 "results": [asdict(r) for r in _g_results]},
+                indent=2, ensure_ascii=False,
+            ))
+
+
+async def _status_ticker(interval: int = 30) -> None:
+    while True:
+        await asyncio.sleep(interval)
+        done = _g_done_count
+        total = _g_total_expected
+        pct = f"{done / total * 100:.0f}%" if total else "?"
+        print(f"\n  ⏱  {done}/{total} ({pct}) tests completados", flush=True)
 
 
 # ── Test cases ────────────────────────────────────────────────────────────────
@@ -1451,7 +1499,16 @@ class BenchResult:
 
 
 # ── Core call ─────────────────────────────────────────────────────────────────
-CALL_TIMEOUT = 45.0  # seconds
+CALL_TIMEOUT  = 45.0   # httpx socket timeout (passed to AsyncOpenAI)
+TASK_TIMEOUT  = 55.0   # asyncio-level cancel — catches mid-stream hangs
+POOL_TIMEOUT  = 600.0  # max 10 min per pool before forced cancel
+
+# ── Global state: incremental saves + SIGINT recovery ────────────────────────
+_g_lock: asyncio.Lock | None = None
+_g_results: list[BenchResult] = []
+_g_partial_path: Optional[Path] = None
+_g_done_count: int = 0
+_g_total_expected: int = 0
 
 
 def _build_extra(model: ModelDef, messages: list[dict]) -> tuple[dict, list[dict]]:
@@ -1612,15 +1669,15 @@ async def call_native_test(model: ModelDef, test_id: str) -> BenchResult:
     ]
 
     client = AsyncOpenAI(api_key=model.api_key, base_url=model.base_url, timeout=CALL_TIMEOUT)
+    nat_max_tokens = 512 + model.effective_thinking_budget()
     kwargs: dict = dict(
         model=model.model_id,
         messages=messages,
         tools=_NATIVE_TOOL_DEFS_OPENAI,
         tool_choice="auto",
         temperature=0,
+        max_tokens=nat_max_tokens,
     )
-    if model.max_tokens:
-        kwargs["max_tokens"] = model.max_tokens
 
     t0 = time.monotonic()
     status = "ok"
@@ -2018,17 +2075,29 @@ async def run_model_tests(
 
         for run_i in range(runs):
             await limiter.wait(model.rpm_pool, model.rpm)
-            if is_native:
-                r = await call_native_test(model, tid)
-            elif is_planner:
-                r = await call_planner_test(model, tid)
-            elif is_toon:
-                r = await call_toon_test(model, tid)
-            elif is_json:
-                r = await call_json_test(model, tid)
-            else:
-                r = await call_once(model, messages_arg)
-                r.test_id = tid
+            t0_task = time.monotonic()
+            try:
+                if is_native:
+                    r = await asyncio.wait_for(call_native_test(model, tid), timeout=TASK_TIMEOUT)
+                elif is_planner:
+                    r = await asyncio.wait_for(call_planner_test(model, tid), timeout=TASK_TIMEOUT)
+                elif is_toon:
+                    r = await asyncio.wait_for(call_toon_test(model, tid), timeout=TASK_TIMEOUT)
+                elif is_json:
+                    r = await asyncio.wait_for(call_json_test(model, tid), timeout=TASK_TIMEOUT)
+                else:
+                    r = await asyncio.wait_for(call_once(model, messages_arg), timeout=TASK_TIMEOUT)
+                    r.test_id = tid
+            except asyncio.TimeoutError:
+                t_total = int((time.monotonic() - t0_task) * 1000)
+                r = BenchResult(
+                    model_id=model.model_id, model_name=model.model_name,
+                    provider=model.provider, pool=model.pool, role=model.role,
+                    in_use=model.in_use, test_id=tid,
+                    status="timeout", total_ms=t_total,
+                    error=f"asyncio task timeout after {TASK_TIMEOUT:.0f}s",
+                )
+                print(f"  [{model.pool}] {model.model_name} | {tid} → TASK TIMEOUT {t_total}ms ⚠", flush=True)
             run_results.append(r)
             if delay_ms > 0 and run_i < runs - 1:
                 await asyncio.sleep(delay_ms / 1000)
@@ -2042,6 +2111,7 @@ async def run_model_tests(
             best = min(ok_runs, key=lambda r: r.total_ms) if ok_runs else run_results[-1]
         results.append(best)
 
+    await _append_partial(results)
     return results
 
 
@@ -2362,13 +2432,57 @@ async def main() -> None:
     groups = _group_by_pool(all_models)
     limiter = RpmLimiter()
 
-    # Run all pools in parallel; sequential within each pool
-    pool_tasks = [
-        run_pool(pool_name, models, test_ids, limiter, args.runs, args.delay)
-        for pool_name, models in groups.items()
-    ]
-    pool_results = await asyncio.gather(*pool_tasks)
-    all_results: list[BenchResult] = [r for pool in pool_results for r in pool]
+    # ── Init global incremental-save state ───────────────────────────────────
+    global _g_lock, _g_partial_path, _g_done_count, _g_total_expected
+    _g_lock = asyncio.Lock()
+    _g_done_count = 0
+    _g_results.clear()
+    _g_partial_path = Path(__file__).parent / f"benchmark-partial-{datetime.now().strftime('%Y%m%d-%H%M%S')}.json"
+    _g_total_expected = sum(
+        len([t for t in test_ids if t in _get_suite(m.role)])
+        for m in all_models if not m.skip_reason and not m.compound_mode
+    )
+
+    # ── SIGINT handler: save partial results on Ctrl+C ───────────────────────
+    loop = asyncio.get_running_loop()
+    def _on_sigint() -> None:
+        print(f"\n\n⚠  Ctrl+C — guardando {len(_g_results)} resultados parciales…", flush=True)
+        if _g_results and not args.no_json:
+            out = save_json(_g_results, {"partial": True, "tests": test_ids,
+                                         "runs": args.runs, "pools": list(groups.keys())})
+            print(f"  Parcial → {out.name}", flush=True)
+        loop.stop()
+    try:
+        loop.add_signal_handler(signal.SIGINT, _on_sigint)
+    except NotImplementedError:
+        pass  # Windows
+
+    # ── Status ticker (progreso cada 30 s) ───────────────────────────────────
+    ticker = asyncio.create_task(_status_ticker(30))
+
+    # ── Pool watchdog: cancela pools que superen POOL_TIMEOUT ────────────────
+    async def _run_pool_guarded(pool_name: str, models: list[ModelDef]) -> list[BenchResult]:
+        try:
+            return await asyncio.wait_for(
+                run_pool(pool_name, models, test_ids, limiter, args.runs, args.delay),
+                timeout=POOL_TIMEOUT,
+            )
+        except asyncio.TimeoutError:
+            print(f"\n  ⚠ Pool {pool_name.upper()} timeout ({POOL_TIMEOUT:.0f}s) — "
+                  f"resultados parciales ya guardados en {_g_partial_path.name}", flush=True)
+            return []
+
+    # ── Run all pools in parallel ─────────────────────────────────────────────
+    await asyncio.gather(*[_run_pool_guarded(pn, ms) for pn, ms in groups.items()])
+
+    ticker.cancel()
+    try:
+        await ticker
+    except asyncio.CancelledError:
+        pass
+
+    # _g_results has ALL completed results (including partial pools via _append_partial)
+    all_results: list[BenchResult] = list(_g_results)
 
     print_summary(all_results)
 
@@ -2380,6 +2494,9 @@ async def main() -> None:
             "pools": list(groups.keys()),
         })
         print(f"\n  JSON saved → {out_path.name}")
+        if _g_partial_path and _g_partial_path.exists():
+            _g_partial_path.unlink()
+            print(f"  Partial file removed")
 
 
 if __name__ == "__main__":

@@ -300,7 +300,7 @@ def print_ranking(records: list[dict], role: str, w: dict) -> None:
     # ── Destacados por criterio ───────────────────────────────────────────────
     print(f"\n  Destacados:")
     best_cost  = min(records, key=lambda r: -r["cost"])
-    best_noex  = max((r for r in records if r["jn_score"] is not None), key=lambda r: (r["jn_score"], -r["lat_avg"] or 0))
+    best_noex  = max((r for r in records if r["jn_score"] is not None), key=lambda r: (r["jn_score"], -(r["lat_avg"] or 0)))
     best_lat   = min((r for r in records if r["lat_avg"] is not None), key=lambda r: r["lat_avg"])
     best_ttft  = min((r for r in records if r["ttft_avg"] is not None), key=lambda r: r["ttft_avg"])
     print(f"  + Mejor costo:      #{records.index(best_cost)+1:>2} {best_cost['name']} ({best_cost['provider']})")
