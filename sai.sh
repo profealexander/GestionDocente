@@ -2,7 +2,7 @@
 # SchoolAI service manager
 # Uso: ./sai.sh [start|stop|restart|status|logs [servicio]|backup]
 
-SERVICES="schoolai-api schoolai-bot schoolai-bot-jornada schoolai-bot-agente"
+SERVICES="schoolaiapi schoolai-bot schoolai-bot-jornada schoolai-bot-agente"
 CMD="${1:-status}"
 SVC="${2:-}"
 
@@ -56,7 +56,7 @@ case "$CMD" in
   logs)
     TARGET="${SVC:-api}"
     case "$TARGET" in
-      api)     tail -f /tmp/schoolai-api.log ;;
+      api)     tail -f /tmp/schoolaiapi.log ;;
       bot)     tail -f /tmp/schoolai-bot.log ;;
       jornada) tail -f /tmp/schoolai-bot-jornada.log ;;
       agente)  tail -f /tmp/schoolai-bot-agente.log ;;

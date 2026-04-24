@@ -25,7 +25,7 @@ uv run alembic revision --autogenerate -m "description"
 ./sai.sh [start|stop|restart|enable|disable|status|backup|logs [api|bot|jornada|agente]]
 
 # Entry points (direct run without systemd)
-uv run schoolai-api
+uv run schoolaiapi
 uv run schoolai-bot
 uv run schoolai-bot-jornada
 uv run schoolai-bot-agente
@@ -38,7 +38,7 @@ uv run schoolai-bot-agente
 
 | Process | Entry point | Purpose |
 |---|---|---|
-| `schoolai-api` | `schoolai.api.runner:run` | FastAPI REST API (uvicorn) |
+| `schoolaiapi` | `schoolai.api.runner:run` | FastAPI REST API (uvicorn) |
 | `schoolai-bot` | `schoolai.bot.main:run` | Telegram bot "Libre" (teachers) |
 | `schoolai-bot-jornada` | `schoolai.bot.main_dev:run_dev` | Telegram bot "Jornada" (school-day view) |
 | `schoolai-bot-agente` | `schoolai.bot.main_agente:run_agente` | Telegram bot "Agente" (LLM orchestrator) |
