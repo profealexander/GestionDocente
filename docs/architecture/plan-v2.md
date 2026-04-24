@@ -249,16 +249,20 @@ WebSocket (`ws://localhost:8001/gateway/ws/{user_id}`), CLI con rich, Webhooks T
 ## Cómo Arrancar v2
 
 ```bash
-cd ~/gestiondocente
+# Todo en uno (desde cualquier ruta)
+gestion start        # API + Gateway + Bots Telegram
 
-# Backend
-uv run schoolai-gateway          # Gateway en puerto 8001
+# Servicios individuales en primer plano
+gestion gateway      # Gateway en puerto 8001
+gestion api          # FastAPI en puerto 8000
+gestion cli          # CLI interactiva en terminal
 
-# Frontend — repo separado
-cd ~/schoolaiUI && npm run dev   # SvelteKit en puerto 5173
+# Frontend (dentro del monorepo)
+cd ~/gestiondocente/ui && npm run dev   # SvelteKit en puerto 5173
 
-# CLI
-uv run schoolai-cli              # Chat interactivo en terminal
+# Estado y logs
+gestion status
+gestion logs gateway
 ```
 
 **Variables de entorno relevantes:**
