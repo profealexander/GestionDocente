@@ -9,7 +9,7 @@ from loguru import logger
 
 from schoolai.config import settings
 from schoolai.gateway.schemas import TaskSpec
-from schoolai.skills.llm.client import get_client, parse_model
+from schoolai.skills.llm.client import call_with_fallback
 
 from .schemas import ActionResult, AgentContext
 
@@ -41,19 +41,17 @@ async def synthesize(
 
     messages = list(ctx.history) + [{"role": "user", "content": user_content}]
 
-    provider, model = parse_model(settings.llm_router)
-    client = get_client(provider)
-
     try:
-        response = client.chat.completions.create(
-            model=model,
+        response = call_with_fallback(
+            primary=settings.llm_synthesizer,
+            fallbacks=settings.llm_synthesizer_fallback,
             messages=[{"role": "system", "content": _SYSTEM}] + messages,
             temperature=0.3,
+            max_tokens=512,
         )
         return response.choices[0].message.content or ""
     except Exception as e:  # pylint: disable=broad-exception-caught
         logger.error(f"[synthesizer] LLM error: {e}")
-        # Fallback: return raw tool output if available
         if results:
             return results[0].output
         return "No pude procesar tu solicitud."

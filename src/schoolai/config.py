@@ -32,17 +32,32 @@ class Settings(BaseSettings):
     telegram_allowed_users: str = ""  # comma-separated user IDs
 
     # ── LLM model per skill (format: "provider/model") ────────────────────────
-    # Scores: benchmark 2026-04-21 (JSON-full 35% · JSON-noex 35% · latencia 30%)
-    llm_extractor: str = "mistral/mistral-medium-latest"       # #1 score 95.3% — 100%/100%, 1992ms
-    llm_chat: str = "groq/compound-beta"                       # chat general — búsqueda web nativa, 70K TPM
-    llm_chat_fallback: str = "mistral/mistral-small-latest"    # #12 score 83.4% — 100%/60%, 1120ms
+    # Scores: benchmark 2026-04-23 (classifier 40% · planner 35% · synthesizer 25%)
+    llm_extractor: str = "mistral/mistral-medium-latest"       # legado v1 — mismo que llm_router
+    llm_chat: str = "groq/compound-beta"                       # chat general — búsqueda web nativa
+    llm_chat_fallback: str = "mistral/mistral-small-latest"    # fallback chat
     llm_vision: str = "openrouter/nvidia/nemotron-nano-12b-v2-vl:free"  # visión — 128K ctx, free
     llm_vision_fallback: str = "openrouter/google/gemma-4-31b-it:free"  # visión fallback — free
-    llm_router: str = "mistral/mistral-medium-latest"          # mismo que extractor — #1 score 95.3%
-    llm_router_fallback: str = "groq/openai/gpt-oss-120b,deepseek/deepseek-chat"  # #18 77.6% → #6 88.6%
-    llm_orchestrator: str = "moonshotai/kimi-k2-instruct"      # orquestador multi-tool — 100%/100%
-    llm_orchestrator_fallback: str = "deepseek/deepseek-chat,deepseek/deepseek-reasoner,groq/openai/gpt-oss-120b"  # #6 88.6% → #22 73.6% → #18 77.6%
-    llm_context_agent: str = "mistral/mistral-small-latest"    # context skill agent — #12 83.4%, 1120ms
+
+    # CLASSIFIER — gateway/router.py: clasifica intent en JSON (domain, intent, entities)
+    # #4 classifier 86.4% — 100% noex, sin límite RPM, estable
+    llm_router: str = "mistral/mistral-medium-latest"
+    # #3 classifier 87.1% — 100% noex, paid
+    llm_router_fallback: str = "deepseek/deepseek-reasoner"
+
+    # SYNTHESIZER — agent/synthesizer.py: redacta respuesta final en español
+    # #2 synthesizer 94.4% — 694ms TTFT, español 100%, Groq free (20 RPM)
+    llm_synthesizer: str = "groq/meta-llama/llama-4-scout-17b-16e-instruct"
+    # free (ollama cloud) → paid (mistral small)
+    llm_synthesizer_fallback: str = "ollama/gemini-3-flash-preview:cloud,mistral/mistral-small-latest"
+
+    # PLANNER — agent/planner.py: genera plan JSON [{tool, params}]
+    # #1 planner 94.6% — 437ms, JSON perfecto, Groq free (20 RPM, cuota distinta a synthesizer)
+    llm_orchestrator: str = "groq/openai/gpt-oss-120b"
+    # free (ollama cloud) → paid (deepseek reasoner)
+    llm_orchestrator_fallback: str = "ollama/gemini-3-flash-preview:cloud,deepseek/deepseek-reasoner"
+
+    llm_context_agent: str = "mistral/mistral-small-latest"    # context skill agent
 
     # ── API keys ───────────────────────────────────────────────────────────────
     groq_api_key: str = ""  # Groq — Whisper + fallback LLM
