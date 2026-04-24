@@ -1,6 +1,6 @@
 # SchoolAI — Backlog
 
-**Última actualización:** 2026-04-23  
+**Última actualización:** 2026-04-24  
 **Rama activa:** `refactor/v2-hub-spoke` en `/home/edwin8600/schoolai2/`
 
 ---
@@ -19,19 +19,20 @@
 ## Deuda técnica
 
 ### Urgente
-- [ ] **`bot/jornada/flow.py:390`** — `_on_absent_day_reason` no aplica fallback a viernes en fin de semana (bug audit 2026-04-24)
-- [ ] **`bot/permissions.py`** — nunca retorna `"none"` para usuarios sin perfil en DB (audit 2026-04-24)
-- [ ] **`skills/homework/repository.py:286`** — race condition en `MAX(sequence_num)` sin lock (audit 2026-04-24)
+_(ninguno — todos resueltos en audit 2026-04-24)_
 
 ### Menor
 - [ ] Tests básicos — fuzzy matcher, dispatcher, gateway router
 - [ ] `_pending_pago` en RAM → migrar a Redis (StateStore sin `use_redis=True`)
-- [ ] Migrar ~40 archivos de `async_session()` directo → `get_db_session()` (audit 2026-04-24)
 
 ### Resuelto ✅
 - ~~Persistencia Jornada~~ — `use_redis=True` implementado en `bot/state.py`
 - ~~Batch inserts asistencia~~ — ya usa `insert(Attendance), [list_of_dicts]`
-- ~~Bloqueo fin de semana~~ — hay fallback a viernes (pendiente el bug en `_on_absent_day_reason`)
+- ~~Bloqueo fin de semana~~ — hay fallback a viernes
+- ~~`_on_absent_day_reason` sin fallback de fin de semana~~ — corregido (2026-04-24)
+- ~~`permissions.py` retorna `"teacher"` para usuarios sin perfil~~ — corregido (2026-04-24)
+- ~~Race condition `MAX(sequence_num)` en homework~~ — `pg_advisory_xact_lock` (2026-04-24)
+- ~~32 archivos con `async_session()` sin auto-rollback~~ — migrados a `get_db_session()` (2026-04-24)
 
 ---
 
