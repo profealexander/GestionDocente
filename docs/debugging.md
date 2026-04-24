@@ -1,25 +1,26 @@
 # Guía de Debugging — SchoolAI v2
 
-Referencia rápida para probar y depurar el stack v2 en `schoolai2/`.
+Referencia rápida para probar y depurar el stack v2.
 
 ---
 
 ## 1. Arrancar servicios
 
 ```bash
-cd ~/schoolai2
+# Todo en uno (API + Gateway + Bots Telegram)
+gestion start
 
-# Base de datos (compartida con v1, DB separada)
+# Servicios individuales en primer plano
+gestion api        # FastAPI REST (puerto 8000)
+gestion gateway    # Gateway v2  (puerto 8001)
+gestion cli        # CLI interactiva
+
+# Estado y logs
+gestion status
+gestion logs api        # api | bot | jornada | agente | gateway
+
+# Base de datos
 docker ps | grep schoolai-db   # verificar que corre
-
-# Gateway v2 (puerto 8001)
-uv run schoolai-gateway
-
-# Frontend (puerto 5173)
-cd ui && npm run dev
-
-# CLI interactivo
-uv run schoolai-cli
 ```
 
 ---
@@ -60,7 +61,7 @@ wscat -c ws://localhost:8001/gateway/ws/5494482378
 ## 4. Probar CLI
 
 ```bash
-uv run schoolai-cli
+gestion cli
 # Escribir: Faltas de hoy 3BT
 # Escribir: Tarea de matemáticas para el viernes 2EGB
 # Escribir: salir
@@ -80,10 +81,24 @@ Mensaje → gateway/router.py (LLM #1: clasificación)
         → response
 ```
 
-### Logs relevantes (nivel DEBUG)
+## 10. Depuración paso a paso (pudb)
+
+```bash
+gestion debug          # menú interactivo — elige api | gateway | bot | jornada
+gestion debug gateway  # directo sin menú
+```
+
+Controles dentro de pudb:
+- `n` next (sin entrar a funciones) · `s` step into · `r` salir de función
+- `c` continuar · `q` salir · `!` consola Python con contexto actual
+- Panel derecho → variables en tiempo real. `Tab` cambia entre paneles.
+
+---
+
+## 5b. Logs relevantes (nivel DEBUG)
 ```bash
 # Activar logs DEBUG
-LOG_LEVEL=DEBUG uv run schoolai-gateway
+LOG_LEVEL=DEBUG gestion gateway
 
 # Qué buscar:
 [gateway] TaskSpec — domain=... intent=... entities=...
@@ -138,8 +153,8 @@ LOG_LEVEL=DEBUG uv run schoolai-gateway
 ## 8. Consultas útiles a la DB
 
 ```bash
-# Conectar a schoolai_v2
-docker exec -it schoolai-db psql -U schoolai -d schoolai_v2
+# Conectar a la DB
+docker exec -it schoolai-db psql -U schoolai -d schoolai
 
 # Ver cursos disponibles
 SELECT abbreviation, name FROM grades ORDER BY name;
@@ -159,12 +174,12 @@ WHERE a.date = CURRENT_DATE;
 
 ---
 
-## 9. Variables de entorno clave (schoolai2/.env)
+## 9. Variables de entorno clave (.env)
 
 ```
-DATABASE_URL=postgresql+asyncpg://schoolai:1234@localhost:5432/schoolai_v2
+DATABASE_URL=postgresql+asyncpg://schoolai:1234@localhost:5432/schoolai
 GATEWAY_ENABLED=false          # true → bots Telegram también usan gateway
-GOOGLE_API_KEY=...             # llm_router (gemini-flash-lite)
+MISTRAL_API_KEY=...            # llm_router (mistral-medium-latest)
 GROQ_API_KEY=...               # llm_planner (gpt-oss-120b) + llm_synthesizer (llama-4-scout) + voz
 TELEGRAM_ALLOWED_USERS=5494482378
 ```

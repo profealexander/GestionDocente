@@ -21,18 +21,18 @@ uv run pytest tests/path/to/test_file.py::test_name
 uv run alembic upgrade head
 uv run alembic revision --autogenerate -m "description"
 
-# Services (systemd user units via wrapper)
+# Comando global (disponible desde cualquier ruta)
+gestion                      # menú principal
+gestion start                # arrancar todo (API + Gateway + Bots)
+gestion stop / status        # detener / estado
+gestion api                  # FastAPI REST — port 8000
+gestion gateway              # Gateway v2 — port 8001
+gestion cli                  # CLI interactiva
+gestion logs [api|bot|jornada|agente|gateway]
+gestion debug                # depuración paso a paso con pudb (menú interactivo)
+
+# Gestión systemd (bajo nivel)
 ./sai.sh [start|stop|restart|enable|disable|status|backup|logs [api|bot|jornada|agente]]
-
-# Entry points (direct run without systemd)
-uv run schoolaiapi           # FastAPI REST — port 8000
-uv run schoolai-gateway      # Gateway v2 — port 8001
-uv run schoolai-bot          # Telegram bot Libre
-uv run schoolai-bot-jornada  # Telegram bot Jornada
-
-# Interactive CLI (requires gateway running)
-uv run schoolai-cli
-uv run schoolai-cli --user <telegram_id>
 ```
 
 

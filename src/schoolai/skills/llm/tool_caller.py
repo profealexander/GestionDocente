@@ -42,13 +42,8 @@ async def call_extractor_tools(
     from schoolai.config import settings
     from schoolai.skills.llm import get_client, parse_model
 
-    provider, model = parse_model(settings.llm_extractor)
-
-    try:
-        client = get_client(provider)
-    except ValueError as e:
-        logger.warning(f"[tool_caller] cliente no disponible: {e}")
-        return None
+    fallback_str = getattr(settings, "llm_extractor_fallback", "")
+    candidates = [settings.llm_extractor] + [m.strip() for m in fallback_str.split(",") if m.strip()]
 
     native_tools = [t.to_tool_dict() for t in tools]
     # Envuelve el texto del usuario para prevenir prompt injection.
@@ -58,27 +53,38 @@ async def call_extractor_tools(
         {"role": "user", "content": safe_text},
     ]
 
-    def _call():
-        return client.chat.completions.create(
-            model=model,
-            messages=messages,
-            tools=native_tools,
-            tool_choice="auto",
-            temperature=0,
-        )
-
     response = None
-    for attempt in range(2):  # 0 = first try, 1 = retry
+    for candidate in candidates:
+        provider, model = parse_model(candidate)
         try:
-            response = await asyncio.to_thread(_call)
+            client = get_client(provider)
+        except ValueError as e:
+            logger.warning(f"[tool_caller] cliente no disponible ({candidate}): {e}")
+            continue
+
+        def _call(c=client, m=model):
+            return c.chat.completions.create(
+                model=m,
+                messages=messages,
+                tools=native_tools,
+                tool_choice="auto",
+                temperature=0,
+            )
+
+        for attempt in range(2):
+            try:
+                response = await asyncio.to_thread(_call)
+                break
+            except Exception as e:
+                if attempt == 0 and _is_retryable(e):
+                    logger.warning(f"[tool_caller] error transitorio ({candidate}, attempt 1/2): {e} — reintentando en {_RETRY_DELAY}s")
+                    await asyncio.sleep(_RETRY_DELAY)
+                else:
+                    logger.warning(f"[tool_caller] error ({candidate}, attempt {attempt+1}/2): {e} — probando fallback")
+                    break
+
+        if response is not None:
             break
-        except Exception as e:
-            if attempt == 0 and _is_retryable(e):
-                logger.warning(f"[tool_caller] error transitorio (attempt 1/2): {e} — reintentando en {_RETRY_DELAY}s")
-                await asyncio.sleep(_RETRY_DELAY)
-            else:
-                logger.warning(f"[tool_caller] error en llamada (attempt {attempt+1}/2): {e}")
-                return None
 
     if response is None:
         return None

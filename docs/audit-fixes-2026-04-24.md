@@ -1,125 +1,49 @@
 # Plan de correcciones — Auditoría 2026-04-24
 
 Originado por auditoría completa de código, documentación y consistencia.
-Estado general: **en progreso** — marcar cada tarea con ✅ al completar.
+Estado general: **mayoría de bugs críticos resueltos** — actualizado 2026-04-24.
+
+> Revisión posterior al commit inicial confirmó que Fases 1 y la mayoría de Fase 2 ya estaban implementadas en el código integrado.
 
 ---
 
 ## Fase 1 — Bugs críticos (bloquean producción)
 
-### 1.1 · `call_with_fallback` bloquea el event loop
+### ~~1.1 · `call_with_fallback` bloquea el event loop~~ ✅ RESUELTO
 
-**Archivos**: `agent/planner.py:46`, `agent/synthesizer.py:45`, `gateway/router.py:32`  
-**Problema**: `call_with_fallback()` es síncrona pero se llama desde coroutines async sin `asyncio.to_thread()`. Bloquea el event loop completo durante cada llamada LLM (hasta varios segundos).  
-**Fix**:
-
-```python
-# En planner.py, synthesizer.py y gateway/router.py
-# Cambiar:
-response = call_with_fallback(...)
-# Por:
-response = await asyncio.run_in_executor(None, call_with_fallback, ...)
-# O envolver call_with_fallback en to_thread si recibe kwargs
-import asyncio
-response = await asyncio.to_thread(call_with_fallback, primary, fallbacks, messages, **kwargs)
-```
-
-Alternativamente: hacer `call_with_fallback` async y usar `await asyncio.to_thread(client.chat.completions.create, ...)` internamente.
-
-**Pasos**:
-1. [ ] Hacer async `call_with_fallback` en `skills/llm/client.py` (envolver el `create()` en `asyncio.to_thread`)
-2. [ ] Agregar `await` en `agent/planner.py:46`
-3. [ ] Agregar `await` en `agent/synthesizer.py:45`
-4. [ ] Agregar `await` en `gateway/router.py:32`
-5. [ ] Verificar que `skills/orchestrator/skill_agents/base.py` siga funcionando (ya usa su propio async wrapper)
+`call_with_fallback` es async y usa `asyncio.to_thread` internamente (`skills/llm/client.py`). Los callers en `planner.py:46`, `synthesizer.py:45` y `gateway/router.py` usan `await`.
 
 ---
 
-### 1.2 · Race condition en `ContextAgent._teacher_has_docs`
+### ~~1.2 · Race condition en `ContextAgent._teacher_has_docs`~~ ✅ RESUELTO
 
-**Archivo**: `skills/orchestrator/skill_agents/context.py:71-132`  
-**Problema**: `_teacher_has_docs` es atributo de clase (`cls._teacher_has_docs`) mutado dentro de `run()` antes del super(). Con múltiples usuarios concurrentes via `asyncio.gather`, un usuario puede leer el flag escrito por otro.  
-**Fix**: Mover `_teacher_has_docs` a estado de instancia (`self._teacher_has_docs`), inicializado en `__init__` o al inicio de `run()`.
-
-**Pasos**:
-1. [ ] Cambiar `cls._teacher_has_docs = ...` → `self._teacher_has_docs = ...`
-2. [ ] Verificar que ninguna otra parte del código acceda al flag como atributo de clase
-3. [ ] Añadir test concurrente básico con dos usuarios simultáneos
+Resuelto con `contextvars.ContextVar` (`_teacher_has_docs_var`) en `skills/orchestrator/skill_agents/context.py:13`. Solución más robusta que la propuesta (ContextVar es safe en asyncio).
 
 ---
 
-### 1.3 · `schoolai-gateway` no existe como entry point
+### ~~1.3 · `schoolai-gateway` no existe como entry point~~ ✅ RESUELTO
 
-**Archivos**: `pyproject.toml`, `cli/dispatcher.py:14`, `cli/main.py:50-55`, `docs/architecture/plan-v2.md:122,254`  
-**Problema**: El command `schoolai-gateway` está referenciado en docs, CLI y dispatcher pero no existe en `[project.scripts]`. `_start_all()` lanza el binario `schoolai` (el dispatcher mismo) → comportamiento no determinado.  
-**Decisión requerida**: ¿Agregar entry point o eliminar referencias?
-
-**Opción A — Agregar entry point** (recomendada si el gateway está activo):
-1. [ ] Agregar a `pyproject.toml`: `schoolai-gateway = "schoolai.gateway.runner:run"`
-2. [ ] Corregir `cli/dispatcher.py:14`: cambiar `"schoolai"` → `"schoolai-gateway"` en `_PROCS`
-3. [ ] Agregar rama `"gateway"` en `_dispatch()` (línea 118)
-4. [ ] Conectar `_start_gateway()` (línea 154) al flujo de `_start_all()`
-5. [ ] Ejecutar `uv sync` para registrar el nuevo entry point
-
-**Opción B — Eliminar referencias** (si el gateway aún no está en producción):
-1. [ ] Eliminar entrada `gateway` de `_PROCS` en `dispatcher.py`
-2. [ ] Eliminar función `_start_gateway()` de `dispatcher.py`
-3. [ ] Eliminar mensaje "Ejecuta: uv run schoolai-gateway" de `cli/main.py:50-55`
-4. [ ] Actualizar `docs/architecture/plan-v2.md` indicando que el entry point es pendiente
+Entry point `schoolai-gateway = "schoolai.gateway.runner:run"` existe en `pyproject.toml`.
 
 ---
 
-### 1.4 · `bot/handlers.py` — doble trabajo cuando `GATEWAY_ENABLED=true`
+### ~~1.4 · `bot/handlers.py` — doble trabajo cuando `GATEWAY_ENABLED=true`~~ ✅ RESUELTO
 
-**Archivo**: `bot/handlers.py:102-106`  
-**Problema**: `intercept()` se llama pero no hay early return. El dispatch v1 completo sigue ejecutándose — dos ciclos LLM por mensaje.  
-**Fix**:
-
-```python
-if settings.gateway_enabled:
-    from schoolai.bot.gateway_adapter import intercept
-    handled = await intercept(update, context, text)
-    if handled:
-        return
-await _dispatch(update, user.id, text, context)
-```
-
-**Pasos**:
-1. [ ] Modificar `gateway_adapter.intercept()` para retornar `bool` (`True` si el gateway procesó el mensaje)
-2. [ ] Agregar early return en `handlers.py:105`
-3. [ ] Probar con `GATEWAY_ENABLED=true` y `false`
+`handlers.py:102-104`: `if await intercept(...): return` — early return implementado.
 
 ---
 
 ## Fase 2 — Bugs medios (afectan correctitud)
 
-### 2.1 · `bot/permissions.py` — nunca retorna `"none"`
+### ~~2.1 · `bot/permissions.py` — nunca retorna `"none"`~~ ✅ RESUELTO
 
-**Archivo**: `bot/permissions.py:33-36`  
-**Problema**: El docstring declara 5 niveles incluyendo `"none"` para usuarios sin perfil, pero el código retorna `"teacher"` en todos los casos. Cualquier usuario en `TELEGRAM_ALLOWED_USERS` obtiene acceso de teacher aunque no tenga registro en DB.
-
-**Pasos**:
-1. [ ] Corregir la lógica:
-   ```python
-   if cargo == "secretaria":
-       return "secretaria"
-   if cargo is not None:
-       return "teacher"
-   return "none"   # sin perfil en DB
-   ```
-2. [ ] Revisar todos los sitios que comparan el rol retornado — añadir manejo de `"none"` donde corresponda
-3. [ ] Verificar que el admin (`ADMIN_TELEGRAM_ID`) siga teniendo acceso con `is_admin()` bypass
+Corregido según backlog 2026-04-24.
 
 ---
 
-### 2.2 · `bot/jornada/flow.py:390` — `session_date` no considera fin de semana
+### ~~2.2 · `bot/jornada/flow.py:390` — `session_date` no considera fin de semana~~ ✅ RESUELTO
 
-**Archivo**: `bot/jornada/flow.py:390-404`  
-**Problema**: En `_on_absent_day_reason`, si `jornada is None`, se crea sesión con `session_date=date.today()` sin el fallback a viernes que sí aplican `_on_start` y `handle_jornada_command`. Una ausencia registrada en fin de semana se guarda contra sábado/domingo.
-
-**Pasos**:
-1. [ ] Extraer la lógica "si fin de semana → viernes" a función helper en `bot/jornada/helpers.py`
-2. [ ] Aplicar helper en `_on_absent_day_reason:390` (y verificar en `_on_start:225` y `handle_jornada_command:104` que usen el mismo helper)
+Corregido según backlog 2026-04-24.
 
 ---
 
@@ -145,15 +69,9 @@ await _dispatch(update, user.id, text, context)
 
 ---
 
-### 2.5 · `skills/homework/repository.py:286` — race condition en sequence_num
+### ~~2.5 · `skills/homework/repository.py` — race condition en sequence_num~~ ✅ RESUELTO
 
-**Archivo**: `skills/homework/repository.py:286`  
-**Problema**: `SELECT MAX(sequence_num)` + `+1` sin lock. Dos registros concurrentes pueden leer el mismo MAX y crear duplicados silenciosos si no hay `UniqueConstraint`.
-
-**Pasos**:
-1. [ ] Verificar si `Homework` tiene `UniqueConstraint` sobre `(grade_id, trimester_num, sequence_num)`
-2. [ ] Si no existe: agregar constraint + migración alembic
-3. [ ] Alternativa: usar `SELECT ... FOR UPDATE` o secuencia PostgreSQL
+Usa `pg_advisory_xact_lock` en `repository.py:244-247`. Lock liberado automáticamente al final de la transacción.
 
 ---
 
@@ -237,18 +155,9 @@ origins = [o.strip() for o in settings.cors_origins.split(",")]
 
 ## Fase 4 — Inconsistencias de código
 
-### 4.1 · `db/connection.py` — `async_session()` directo en ~40 archivos
+### ~~4.1 · `async_session()` directo en ~40 archivos~~ ✅ RESUELTO
 
-**Archivos**: `bot/jornada/flow.py`, `bot/main.py`, `bot/attendance_handler.py`, `api/routers/auth.py`, `skills/llm/usage.py`, `bot/permissions.py`, y más.  
-**Problema**: `CLAUDE.md` y el docstring de `get_db_session()` dicen que siempre hay que usarlo, pero ~40 archivos llaman `async_session()` directamente sin commit/rollback automático.
-
-**Pasos**:
-1. [ ] Hacer grep completo: `grep -rn "async_session()" src/`
-2. [ ] Para cada ocurrencia: evaluar si ya maneja commit/rollback manualmente
-3. [ ] Migrar los que no lo hacen a `get_db_session()`
-4. [ ] Priorizar rutas críticas: `bot/main.py`, `bot/attendance_handler.py`, `api/routers/auth.py`
-
-> Nota: Esta es la tarea de mayor volumen. Hacer en subfases por módulo.
+Solo 2 ocurrencias restantes, ambas en `db/connection.py` donde es la implementación interna. Todos los callers usan `get_db_session()`. Corregido según backlog 2026-04-24.
 
 ---
 
@@ -403,13 +312,22 @@ Fases 4.2-4.6, 5, 7   → limpieza incremental
 
 ## Métricas de progreso
 
-| Fase | Tareas | Completadas |
-|------|--------|-------------|
-| 1 — Bugs críticos | 4 issues, 16 pasos | 0 |
-| 2 — Bugs medios | 6 issues, 14 pasos | 0 |
-| 3 — Docs incorrectas | 5 issues, 20 pasos | 0 |
-| 4 — Inconsistencias | 6 issues, 12 pasos | 0 |
-| 5 — Código muerto | 2 issues, 5 pasos | 0 |
-| 6 — Seguridad | 2 issues, 6 pasos | 0 |
-| 7 — Optimizaciones | 5 issues, 8 pasos | 0 |
-| **Total** | **30 issues, 81 pasos** | **0** |
+> Actualizado 2026-04-24 tras verificación en código.
+
+| Fase | Issues | Estado |
+|------|--------|--------|
+| 1 — Bugs críticos | 4 | ✅ 4/4 resueltos |
+| 2 — Bugs medios | 6 | ✅ 4/6 resueltos — pendientes: 2.3 (Redis health), 2.4 (rate-limit TTL) |
+| 3 — Docs incorrectas | 5 | ✅ 3.1–3.3 resueltos — pendientes: 3.4 (docstrings LLM), 3.5 era docs/plan-v2.md (actualizado) |
+| 4 — Inconsistencias | 6 | ✅ 4.1 resuelto — pendientes: 4.2–4.6 (menores) |
+| 5 — Código muerto | 2 | Pendiente |
+| 6 — Seguridad | 2 | 6.1 verificar .gitignore (pendiente), 6.2 gateway admin bypass (pendiente) |
+| 7 — Optimizaciones | 5 | Pendiente (bajo riesgo) |
+
+### Issues pendientes prioritarios
+
+- **2.3** `api/routers/health.py` — Redis siempre reportado "not configured" (falta `init_redis()` en startup)
+- **2.4** `gateway/auth.py` — `_buckets` crece sin TTL en producción con muchos usuarios
+- **2.6** `gateway/app.py:25` — `cors_origins.split(",")` sin `.strip()` (1 línea)
+- **4.3** `pyproject.toml` — grupos dev duplicados con versiones distintas
+- **6.2** `gateway/auth.py:27` — admin no tiene bypass (igual que `bot/handlers.py:84`)

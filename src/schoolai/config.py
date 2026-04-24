@@ -33,7 +33,10 @@ class Settings(BaseSettings):
 
     # ── LLM model per skill (format: "provider/model") ────────────────────────
     # Scores: benchmark 2026-04-23 (classifier 40% · planner 35% · synthesizer 25%)
-    llm_extractor: str = "mistral/mistral-medium-latest"       # legado v1 — mismo que llm_router
+    # EXTRACTOR — tool_caller.py: tool calling fallback cuando regex falla (attendance/hw/cuotas/query)
+    # #1 global 94.9% — JSON 100%, 437ms, Groq free; fallback: mistral-medium (noex 100%)
+    llm_extractor: str = "groq/openai/gpt-oss-120b"
+    llm_extractor_fallback: str = "mistral/mistral-medium-latest"
     llm_chat: str = "groq/compound-beta"                       # chat general — búsqueda web nativa
     llm_chat_fallback: str = "mistral/mistral-small-latest"    # fallback chat
     llm_vision: str = "openrouter/nvidia/nemotron-nano-12b-v2-vl:free"  # visión — 128K ctx, free

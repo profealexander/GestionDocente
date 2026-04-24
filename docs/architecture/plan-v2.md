@@ -1,8 +1,8 @@
 # SchoolAI v2 — Arquitectura Hub-and-Spoke
 
-**Estado:** Implementado (Fases 1–4 completas)
-**Rama:** `refactor/v2-hub-spoke`
-**Directorio:** `/home/edwin8600/schoolai2/`
+**Estado:** Implementado (Fases 1–4 completas, integrado en main)
+**Rama:** `main`
+**Directorio:** `/home/edwin8600/gestiondocente/`
 
 ---
 
@@ -249,13 +249,13 @@ WebSocket (`ws://localhost:8001/gateway/ws/{user_id}`), CLI con rich, Webhooks T
 ## Cómo Arrancar v2
 
 ```bash
-cd ~/schoolai2
+cd ~/gestiondocente
 
 # Backend
 uv run schoolai-gateway          # Gateway en puerto 8001
 
-# Frontend
-cd ui && npm run dev             # SvelteKit en puerto 5173
+# Frontend — repo separado
+cd ~/schoolaiUI && npm run dev   # SvelteKit en puerto 5173
 
 # CLI
 uv run schoolai-cli              # Chat interactivo en terminal
@@ -264,7 +264,7 @@ uv run schoolai-cli              # Chat interactivo en terminal
 **Variables de entorno relevantes:**
 ```
 GATEWAY_ENABLED=false    # true → bots Telegram también normalizan via gateway
-DATABASE_URL=postgresql+asyncpg://schoolai:1234@localhost:5432/schoolai_v2
+DATABASE_URL=postgresql+asyncpg://schoolai:1234@localhost:5432/schoolai
 VITE_GATEWAY_URL=http://localhost:8001
 VITE_GATEWAY_WS=ws://localhost:8001
 ```
