@@ -123,9 +123,9 @@ class EditFlow(Generic[M]):
         **filter_kwargs: Any,
     ) -> None:
         """Called from skill: show specific entity or selection list."""
-        from schoolai.db.connection import async_session
+        from schoolai.db.connection import get_db_session
 
-        async with async_session() as session:
+        async with get_db_session() as session:
             if entity_id is not None:
                 entity = await session.get(self._model, entity_id)
                 if entity:
@@ -152,7 +152,7 @@ class EditFlow(Generic[M]):
         """Register all callbacks + text interceptor. Returns self."""
         from schoolai.bot.callback_router import callback_router
         from schoolai.bot.text_interceptors import text_interceptors
-        from schoolai.db.connection import async_session
+        from schoolai.db.connection import get_db_session
 
         prefix = self._prefix
         model = self._model
@@ -167,7 +167,7 @@ class EditFlow(Generic[M]):
         async def _pick(update, context) -> None:
             entity_id = int(update.callback_query.data.split(":")[1])
             await update.callback_query.answer()
-            async with async_session() as session:
+            async with get_db_session() as session:
                 entity = await session.get(model, entity_id)
             if not entity:
                 await update.callback_query.edit_message_text("No encontrado.")
@@ -187,7 +187,7 @@ class EditFlow(Generic[M]):
             fdef = fields.get(field_key)
             if not fdef:
                 return
-            async with async_session() as session:
+            async with get_db_session() as session:
                 entity = await session.get(model, entity_id)
             if not entity:
                 return
@@ -205,7 +205,7 @@ class EditFlow(Generic[M]):
             toggle = toggles.get(toggle_field)
             if not toggle:
                 return
-            async with async_session() as session:
+            async with get_db_session() as session:
                 entity = await session.get(model, entity_id)
                 if not entity:
                     await update.callback_query.edit_message_text("No encontrado.")
@@ -232,7 +232,7 @@ class EditFlow(Generic[M]):
             store.clear(user_id)
 
             if fdef.parse_fn:
-                async with async_session() as session:
+                async with get_db_session() as session:
                     result = await fdef.parse_fn(text_input, session)
                 if isinstance(result, str):
                     await update.message.reply_text(result, parse_mode=ParseMode.MARKDOWN)
@@ -241,7 +241,7 @@ class EditFlow(Generic[M]):
             else:
                 kwargs = {fdef.key: text_input}
 
-            async with async_session() as session:
+            async with get_db_session() as session:
                 entity = await update_fn(session, state["entity_id"], **kwargs)
 
             if entity:

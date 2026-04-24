@@ -11,11 +11,11 @@ async def search_context(
     """Busca en los documentos de contexto del docente (personales + institucionales)."""
     from sqlalchemy import select
 
-    from schoolai.db.connection import async_session
+    from schoolai.db.connection import get_db_session
     from schoolai.db.models.teacher import Teacher
     from schoolai.skills.context.repository import search_documents
 
-    async with async_session() as session:
+    async with get_db_session() as session:
         teacher = (
             await session.execute(select(Teacher).where(Teacher.telegram_id == telegram_id))
         ).scalar_one_or_none()
@@ -45,11 +45,11 @@ async def list_context_docs(
     """Lista los documentos de contexto disponibles para el docente."""
     from sqlalchemy import select
 
-    from schoolai.db.connection import async_session
+    from schoolai.db.connection import get_db_session
     from schoolai.db.models.teacher import Teacher
     from schoolai.skills.context.repository import list_documents
 
-    async with async_session() as session:
+    async with get_db_session() as session:
         teacher = (
             await session.execute(select(Teacher).where(Teacher.telegram_id == telegram_id))
         ).scalar_one_or_none()
@@ -88,7 +88,7 @@ async def save_web_page(telegram_id: int, url: str, hint: str | None = None) -> 
     """Descarga una página web o documento en línea y lo guarda como documento de contexto."""
     from sqlalchemy import select
 
-    from schoolai.db.connection import async_session
+    from schoolai.db.connection import get_db_session
     from schoolai.db.models.teacher import Teacher
     from schoolai.skills.context.categorizer import categorize
     from schoolai.skills.context.extractor import extract_from_url
@@ -104,7 +104,7 @@ async def save_web_page(telegram_id: int, url: str, hint: str | None = None) -> 
 
     meta = await categorize(content, hint=hint or url)
 
-    async with async_session() as session:
+    async with get_db_session() as session:
         teacher = (
             await session.execute(select(Teacher).where(Teacher.telegram_id == telegram_id))
         ).scalar_one_or_none()
@@ -133,11 +133,11 @@ async def delete_context_doc(telegram_id: int, doc_id: int) -> str:
     """Elimina un documento de contexto por ID."""
     from sqlalchemy import select
 
-    from schoolai.db.connection import async_session
+    from schoolai.db.connection import get_db_session
     from schoolai.db.models.teacher import Teacher
     from schoolai.skills.context.repository import delete_document
 
-    async with async_session() as session:
+    async with get_db_session() as session:
         teacher = (
             await session.execute(select(Teacher).where(Teacher.telegram_id == telegram_id))
         ).scalar_one_or_none()

@@ -23,7 +23,7 @@ from schoolai.bot.state import (
     get_position_flow,
     set_position_flow,
 )
-from schoolai.db.connection import async_session
+from schoolai.db.connection import get_db_session
 from schoolai.db.models.grade import Grade
 from schoolai.skills.db.position_service import (
     add_position,
@@ -94,7 +94,7 @@ async def start_position_flow(update: Update, context: ContextTypes.DEFAULT_TYPE
     user_id = update.effective_user.id
     clear_position_flow(user_id)
 
-    async with async_session() as session:
+    async with get_db_session() as session:
         docentes = await get_docentes(session)
 
     if not docentes:
@@ -183,7 +183,7 @@ async def handle_position_text(update: Update, context: ContextTypes.DEFAULT_TYP
 
 
 async def _on_teacher(query, user_id: int, person_id: int) -> None:
-    async with async_session() as session:
+    async with get_db_session() as session:
         teacher, positions = await get_teacher_with_positions(session, person_id=person_id)
 
     if not teacher:
@@ -232,7 +232,7 @@ async def _on_type(query, user_id: int, position_type: str) -> None:
     if position_type == "tutor":
         flow.step = "await_grade"
         set_position_flow(user_id, flow)
-        async with async_session() as session:
+        async with get_db_session() as session:
             grades = (
                 (await session.execute(select(Grade).order_by(Grade.sort_order))).scalars().all()
             )
@@ -258,7 +258,7 @@ async def _on_type(query, user_id: int, position_type: str) -> None:
 
     elif position_type == "jefe_area":
         flow.step = "await_area"
-        async with async_session() as session:
+        async with get_db_session() as session:
             areas = await get_areas(session)
         flow.areas_list = areas
         set_position_flow(user_id, flow)
@@ -360,7 +360,7 @@ async def _on_confirm(query, user_id: int) -> None:
         await query.edit_message_text("Sesión expirada. Usa /db para empezar.")
         return
 
-    async with async_session() as session:
+    async with get_db_session() as session:
         await add_position(
             session,
             teacher_id=flow.teacher_id,
@@ -391,7 +391,7 @@ async def _on_del_prompt(query, user_id: int, position_id: int) -> None:
     if not flow:
         return
 
-    async with async_session() as session:
+    async with get_db_session() as session:
         _, positions = await get_teacher_with_positions(session, teacher_id=flow.teacher_id)
 
     pos = next((p for p in positions if p.id == position_id), None)
@@ -421,7 +421,7 @@ async def _on_confirm_del(query, user_id: int, position_id: int) -> None:
     if not flow:
         return
 
-    async with async_session() as session:
+    async with get_db_session() as session:
         await deactivate_position(session, position_id)
         _, positions = await get_teacher_with_positions(session, teacher_id=flow.teacher_id)
 
@@ -441,7 +441,7 @@ async def _on_back(query, user_id: int) -> None:
     flow.grade_id = flow.grade_name = flow.subnivel = flow.area = flow.detail = None
     set_position_flow(user_id, flow)
 
-    async with async_session() as session:
+    async with get_db_session() as session:
         _, positions = await get_teacher_with_positions(session, teacher_id=flow.teacher_id)
 
     await _show_positions(query.edit_message_text, flow.teacher_name, positions)

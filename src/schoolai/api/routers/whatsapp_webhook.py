@@ -24,7 +24,7 @@ from fastapi import APIRouter, Request
 from loguru import logger
 from sqlalchemy import select
 
-from schoolai.db.connection import async_session
+from schoolai.db.connection import get_db_session
 from schoolai.db.models.teacher import Teacher
 
 router = APIRouter(prefix="/webhook", tags=["Webhook"])
@@ -92,7 +92,7 @@ async def whatsapp_webhook(request: Request) -> dict:
         return {"status": "ignored"}
 
     # Buscar docente por número de WhatsApp
-    async with async_session() as session:
+    async with get_db_session() as session:
         teacher = (
             await session.execute(
                 select(Teacher).where(

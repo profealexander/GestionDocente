@@ -23,7 +23,7 @@ from schoolai.bot.state import (
     get_schedule_flow,
     set_schedule_flow,
 )
-from schoolai.db.connection import async_session
+from schoolai.db.connection import get_db_session
 from schoolai.skills.db.schedule_parser import parse_schedule_text
 from schoolai.skills.db.schedule_service import (
     get_docentes,
@@ -42,7 +42,7 @@ async def start_schedule_flow(update: Update, context: ContextTypes.DEFAULT_TYPE
     telegram_id = update.effective_user.id
     clear_schedule_flow(user_id)
 
-    async with async_session() as session:
+    async with get_db_session() as session:
         teacher = await get_teacher_by_telegram(session, telegram_id)
 
     if teacher:
@@ -55,7 +55,7 @@ async def start_schedule_flow(update: Update, context: ContextTypes.DEFAULT_TYPE
         )
     else:
         # Need to link this telegram account to a person
-        async with async_session() as session:
+        async with get_db_session() as session:
             docentes = await get_docentes(session)
 
         if not docentes:
@@ -109,7 +109,7 @@ async def handle_schedule_callback(update: Update, context: ContextTypes.DEFAULT
 
 async def _on_teacher(query, user_id: int, person_id: int) -> None:
     telegram_id = user_id
-    async with async_session() as session:
+    async with get_db_session() as session:
         teacher = await get_or_create_teacher(session, person_id, telegram_id)
 
     flow = ScheduleFlow(step="await_day", teacher_id=teacher.id)
@@ -163,7 +163,7 @@ async def handle_schedule_text(update: Update, context: ContextTypes.DEFAULT_TYP
     resolved: list[dict] = []
     unresolved: list[str] = list(parse_result.errors)
 
-    async with async_session() as session:
+    async with get_db_session() as session:
         # Batch: buscar todas las materias en paralelo
         subjects = await asyncio.gather(
             *[find_subject(session, p.subject_raw) for p in parse_result.periods],
@@ -234,7 +234,7 @@ async def _on_confirm(query, user_id: int) -> None:
         await query.edit_message_text("Sesión expirada. Usa /db para empezar.")
         return
 
-    async with async_session() as session:
+    async with get_db_session() as session:
         count = await save_schedule_periods(
             session,
             teacher_id=flow.teacher_id,

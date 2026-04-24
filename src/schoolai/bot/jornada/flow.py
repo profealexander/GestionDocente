@@ -15,7 +15,7 @@ from schoolai.bot.state import (
     get_jornada,
     set_jornada,
 )
-from schoolai.db.connection import async_session
+from schoolai.db.connection import get_db_session
 from schoolai.skills.db.schedule_service import get_schedule_for_day, get_teacher_by_telegram
 from schoolai.bot.jornada.card import _finish_jornada, _send_period_card
 from schoolai.bot.jornada.helpers import _build_period_list, _current_period_index, _hora_label
@@ -74,7 +74,7 @@ async def handle_jornada_command(update, context) -> None:
     today = raw_today if raw_today <= 4 else 4
     is_weekend = raw_today > 4
 
-    async with async_session() as session:
+    async with get_db_session() as session:
         teacher = await get_teacher_by_telegram(session, user_id)
         if not teacher:
             await update.message.reply_text(
@@ -203,7 +203,7 @@ async def _on_start(query, user_id: int, context: ContextTypes.DEFAULT_TYPE) -> 
     today = raw_today if raw_today <= 4 else 4  # fin de semana → viernes
     is_weekend = raw_today > 4
 
-    async with async_session() as session:
+    async with get_db_session() as session:
         teacher = await get_teacher_by_telegram(session, user_id)
         if not teacher:
             await query.edit_message_text("Perfil de docente no encontrado.")
@@ -383,11 +383,12 @@ async def _on_absent_day(query, user_id: int, context: ContextTypes.DEFAULT_TYPE
 async def _on_absent_day_reason(
     query, user_id: int, reason: str, context: ContextTypes.DEFAULT_TYPE,
 ) -> None:
-    today = date.today().weekday()
+    raw_today = date.today().weekday()
+    today = raw_today if raw_today <= 4 else 4
     jornada = get_jornada(user_id)
 
     if jornada is None:
-        async with async_session() as session:
+        async with get_db_session() as session:
             teacher = await get_teacher_by_telegram(session, user_id)
             if not teacher:
                 await query.edit_message_text("Perfil de docente no encontrado.")
@@ -592,7 +593,7 @@ async def _on_day_select(
     days_back = (today.weekday() - dow) % 7
     session_date = today - timedelta(days=days_back)
 
-    async with async_session() as session:
+    async with get_db_session() as session:
         teacher = await get_teacher_by_telegram(session, user_id)
         if not teacher:
             await query.edit_message_text("Perfil de docente no encontrado.")

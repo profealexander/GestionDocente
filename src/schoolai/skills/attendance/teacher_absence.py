@@ -8,7 +8,7 @@ from typing import TYPE_CHECKING
 
 from sqlalchemy import desc, select
 
-from schoolai.db.connection import async_session
+from schoolai.db.connection import get_db_session
 from schoolai.db.models.teacher_absence import TeacherAbsence
 from schoolai.skills.db.schedule_service import get_teacher_by_telegram
 
@@ -27,7 +27,7 @@ async def save_teacher_absences(jornada: JornadaSession) -> None:
     period_map = {p["period_num"]: p for p in jornada.periods}
     scope = "day" if len(jornada.absences) == len(jornada.periods) else "period"
 
-    async with async_session() as session:
+    async with get_db_session() as session:
         for absence in jornada.absences:
             p = period_map.get(absence["period_num"], {})
             session.add(TeacherAbsence(
@@ -47,7 +47,7 @@ async def save_teacher_absences(jornada: JornadaSession) -> None:
 
 async def list_absences(teacher_id: int, limit: int = 10) -> list[TeacherAbsence]:
     """Retorna las últimas N ausencias del docente ordenadas por fecha descendente."""
-    async with async_session() as session:
+    async with get_db_session() as session:
         rows = (await session.execute(
             select(TeacherAbsence)
             .where(TeacherAbsence.teacher_id == teacher_id)
@@ -85,7 +85,7 @@ async def handle_ausencias_command(update, context) -> None:
     except ValueError:
         limit = 10
 
-    async with async_session() as session:
+    async with get_db_session() as session:
         teacher = await get_teacher_by_telegram(session, user_id)
         if not teacher:
             await update.message.reply_text("No tienes un perfil de docente vinculado.")
@@ -124,7 +124,7 @@ async def ausencias_interceptor(update, user_id: int) -> bool:
     m = _LIMIT_RE.search(update.message.text)
     limit = max(1, min(int(m.group(1)), 50)) if m else 10
 
-    async with async_session() as session:
+    async with get_db_session() as session:
         teacher = await get_teacher_by_telegram(session, user_id)
         if not teacher:
             return False

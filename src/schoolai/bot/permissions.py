@@ -20,19 +20,21 @@ async def get_access_level(telegram_id: int) -> str:
     if settings.admin_telegram_id and telegram_id == settings.admin_telegram_id:
         return "superadmin"
 
-    from schoolai.db.connection import async_session
+    from schoolai.db.connection import get_db_session
     from schoolai.skills.db.position_service import get_admin_cargo
 
-    async with async_session() as session:
+    from schoolai.skills.db.schedule_service import get_teacher_by_telegram
+
+    async with get_db_session() as session:
+        teacher = await get_teacher_by_telegram(session, telegram_id)
+        if not teacher:
+            return "none"
         cargo = await get_admin_cargo(session, telegram_id)
 
     if cargo in ADMIN_CARGOS:
         return "admin"
     if cargo == "secretaria":
         return "secretaria"
-    if cargo is not None:
-        return "teacher"
-
     return "teacher"
 
 

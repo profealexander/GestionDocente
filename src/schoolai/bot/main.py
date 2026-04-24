@@ -231,11 +231,11 @@ async def _send_jornada_keyboard_to_teachers(bot) -> None:
     from sqlalchemy import select
 
     from schoolai.bot.handlers import JORNADA_AND_EDIT_KEYBOARD
-    from schoolai.db.connection import async_session
+    from schoolai.db.connection import get_db_session
     from schoolai.db.models.teacher import Teacher
 
     try:
-        async with async_session() as session:
+        async with get_db_session() as session:
             teachers = (
                 (
                     await session.execute(
@@ -268,11 +268,11 @@ async def _remove_keyboard_from_teachers(bot) -> None:
     from sqlalchemy import select
 
     from schoolai.bot.handlers import LIBRE_KEYBOARD
-    from schoolai.db.connection import async_session
+    from schoolai.db.connection import get_db_session
     from schoolai.db.models.teacher import Teacher
 
     try:
-        async with async_session() as session:
+        async with get_db_session() as session:
             teachers = (
                 (
                     await session.execute(

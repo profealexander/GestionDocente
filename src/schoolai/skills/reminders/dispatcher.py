@@ -11,13 +11,13 @@ import asyncio
 from loguru import logger
 from telegram.ext import ContextTypes
 
-from schoolai.db.connection import async_session
+from schoolai.db.connection import get_db_session
 from schoolai.skills.reminders.repository import get_due_reminders, mark_sent
 
 
 async def dispatch_due_reminders(bot) -> None:
     """Envía todos los recordatorios pendientes cuya hora ya llegó. Sin dependencia de PTB."""
-    async with async_session() as session:
+    async with get_db_session() as session:
         reminders = await get_due_reminders(session)
 
     if not reminders:
@@ -45,7 +45,7 @@ async def _dispatch_one(reminder, bot) -> None:
 
     # Éxito si Telegram fue OK y WhatsApp fue OK o no aplica/no configurado
     overall_ok = ok_tg and (ok_wa is None or ok_wa is True)
-    async with async_session() as session:
+    async with get_db_session() as session:
         await mark_sent(session, reminder.id, ok=overall_ok)
 
 
@@ -77,7 +77,7 @@ async def _send_whatsapp_to_parents(reminder) -> bool:
     from sqlalchemy import select
 
     from schoolai.config import settings
-    from schoolai.db.connection import async_session
+    from schoolai.db.connection import get_db_session
     from schoolai.db.models.student import Student
     from schoolai.db.models.whatsapp_contact import WhatsAppContact
     from schoolai.skills.whatsapp.sender import send_whatsapp
@@ -86,7 +86,7 @@ async def _send_whatsapp_to_parents(reminder) -> bool:
         logger.warning("[reminders] WhatsApp no configurado (GREEN_API_INSTANCE/TOKEN ausentes)")
         return None  # no configurado — no cuenta como fallo
 
-    async with async_session() as session:
+    async with get_db_session() as session:
         students = (
             (
                 await session.execute(

@@ -7,7 +7,7 @@ from telegram import InlineKeyboardButton, InlineKeyboardMarkup
 from telegram.constants import ParseMode
 
 from schoolai.bot.state import DAY_NAMES
-from schoolai.db.connection import async_session
+from schoolai.db.connection import get_db_session
 from schoolai.skills.db.schedule_service import get_schedule_for_day, get_teacher_by_telegram
 from schoolai.bot.jornada.helpers import _ORDINAL, _extract_day_from_text
 
@@ -96,7 +96,7 @@ async def handle_horario_command(update, context) -> None:
     if today > 4:
         today = 0  # fin de semana → mostrar lunes
 
-    async with async_session() as session:
+    async with get_db_session() as session:
         teacher = await get_teacher_by_telegram(session, user_id)
         if not teacher:
             await update.message.reply_text(
@@ -119,7 +119,7 @@ async def handle_horario_callback(update, context) -> None:
     user_id = update.effective_user.id
     day = int(query.data.split(":")[1])
 
-    async with async_session() as session:
+    async with get_db_session() as session:
         teacher = await get_teacher_by_telegram(session, user_id)
         if not teacher:
             await query.edit_message_text("Perfil de docente no encontrado.")
@@ -143,7 +143,7 @@ async def _horario_interceptor(update, user_id: int) -> bool:
     if day > 4:
         day = 0
 
-    async with async_session() as session:
+    async with get_db_session() as session:
         teacher = await get_teacher_by_telegram(session, user_id)
         if not teacher:
             return False

@@ -29,7 +29,7 @@ from schoolai.bot.state import (
     set_wa_setup,
 )
 from schoolai.config import settings
-from schoolai.db.connection import async_session
+from schoolai.db.connection import get_db_session
 from schoolai.db.models.person import Person
 from schoolai.db.models.student import Student
 from schoolai.db.models.whatsapp_contact import WhatsAppContact
@@ -104,7 +104,7 @@ async def _process_notifications(
     missing_setup: list[tuple[int, str, str]] = []  # (guardian_id, guardian_name, student_name)
     no_rep: list[tuple[int, str]] = []  # (student_id, student_name) sin representante
 
-    async with async_session() as session:
+    async with get_db_session() as session:
         for sid, sname in zip(student_ids, student_names):
             student = await session.get(Student, sid)
             if not student:
@@ -235,7 +235,7 @@ async def handle_wa_setup_text(update: Update) -> bool:
         first_name = " ".join(name_parts[:-1])
         last_name = name_parts[-1]
 
-        async with async_session() as session:
+        async with get_db_session() as session:
             guardian = Person(
                 first_name=first_name,
                 last_name=last_name,
@@ -273,7 +273,7 @@ async def handle_wa_setup_text(update: Update) -> bool:
             return True
 
         # Save to whatsapp_contacts
-        async with async_session() as session:
+        async with get_db_session() as session:
             existing = (
                 await session.execute(
                     select(WhatsAppContact).where(
@@ -318,7 +318,7 @@ async def handle_wa_setup_text(update: Update) -> bool:
             if notif.student_ids:
                 next_id = notif.student_ids[0]
                 next_name = notif.student_names[0]
-                async with async_session() as session:
+                async with get_db_session() as session:
                     student = await session.get(Student, next_id)
                     if student:
                         rep = student.primary_representative
@@ -365,7 +365,7 @@ async def _send_single(
         hw_seq=notif.hw_seq,
         delivery_date=notif.delivery_date,
     )
-    async with async_session() as session:
+    async with get_db_session() as session:
         contacts = (
             (
                 await session.execute(

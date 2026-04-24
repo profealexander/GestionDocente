@@ -31,7 +31,7 @@ from schoolai.bot.state import (
     set_broadcast_flow,
 )
 from schoolai.config import settings
-from schoolai.db.connection import async_session
+from schoolai.db.connection import get_db_session
 from schoolai.skills.whatsapp.broadcast import (
     get_broadcast_teachers,
     send_file_broadcast,
@@ -104,7 +104,7 @@ async def handle_broadcast_text(update: Update, context: ContextTypes.DEFAULT_TY
     message = _parse_message(text)
 
     # Contar destinatarios
-    async with async_session() as session:
+    async with get_db_session() as session:
         teachers = await get_broadcast_teachers(filter_type, session)
 
     count = len(teachers)
@@ -210,7 +210,7 @@ async def _send_text_only(chat_id: int, context, flow: BroadcastFlow) -> None:
         return
 
     await context.bot.send_message(chat_id, "⏳ Enviando comunicado...")
-    async with async_session() as session:
+    async with get_db_session() as session:
         teachers = await get_broadcast_teachers(flow.filter_type, session)
     result = await send_text_broadcast(
         settings.green_api_instance, settings.green_api_token, teachers, flow.message,
@@ -236,7 +236,7 @@ async def _send_with_file(
     await file_obj.download_to_memory(file_bytes)
     file_name = getattr(doc, "file_name", "adjunto.pdf") or "adjunto.pdf"
 
-    async with async_session() as session:
+    async with get_db_session() as session:
         teachers = await get_broadcast_teachers(flow.filter_type, session)
 
     result = await send_file_broadcast(

@@ -52,11 +52,11 @@ async def _write_usage(
     completion: int,
     cached: int,
 ) -> None:
-    from schoolai.db.connection import async_session
+    from schoolai.db.connection import get_db_session
     from schoolai.db.models.llm_usage import LLMUsage
 
     try:
-        async with async_session() as session:
+        async with get_db_session() as session:
             session.add(
                 LLMUsage(
                     provider=provider,

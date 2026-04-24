@@ -10,7 +10,7 @@ from telegram.constants import ParseMode
 from telegram.ext import ContextTypes
 
 from schoolai.bot.state import DAY_NAMES, iter_all_jornada, set_jornada
-from schoolai.db.connection import async_session
+from schoolai.db.connection import get_db_session
 from schoolai.db.models.teacher import Teacher
 from schoolai.skills.db.schedule_service import get_schedule_for_day
 from schoolai.bot.jornada.helpers import _current_period_index, _hora_label
@@ -84,7 +84,7 @@ async def job_morning_notify(context: ContextTypes.DEFAULT_TYPE) -> None:
     if today > 4:
         return  # fin de semana
 
-    async with async_session() as session:
+    async with get_db_session() as session:
         teachers = (
             (
                 await session.execute(

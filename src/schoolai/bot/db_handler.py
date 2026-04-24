@@ -13,7 +13,7 @@ from telegram.ext import ContextTypes
 
 from schoolai.bot.callback_router import callback_router
 from schoolai.bot.state import DbFlow, clear_db_flow, get_db_flow, set_db_flow
-from schoolai.db.connection import async_session
+from schoolai.db.connection import get_db_session
 from schoolai.db.models.grade import Grade
 from schoolai.db.models.person import Person
 from schoolai.db.models.student import Student
@@ -161,7 +161,7 @@ async def _on_confirm(query, user_id: int) -> None:
         await query.edit_message_text("Sesión expirada. Usa /db para empezar.")
         return
 
-    async with async_session() as session:
+    async with get_db_session() as session:
         result = await save_people(
             results=flow.dedup_results,
             role=flow.role,
@@ -234,7 +234,7 @@ async def handle_db_text(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
     if flow.role == "estudiante":
         flow.step = "await_grade"
         set_db_flow(user_id, flow)
-        async with async_session() as session:
+        async with get_db_session() as session:
             grades = (
                 (await session.execute(select(Grade).order_by(Grade.sort_order))).scalars().all()
             )
@@ -256,7 +256,7 @@ async def handle_db_text(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
 
 async def _dedup_and_preview(reply_fn, user_id: int, flow: DbFlow) -> None:
     """Run deduplication and show preview. reply_fn is an async callable (edit_text or similar)."""
-    async with async_session() as session:
+    async with get_db_session() as session:
         results = await deduplicate(flow.parsed_names, session)
 
     flow.dedup_results = results
@@ -322,7 +322,7 @@ async def _on_link_student_search(update: Update, user_id: int, flow: DbFlow) ->
     query_text = update.message.text.strip()
     norm = normalize(query_text)
 
-    async with async_session() as session:
+    async with get_db_session() as session:
         full_name = func.lower(Person.first_name + " " + Person.last_name)
         students = (
             (
@@ -394,7 +394,7 @@ async def _on_link_confirm(query, user_id: int, student_id: int) -> None:
 
     person_id = flow.saved_person_ids[0]
 
-    async with async_session() as session:
+    async with get_db_session() as session:
         await link_representative(
             session=session,
             student_id=student_id,
@@ -423,7 +423,7 @@ async def _on_wa_search_teacher(update: Update, user_id: int, flow: DbFlow) -> N
     """Busca docente por nombre para asignarle WhatsApp."""
     query_text = update.message.text.strip()
 
-    async with async_session() as session:
+    async with get_db_session() as session:
         matches = await search_teachers_by_name(query_text, session)
 
     if not matches:
@@ -454,7 +454,7 @@ async def _on_wa_search_teacher(update: Update, user_id: int, flow: DbFlow) -> N
 
 async def _on_wa_teacher_selected(query, user_id: int, teacher_id: int) -> None:
     """Muestra número actual si existe y pide el nuevo."""
-    async with async_session() as session:
+    async with get_db_session() as session:
         teacher = await session.get(Teacher, teacher_id)
         if not teacher:
             await query.edit_message_text("Docente no encontrado.")
@@ -487,7 +487,7 @@ async def _on_wa_save_phone(update: Update, user_id: int, flow: DbFlow) -> None:
         )
         return
 
-    async with async_session() as session:
+    async with get_db_session() as session:
         name = await save_teacher_whatsapp(flow.target_teacher_id, phone, session)
 
     if not name:

@@ -7,7 +7,7 @@ from telegram import InlineKeyboardButton, InlineKeyboardMarkup
 from telegram.constants import ParseMode
 
 from schoolai.bot.state import pop_pending_pago, set_pending_pago
-from schoolai.db.connection import async_session
+from schoolai.db.connection import get_db_session
 from schoolai.skills.attendance.matcher import match_names
 from schoolai.skills.cuotas._helpers import _get_teacher_id
 from schoolai.skills.cuotas.extractor import CuotaExtract
@@ -109,7 +109,7 @@ async def handle_pago(update, user_id: int, data: CuotaExtract) -> None:
 
     teacher_id = await _get_teacher_id(user_id)
 
-    async with async_session() as session:
+    async with get_db_session() as session:
         if data.nombre:
             actividad = await get_activity_by_name(session, data.nombre)
         else:
@@ -152,7 +152,7 @@ async def handle_cuota_pago_callback(update, context) -> None:
         await query.edit_message_text("Sesión expirada. Vuelve a enviar el mensaje.")
         return
 
-    async with async_session() as session:
+    async with get_db_session() as session:
         from schoolai.skills.cuotas.service import get_activity_status
 
         actividad, _ = await get_activity_status(session, actividad_id)

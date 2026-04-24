@@ -21,7 +21,7 @@ from telegram import Update
 from telegram.constants import ParseMode
 from telegram.ext import ContextTypes
 
-from schoolai.db.connection import async_session
+from schoolai.db.connection import get_db_session
 from schoolai.db.models.teacher import Teacher
 
 _URL_RE = re.compile(r"^https?://\S+", re.IGNORECASE)
@@ -206,7 +206,7 @@ async def _categorize_and_save(
     try:
         meta = await categorize(content, hint=hint)
 
-        async with async_session() as session:
+        async with get_db_session() as session:
             teacher = (
                 await session.execute(select(Teacher).where(Teacher.telegram_id == telegram_id))
             ).scalar_one_or_none()

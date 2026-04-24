@@ -35,7 +35,7 @@ async def create_reminder(
     """
     from sqlalchemy import select
 
-    from schoolai.db.connection import async_session
+    from schoolai.db.connection import get_db_session
     from schoolai.db.models.teacher import Teacher
     from schoolai.skills.homework.repository import find_grade
     from schoolai.skills.reminders.repository import create_reminder as _create
@@ -49,7 +49,7 @@ async def create_reminder(
 
     dt = _parse_dt(scheduled_at)
 
-    async with async_session() as session:
+    async with get_db_session() as session:
         teacher = (
             await session.execute(select(Teacher).where(Teacher.telegram_id == telegram_id))
         ).scalar_one_or_none()
@@ -94,11 +94,11 @@ async def list_reminders(telegram_id: int, status: str = "pending") -> str:
     """
     from sqlalchemy import select
 
-    from schoolai.db.connection import async_session
+    from schoolai.db.connection import get_db_session
     from schoolai.db.models.teacher import Teacher
     from schoolai.skills.reminders.repository import list_teacher_reminders
 
-    async with async_session() as session:
+    async with get_db_session() as session:
         teacher = (
             await session.execute(select(Teacher).where(Teacher.telegram_id == telegram_id))
         ).scalar_one_or_none()
@@ -128,11 +128,11 @@ async def cancel_reminder(telegram_id: int, reminder_id: int) -> str:
     """Cancela un recordatorio pendiente."""
     from sqlalchemy import select
 
-    from schoolai.db.connection import async_session
+    from schoolai.db.connection import get_db_session
     from schoolai.db.models.teacher import Teacher
     from schoolai.skills.reminders.repository import cancel_reminder as _cancel
 
-    async with async_session() as session:
+    async with get_db_session() as session:
         teacher = (
             await session.execute(select(Teacher).where(Teacher.telegram_id == telegram_id))
         ).scalar_one_or_none()

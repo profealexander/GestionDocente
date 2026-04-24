@@ -17,7 +17,7 @@ from sqlalchemy import select
 from telegram import InlineKeyboardButton, InlineKeyboardMarkup
 from telegram.constants import ParseMode
 
-from schoolai.db.connection import async_session
+from schoolai.db.connection import get_db_session
 from schoolai.db.models.attendance import Attendance
 from schoolai.db.models.person import Person
 from schoolai.db.models.student import Student
@@ -109,14 +109,14 @@ async def handle_att_edit(
     att_date = att_date or date.today()
 
     if course:
-        async with async_session() as session:
+        async with get_db_session() as session:
             grade = await find_grade(session, course)
         if not grade:
             await update.message.reply_text(f"Curso '{course}' no encontrado.")
             return
         await _show_list(update.message.reply_text, grade.id, grade.name, att_date)
     else:
-        async with async_session() as session:
+        async with get_db_session() as session:
             grades = (
                 await session.execute(select(Grade).order_by(Grade.sort_order))
             ).scalars().all()
@@ -145,7 +145,7 @@ async def handle_att_edit(
 
 
 async def _show_list(reply_fn, grade_id: int, grade_name: str, att_date: date) -> None:
-    async with async_session() as session:
+    async with get_db_session() as session:
         records = await _load_records(session, grade_id, att_date)
 
     date_str = att_date.strftime("%d/%m/%Y")
@@ -178,7 +178,7 @@ async def handle_att_edit_grade_callback(update, context) -> None:
 
     from schoolai.db.models.grade import Grade
 
-    async with async_session() as session:
+    async with get_db_session() as session:
         grade = await session.get(Grade, grade_id)
 
     if not grade:
@@ -186,7 +186,7 @@ async def handle_att_edit_grade_callback(update, context) -> None:
         return
 
     date_str = att_date.strftime("%d/%m/%Y")
-    async with async_session() as session:
+    async with get_db_session() as session:
         records = await _load_records(session, grade_id, att_date)
 
     if not records:
@@ -211,7 +211,7 @@ async def handle_att_edit_pick_callback(update, context) -> None:
 
     att_id = int(query.data.split(":")[1])
 
-    async with async_session() as session:
+    async with get_db_session() as session:
         att = await session.get(Attendance, att_id)
         if not att:
             await query.edit_message_text("Registro no encontrado.")
@@ -239,7 +239,7 @@ async def handle_att_edit_set_callback(update, context) -> None:
     parts = query.data.split(":")
     att_id, new_status = int(parts[1]), parts[2]
 
-    async with async_session() as session:
+    async with get_db_session() as session:
         att = await session.get(Attendance, att_id)
         if not att:
             await query.edit_message_text("Registro no encontrado.")
@@ -265,7 +265,7 @@ async def handle_att_edit_del_callback(update, context) -> None:
 
     att_id = int(query.data.split(":")[1])
 
-    async with async_session() as session:
+    async with get_db_session() as session:
         att = await session.get(Attendance, att_id)
         if not att:
             await query.edit_message_text("Registro no encontrado.")

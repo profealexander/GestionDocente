@@ -13,7 +13,7 @@ from sqlalchemy import select
 
 from schoolai.api.auth import create_access_token, create_access_token_for_teacher
 from schoolai.config import settings
-from schoolai.db.connection import async_session
+from schoolai.db.connection import get_db_session
 from schoolai.db.models.teacher import Teacher
 from schoolai.skills.db.position_service import get_admin_cargo
 
@@ -117,7 +117,7 @@ async def login(request: Request, body: LoginRequest) -> TokenResponse:
             detail="JWT secret no configurado en el servidor.",
         )
 
-    async with async_session() as session:
+    async with get_db_session() as session:
         result = await session.execute(
             select(Teacher).where(Teacher.username == body.username, Teacher.is_active.is_(True)),
         )
@@ -153,7 +153,7 @@ async def _resolve_role(telegram_id: int) -> str:
         return "superadmin"
 
     try:
-        async with async_session() as session:
+        async with get_db_session() as session:
             cargo = await get_admin_cargo(session, telegram_id)
         if cargo in ADMIN_CARGOS:
             return "admin"

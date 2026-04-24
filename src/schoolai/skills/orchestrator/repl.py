@@ -204,14 +204,14 @@ async def _exec_code(code: str) -> str:
         """
         from sqlalchemy import text as sa_text
 
-        from schoolai.db.connection import async_session
+        from schoolai.db.connection import get_db_session
 
         upper = sql.strip().upper()
         if not (upper.startswith("SELECT") or upper.startswith("WITH")):
             raise PermissionError("REPL: solo se permiten consultas SELECT/WITH")
         _check_tables(sql)
 
-        async with async_session() as session:
+        async with get_db_session() as session:
             result = await session.execute(sa_text(sql), params or {})
             cols = list(result.keys())
             rows = [dict(zip(cols, row)) for row in result.fetchall()]

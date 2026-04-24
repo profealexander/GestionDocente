@@ -19,7 +19,7 @@ from schoolai.bot.state import (
     get_attendance,
     set_attendance,
 )
-from schoolai.db.connection import async_session
+from schoolai.db.connection import get_db_session
 from schoolai.db.models.grade import Grade
 from schoolai.skills.attendance.constants import ABSENT, JUSTIFIED, LATE
 from schoolai.skills.attendance.detector import extract_absences
@@ -48,12 +48,12 @@ async def start_attendance(update: Update, text: str) -> None:
     course_text = extract_course(text)
     grade = None
     if course_text:
-        async with async_session() as session:
+        async with get_db_session() as session:
             grade = await find_grade(session, course_text)
 
     if not grade:
         # Ask for grade
-        async with async_session() as session:
+        async with get_db_session() as session:
             grades = (
                 (await session.execute(select(Grade).order_by(Grade.sort_order))).scalars().all()
             )
@@ -132,13 +132,13 @@ async def _on_grade(query, user_id: int, grade_id: int, grade_name: str) -> None
 
 
 async def _run_matching(update: Update, user_id: int, state: PendingAttendance) -> None:
-    async with async_session() as session:
+    async with get_db_session() as session:
         results = await match_names(state.extracted, state.grade_id, session)
     await _process_results(update.message.reply_text, user_id, state, results)
 
 
 async def _run_matching_on_query(query, user_id: int, state: PendingAttendance) -> None:
-    async with async_session() as session:
+    async with get_db_session() as session:
         results = await match_names(state.extracted, state.grade_id, session)
     await _process_results(query.edit_message_text, user_id, state, results)
 
@@ -257,7 +257,7 @@ async def _save_and_reply(
     _period_start = _period.get("start_time") if _period else None
     _period_end = _period.get("end_time") if _period else None
 
-    async with async_session() as session:
+    async with get_db_session() as session:
         # 2. Fallback: inferir del horario según hora y día actual
         if _subject_name is None:
             _teacher = (

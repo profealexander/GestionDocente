@@ -8,7 +8,7 @@ from loguru import logger
 from telegram import InlineKeyboardButton, InlineKeyboardMarkup
 from telegram.constants import ParseMode
 
-from schoolai.db.connection import async_session
+from schoolai.db.connection import get_db_session
 from schoolai.skills.cuotas._helpers import _get_teacher_id
 from schoolai.skills.cuotas.extractor import CuotaExtract
 from schoolai.skills.cuotas.service import (
@@ -77,7 +77,7 @@ async def _send_estado(target, actividad_id: int, session, *, use_edit: bool = F
 
 async def handle_list(update, user_id: int) -> None:
     teacher_id = await _get_teacher_id(user_id)
-    async with async_session() as session:
+    async with get_db_session() as session:
         actividades = await get_activities(session, teacher_id=teacher_id)
 
     if not actividades:
@@ -92,7 +92,7 @@ async def handle_list(update, user_id: int) -> None:
 async def handle_query(update, user_id: int, data: CuotaExtract) -> None:
     teacher_id = await _get_teacher_id(user_id)
 
-    async with async_session() as session:
+    async with get_db_session() as session:
         if data.nombre:
             actividad = await get_activity_by_name(session, data.nombre)
             if not actividad:
@@ -111,7 +111,7 @@ async def handle_query(update, user_id: int, data: CuotaExtract) -> None:
         return
 
     if len(actividades) == 1:
-        async with async_session() as session:
+        async with get_db_session() as session:
             await _send_estado(update, actividades[0].id, session)
         return
 
@@ -126,7 +126,7 @@ async def handle_export(update, user_id: int, data: CuotaExtract) -> None:
 
     teacher_id = await _get_teacher_id(user_id)
 
-    async with async_session() as session:
+    async with get_db_session() as session:
         if data.nombre:
             actividad = await get_activity_by_name(session, data.nombre)
             if not actividad:
@@ -178,5 +178,5 @@ async def handle_cuota_sel_callback(update, context) -> None:
     await query.answer()
     actividad_id = int(query.data.split(":")[1])
     await query.edit_message_reply_markup(reply_markup=None)
-    async with async_session() as session:
+    async with get_db_session() as session:
         await _send_estado(query, actividad_id, session, use_edit=True)

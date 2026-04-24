@@ -3,7 +3,7 @@
 from loguru import logger
 from telegram.constants import ParseMode
 
-from schoolai.db.connection import async_session
+from schoolai.db.connection import get_db_session
 from schoolai.skills.query.detector import QueryIntent
 from schoolai.skills.query.formatter import format_attendance, format_homework
 from schoolai.skills.query.resolver import resolve_attendance, resolve_homework
@@ -17,7 +17,7 @@ async def _run_query(reply_fn, user_id: int, intent: QueryIntent, grade_id: int)
     from schoolai.db.models.teacher import Teacher
     from schoolai.skills.homework.repository import get_teacher_subject_ids
 
-    async with async_session() as session:
+    async with get_db_session() as session:
         grade_name: str | None = None
         grade_obj = (
             await session.execute(select(Grade).where(Grade.id == grade_id))

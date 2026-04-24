@@ -6,7 +6,7 @@ from loguru import logger
 from telegram import InlineKeyboardButton, InlineKeyboardMarkup
 from telegram.constants import ParseMode
 
-from schoolai.db.connection import async_session
+from schoolai.db.connection import get_db_session
 from schoolai.db.models.homework import Homework
 
 # ── Helpers ───────────────────────────────────────────────────────────────────
@@ -97,7 +97,7 @@ async def handle_hw_edit(
     from schoolai.db.models.teacher import Teacher
     from schoolai.skills.homework.repository import find_grade, find_homework_by_ref, list_open
 
-    async with async_session() as session:
+    async with get_db_session() as session:
         teacher = (
             await session.execute(_sel(Teacher).where(Teacher.telegram_id == user_id))
         ).scalar_one_or_none()
@@ -144,7 +144,7 @@ async def handle_hw_edit_pick_callback(update, context) -> None:
 
     hw_id = int(query.data.split(":")[1])
 
-    async with async_session() as session:
+    async with get_db_session() as session:
         hw = await session.get(Homework, hw_id)
 
     if not hw:
@@ -170,7 +170,7 @@ async def handle_hw_edit_field_callback(update, context) -> None:
     hw_id = int(parts[1])
     field = parts[2]
 
-    async with async_session() as session:
+    async with get_db_session() as session:
         hw = await session.get(Homework, hw_id)
 
     if not hw:
@@ -205,7 +205,7 @@ async def handle_hw_edit_toggle_callback(update, context) -> None:
 
     hw_id = int(query.data.split(":")[1])
 
-    async with async_session() as session:
+    async with get_db_session() as session:
         hw = await session.get(Homework, hw_id)
         if not hw:
             await query.edit_message_text("Tarea no encontrada.")
@@ -238,7 +238,7 @@ async def handle_hw_edit_text(update, user_id: int) -> bool:
     text = update.message.text.strip()
     clear_hw_edit_field(user_id)
 
-    async with async_session() as session:
+    async with get_db_session() as session:
         hw = await session.get(Homework, state.hw_id)
         if not hw:
             await update.message.reply_text("Tarea no encontrada.")
@@ -282,7 +282,7 @@ async def handle_hw_edit_delete_callback(update, context) -> None:
 
     hw_id = int(query.data.split(":")[1])
 
-    async with async_session() as session:
+    async with get_db_session() as session:
         hw = await session.get(Homework, hw_id)
 
     if not hw:
@@ -315,7 +315,7 @@ async def handle_hw_edit_confirm_delete_callback(update, context) -> None:
 
     hw_id = int(query.data.split(":")[1])
 
-    async with async_session() as session:
+    async with get_db_session() as session:
         hw = await session.get(Homework, hw_id)
         grade_name = hw.grade.name if hw else "—"
         deleted = await delete_homework(session, hw_id)

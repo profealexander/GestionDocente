@@ -25,7 +25,7 @@ from telegram.ext import ContextTypes
 
 from schoolai.bot.callback_router import callback_router
 from schoolai.config import settings
-from schoolai.db.connection import async_session
+from schoolai.db.connection import get_db_session
 from schoolai.db.models.student import Student
 from schoolai.db.models.teacher import Teacher
 from schoolai.db.models.whatsapp_contact import WhatsAppContact
@@ -72,7 +72,7 @@ async def handle_doc_notify_callback(update: Update, context: ContextTypes.DEFAU
 
     await query.edit_message_reply_markup(reply_markup=None)
 
-    async with async_session() as session:
+    async with get_db_session() as session:
         # Resolve teacher
         teacher = (
             (await session.execute(select(Teacher).where(Teacher.telegram_id == user_id)))

@@ -13,9 +13,9 @@ async def health():
 
     # ── Database ──────────────────────────────────────────────────────────────
     try:
-        from schoolai.db.connection import async_session
+        from schoolai.db.connection import get_db_session
 
-        async with async_session() as session:
+        async with get_db_session() as session:
             await session.execute(text("SELECT 1"))
         status["db"] = "ok"
     except Exception as exc:

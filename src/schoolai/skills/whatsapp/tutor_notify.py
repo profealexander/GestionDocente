@@ -17,7 +17,7 @@ from datetime import date, timezone
 from loguru import logger
 from sqlalchemy import select
 
-from schoolai.db.connection import async_session
+from schoolai.db.connection import get_db_session
 from schoolai.db.models.grade import Grade
 from schoolai.db.models.student import Student
 from schoolai.db.models.attendance import Attendance
@@ -70,7 +70,7 @@ async def build_daily_reports(today: date) -> list[GradeReport]:
     if cached and time.monotonic() < cached[1]:
         return cached[0]
 
-    async with async_session() as session:
+    async with get_db_session() as session:
         reports: dict[int, GradeReport] = {}
 
         # 1. Inasistencias del día — carga masiva de students y grades
@@ -273,7 +273,7 @@ async def send_report_to_representatives(grade_id: int, today: date) -> tuple[in
     sent = failed = 0
     student_ids = list(report.students.keys())
 
-    async with async_session() as session:
+    async with get_db_session() as session:
         # Carga masiva de representantes primarios con notificación activa
         rep_links = (
             await session.execute(
@@ -333,7 +333,7 @@ async def send_report_to_representatives(grade_id: int, today: date) -> tuple[in
 
 async def get_tutor_grade_ids(teacher_id: int) -> list[int]:
     """Grade IDs para los que este docente es tutor activo."""
-    async with async_session() as session:
+    async with get_db_session() as session:
         rows = (await session.execute(
             select(TeacherPosition).where(
                 TeacherPosition.teacher_id == teacher_id,
@@ -347,7 +347,7 @@ async def get_tutor_grade_ids(teacher_id: int) -> list[int]:
 
 async def get_inspector_telegram_ids() -> list[int]:
     """Telegram IDs de todos los inspectores activos."""
-    async with async_session() as session:
+    async with get_db_session() as session:
         positions = (await session.execute(
             select(TeacherPosition).where(
                 TeacherPosition.position_type == "cargo",
@@ -385,7 +385,7 @@ async def notify_inspector_tutor_absent(
         return
 
     # Nombre del tutor
-    async with async_session() as session:
+    async with get_db_session() as session:
         teacher = await session.get(Teacher, teacher_id)
         tutor_name = (
             f"{teacher.person.first_name} {teacher.person.last_name}"

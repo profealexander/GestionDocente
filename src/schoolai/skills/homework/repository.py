@@ -1,6 +1,6 @@
 from datetime import date
 
-from sqlalchemy import distinct, func, select
+from sqlalchemy import distinct, func, select, text
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from schoolai.db.models.grade import Grade
@@ -241,7 +241,11 @@ async def save_homework(
     if existing:
         return existing
 
-    # Calcular sequence_num: MAX global por curso + trimestre (para búsqueda interna)
+    # Advisory lock per (grade_id, trimester_num) to prevent race condition on MAX(sequence_num).
+    # pg_advisory_xact_lock is released automatically at transaction end (commit/rollback).
+    lock_key = grade_id * 10_000 + trimester
+    await session.execute(text("SELECT pg_advisory_xact_lock(:k)"), {"k": lock_key})
+
     seq_stmt = select(func.coalesce(func.max(Homework.sequence_num), 0)).where(
         Homework.grade_id == grade_id,
         Homework.trimester_num == trimester,

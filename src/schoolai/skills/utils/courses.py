@@ -75,10 +75,10 @@ async def load_course_map(*, force: bool = False) -> None:
 
     from sqlalchemy import select
 
-    from schoolai.db.connection import async_session
+    from schoolai.db.connection import get_db_session
     from schoolai.db.models.grade import Grade
 
-    async with async_session() as session:
+    async with get_db_session() as session:
         grades = (await session.execute(select(Grade))).scalars().all()
     course_abbrev_map.clear()
     for g in grades:
@@ -120,11 +120,11 @@ async def get_teacher_abbrevs(telegram_id: int) -> set[str] | None:
     # Query BD
     from sqlalchemy import select
 
-    from schoolai.db.connection import async_session
+    from schoolai.db.connection import get_db_session
     from schoolai.db.models.teacher import Schedule, Teacher
 
     try:
-        async with async_session() as session:
+        async with get_db_session() as session:
             teacher = (
                 await session.execute(
                     select(Teacher).where(Teacher.telegram_id == telegram_id)
