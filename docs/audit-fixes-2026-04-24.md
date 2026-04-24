@@ -146,7 +146,7 @@ origins = [o.strip() for o in settings.cors_origins.split(",")]
 
 ---
 
-### 3.5 · `docs/architecture/plan-v2.md` — referencias al entry point inexistente
+### 3.5 · `docs/architecture/architecture.md` — referencias al entry point inexistente
 
 **Pasos**:
 1. [ ] Línea 122 y 254: agregar nota "(entry point pendiente / ver 1.3)" o actualizar si ya se añade el entry point
@@ -262,7 +262,7 @@ Solo 2 ocurrencias restantes, ambas en `db/connection.py` donde es la implementa
 **Pasos**:
 1. [ ] Decidir: `config.py` es la fuente de verdad para el stack LLM activo
 2. [ ] `docs/llm-benchmark.md:26` — corregir `LLM_PLANNER=moonshotai/kimi-k2-instruct` → `groq/openai/gpt-oss-120b`
-3. [ ] `docs/architecture/plan-v2.md` tabla LLM — alinear con `config.py`
+3. [ ] `docs/architecture/architecture.md` tabla LLM — alinear con `config.py`
 4. [ ] Añadir nota en cada doc: "Stack activo siempre en config.py — este doc puede estar desactualizado"
 
 ---

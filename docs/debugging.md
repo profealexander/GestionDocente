@@ -1,4 +1,4 @@
-# Guía de Debugging — SchoolAI v2
+# Guía de Debugging — GestionDocente
 
 Referencia rápida para probar y depurar el stack v2.
 

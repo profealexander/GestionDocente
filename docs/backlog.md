@@ -1,7 +1,7 @@
 # SchoolAI — Backlog
 
 **Última actualización:** 2026-04-24  
-**Rama activa:** `refactor/v2-hub-spoke` en `/home/edwin8600/schoolai2/`
+**Rama activa:** `main` en `/home/edwin8600/gestiondocente/`
 
 ---
 
@@ -48,25 +48,22 @@ JSON vigente: `scripts/benchmark-schoolai-20260423-200745.json` (56 modelos, 330
 
 ## Roadmap
 
-### FASE 0 — CLI profesional
+### FASE 0 — CLI profesional ✅ (parcial)
 
-Inspirado en `ollama` y OpenClaw. UX: escribir `schoolai` sin args abre un selector interactivo con flechas ↑↓. También funciona escribiendo subcomandos directamente.
+Dispatcher `gestion` implementado en `gestion.sh` — disponible globalmente desde cualquier ruta.
 
-**Stack:** Typer + questionary (o prompt_toolkit) para el selector interactivo.
-
-Subcomandos objetivo:
-
-| Comando | Descripción |
-|---|---|
-| `schoolai` | Selector interactivo con flechas |
-| `schoolai start` | Arranca el Gateway (puerto 8001) |
-| `schoolai api` | Arranca la REST API (puerto 8000) |
-| `schoolai cli` | Chat terminal |
-| `schoolai bot` | Arranca bot Libre |
-| `schoolai status` | Estado en tiempo real de procesos |
-| `schoolai doctor` | Chequea DB, env vars, puertos, API keys |
-| `schoolai logs [servicio]` | Tail de logs por servicio |
-| `schoolai update` | git pull + uv sync |
+| Comando | Descripción | Estado |
+|---|---|---|
+| `gestion` | Menú principal | ✅ |
+| `gestion start` | Arranca todo (API + Gateway + Bots) | ✅ |
+| `gestion stop / status` | Detener / estado de servicios | ✅ |
+| `gestion api` | FastAPI REST (puerto 8000) | ✅ |
+| `gestion gateway` | Gateway v2 (puerto 8001) | ✅ |
+| `gestion cli` | Chat terminal | ✅ |
+| `gestion logs [servicio]` | Tail de logs por servicio | ✅ |
+| `gestion debug` | Depuración paso a paso con pudb | ✅ |
+| `gestion doctor` | Chequea DB, env vars, puertos, API keys | pendiente |
+| `gestion update` | git pull + uv sync | pendiente |
 
 ### FASE 1 — MVP
 

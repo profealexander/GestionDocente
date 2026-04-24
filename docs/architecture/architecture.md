@@ -1,6 +1,6 @@
-# SchoolAI v2 — Arquitectura Hub-and-Spoke
+# GestionDocente — Arquitectura
 
-**Estado:** Implementado (Fases 1–4 completas, integrado en main)
+**Estado:** Producción (Fases 1–4 completas, integrado en main)
 **Rama:** `main`
 **Directorio:** `/home/edwin8600/gestiondocente/`
 
