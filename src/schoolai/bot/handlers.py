@@ -101,7 +101,8 @@ async def handle_text(update: Update, context: ContextTypes.DEFAULT_TYPE) -> Non
 
     if settings.gateway_enabled:
         from schoolai.bot.gateway_adapter import intercept
-        await intercept(update, context, text)
+        if await intercept(update, context, text):
+            return
 
     await _dispatch(update, user.id, text, context)
 

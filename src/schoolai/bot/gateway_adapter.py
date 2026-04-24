@@ -2,9 +2,9 @@
 Thin Telegram adapter for Gateway v2.
 
 When GATEWAY_ENABLED=true, called from handle_text before v1 dispatch.
-Normalizes the message to a TaskSpec via the gateway (same process, no HTTP).
-The TaskSpec is stored in context.user_data["task_spec"] for downstream use.
-v1 dispatch continues unchanged — no behavior change in Fase 1.
+Normalizes the message via the gateway and handles it with the agent runtime.
+Returns True if the gateway handled the message (skips v1 dispatch).
+Returns False to fall through to v1 dispatch (e.g. on gateway error).
 """
 from __future__ import annotations
 
@@ -21,20 +21,30 @@ async def intercept(
     update: Update,
     context: ContextTypes.DEFAULT_TYPE,
     text: str,
-) -> None:
+) -> bool:
     user_id = str(update.effective_user.id)
     session_id = get_session_id(user_id, "telegram")
 
-    msg = MessageSpec(
-        channel="telegram",
-        user_id=user_id,
-        session_id=session_id,
-        text=text,
-    )
-    task = await normalize(msg)
+    try:
+        msg = MessageSpec(
+            channel="telegram",
+            user_id=user_id,
+            session_id=session_id,
+            text=text,
+        )
+        task = await normalize(msg)
+        context.user_data["task_spec"] = task.model_dump()
+        logger.debug(
+            f"[gateway] TaskSpec — domain={task.domain} intent={task.intent} "
+            f"entities={task.entities} session={session_id}"
+        )
 
-    context.user_data["task_spec"] = task.model_dump()
-    logger.debug(
-        f"[gateway] TaskSpec — domain={task.domain} intent={task.intent} "
-        f"entities={task.entities} session={session_id}"
-    )
+        from schoolai.agent.loop import run as agent_run
+        result = await agent_run(task)
+        reply = result.text
+        await update.message.reply_text(reply)
+        return True
+
+    except Exception as exc:  # pylint: disable=broad-exception-caught
+        logger.error(f"[gateway] intercept error: {exc} — falling back to v1 dispatch")
+        return False

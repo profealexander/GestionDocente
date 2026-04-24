@@ -11,7 +11,7 @@ from rich.console import Console
 console = Console()
 
 _PROCS = [
-    ("gateway",      "schoolai",            8001),
+    ("gateway",      "schoolai-gateway",    8001),
     ("api",          "schoolaiapi",         8000),
     ("bot-libre",    "schoolai-bot",        None),
     ("bot-jornada",  "schoolai-bot-jornada", None),
@@ -89,7 +89,7 @@ def _interactive_menu() -> None:
     running = _running_lines()
 
     def status_prefix(cmd: str) -> str:
-        return "● " if any(cmd in l for l in running) else "○ "
+        return "● " if any(cmd in line for line in running) else "○ "
 
     choices = []
     for key, label in _MENU:
@@ -121,6 +121,8 @@ def _dispatch(cmd: str) -> None:
         _stop_all()
     elif cmd == "status":
         _status()
+    elif cmd == "gateway":
+        _start_gateway()
     elif cmd == "api":
         from schoolai.api.runner import run
         run()

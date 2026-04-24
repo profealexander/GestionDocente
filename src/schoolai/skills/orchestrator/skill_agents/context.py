@@ -2,10 +2,17 @@
 
 from __future__ import annotations
 
+import contextvars
+
 from loguru import logger
 
 from schoolai.config import settings
 from schoolai.skills.orchestrator.skill_agents.base import TELEGRAM_FORMAT, SkillAgentBase
+
+# ContextVar aísla el valor por tarea asyncio — seguro con usuarios concurrentes
+_teacher_has_docs_var: contextvars.ContextVar[bool] = contextvars.ContextVar(
+    "teacher_has_docs", default=True
+)
 
 _COMMON_RULES = (
     "\n"
@@ -67,19 +74,16 @@ class ContextAgent(SkillAgentBase):
     system_prompt_template = _SYSTEM_PROMPT_WITH_DOCS  # default; se sobreescribe en run()
     llm_override = settings.llm_context_agent
 
-    # Estado por request — seguro en asyncio single-thread
-    _teacher_has_docs: bool = True
-
     @property
     def tools(self):
         from schoolai.skills.orchestrator.tools import TOOLS_BY_NAME
 
-        names = _TOOLS_WITH_DOCS if self._teacher_has_docs else _TOOLS_NO_DOCS
+        names = _TOOLS_WITH_DOCS if _teacher_has_docs_var.get() else _TOOLS_NO_DOCS
         return [TOOLS_BY_NAME[n] for n in names]
 
     def get_system_prompt(self) -> str:
         from datetime import date
-        template = _SYSTEM_PROMPT_WITH_DOCS if self._teacher_has_docs else _SYSTEM_PROMPT_NO_DOCS
+        template = _SYSTEM_PROMPT_WITH_DOCS if _teacher_has_docs_var.get() else _SYSTEM_PROMPT_NO_DOCS
         return template.format(today=date.today().isoformat())  # noqa: DTZ011
 
     async def _execute_tool(self, name: str, args: dict) -> str:
@@ -125,10 +129,8 @@ class ContextAgent(SkillAgentBase):
         prior_messages: list[dict] | None = None,
         teacher_id: int | None = None,
     ) -> str:
-        if teacher_id:
-            self._teacher_has_docs = await self._check_has_docs(teacher_id)
-            logger.debug(f"[context] teacher={teacher_id} has_docs={self._teacher_has_docs}")
-        else:
-            self._teacher_has_docs = False
+        has_docs = await self._check_has_docs(teacher_id) if teacher_id else False
+        _teacher_has_docs_var.set(has_docs)
+        logger.debug(f"[context] teacher={teacher_id} has_docs={has_docs}")
 
         return await super().run(text, prior_messages, teacher_id)

@@ -42,7 +42,7 @@ async def synthesize(
     messages = list(ctx.history) + [{"role": "user", "content": user_content}]
 
     try:
-        response = call_with_fallback(
+        response = await call_with_fallback(
             primary=settings.llm_synthesizer,
             fallbacks=settings.llm_synthesizer_fallback,
             messages=[{"role": "system", "content": _SYSTEM}] + messages,

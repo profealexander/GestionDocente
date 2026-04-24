@@ -29,7 +29,7 @@ Examples:
 
 
 async def classify(text: str) -> dict:
-    response = call_with_fallback(
+    response = await call_with_fallback(
         primary=settings.llm_router,
         fallbacks=settings.llm_router_fallback,
         messages=[

@@ -43,7 +43,7 @@ async def plan(
 
     messages = [{"role": "system", "content": system}] + list(ctx.history) + [{"role": "user", "content": task.raw_text}]
 
-    response = call_with_fallback(
+    response = await call_with_fallback(
         primary=settings.llm_orchestrator,
         fallbacks=settings.llm_orchestrator_fallback,
         messages=messages,

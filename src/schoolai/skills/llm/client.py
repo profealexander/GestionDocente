@@ -3,11 +3,10 @@
 Usage:
     from schoolai.skills.llm.client import get_client, parse_model, call_with_fallback
 
-    provider, model = parse_model(settings.llm_chat)  # "groq/llama-3.3-70b-versatile"
+    provider, model = parse_model(settings.llm_chat)  # "groq/compound-beta"
     client = get_client(provider)
-    response = client.chat.completions.create(model=model, ...)
 
-    # With automatic fallback:
+    # With automatic fallback (non-blocking):
     response = await call_with_fallback(
         primary=settings.llm_router,
         fallbacks=settings.llm_router_fallback,
@@ -16,6 +15,8 @@ Usage:
     )
 """
 from __future__ import annotations
+
+import asyncio
 
 import openai
 from loguru import logger
@@ -63,7 +64,14 @@ def get_client(provider: str, timeout: float = 60.0) -> OpenAI:
     return _clients[provider]
 
 
-def call_with_fallback(
+def _call_sync(model_str: str, messages: list[dict], **kwargs):
+    """Blocking call to a single model. Runs in a thread via call_with_fallback."""
+    provider, model = parse_model(model_str)
+    client = get_client(provider)
+    return client.chat.completions.create(model=model, messages=messages, **kwargs)
+
+
+async def call_with_fallback(
     primary: str,
     fallbacks: str,
     messages: list[dict],
@@ -71,6 +79,7 @@ def call_with_fallback(
 ):
     """Try primary model, then each comma-separated fallback on 5xx / 429.
 
+    Runs each blocking SDK call in a thread pool so the event loop stays free.
     Returns the first successful ChatCompletion response.
     Raises the last error if all models fail.
     """
@@ -78,10 +87,8 @@ def call_with_fallback(
     last_exc: Exception | None = None
 
     for model_str in models:
-        provider, model = parse_model(model_str)
         try:
-            client = get_client(provider)
-            return client.chat.completions.create(model=model, messages=messages, **kwargs)
+            return await asyncio.to_thread(_call_sync, model_str, messages, **kwargs)
         except (openai.InternalServerError, openai.RateLimitError) as exc:
             logger.warning(f"[llm] {model_str} unavailable ({exc.status_code}) — trying next")
             last_exc = exc
