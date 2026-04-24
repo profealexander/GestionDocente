@@ -155,9 +155,13 @@ src/schoolai/
 │   ├── handlers.py / text_interceptors.py / callback_router.py
 │   ├── state.py / state_store.py   sesión por usuario RAM+Redis
 │   ├── action_handler.py / action/  flujos de callback (asistencia, tarea, selección)
-│   ├── jornada_handler.py / jornada/  SOP Engine + notificación matutina
+│   ├── jornada_handler.py / jornada/  notificación matutina y vista horaria
+│   ├── sop.py           SOPEngine — tabla de transiciones (status, trigger) → handler
+│   ├── transcription.py Whisper/Groq — transcripción de audio a texto
+│   ├── cron_handler.py / cron_service.py  cron jobs in-process
+│   ├── edit_flow.py     flujo de edición de registros existentes
 │   ├── channels/        TelegramChannel, WhatsAppChannel (BaseChannel ABC)
-│   └── …otros handlers: attendance, schedule, position, db, whatsapp, notif, help
+│   └── …otros handlers: attendance, schedule, position, db, whatsapp, notif, help, dev
 │
 ├── api/
 │   ├── main.py / auth.py / schemas.py / runner.py
@@ -208,8 +212,10 @@ src/schoolai/
     ├── query/            skill + detector + resolver + formatter
     ├── context/          documentos institucionales + búsqueda web (DuckDuckGo)
     ├── reminders/        dispatcher + repository + tools
-    ├── ia/               ChatSkill — agente libre (Groq 70B)
+    ├── ia/               ChatSkill — agente libre (Groq compound-beta)
     ├── llm/              cliente unificado + tool_caller + providers + usage tracker
+    ├── planner.py        micro-planner: reparte texto entre 2+ skills detectadas simultáneamente
+    ├── whatsapp/         broadcast.py + sender.py + tutor_notify.py (mensajes WA a tutores)
     └── utils/            normalize, extract_rules, schema (via_llm), keyboards, dates
 
 ui/                          SvelteKit (copiado de ~/schoolaiUI)
@@ -266,18 +272,21 @@ VITE_GATEWAY_WS=ws://localhost:8001
 
 ## Calidad de Código
 
-- **ruff**: 0 errores (verificado 2026-04-20)
-- **pylint**: 9.98/10
+- **ruff**: 0 errores (verificado 2026-04-23)
+- **pylint**: 9.43/10 (src/, scripts excluidos de pylint)
 
-## LLM Stack activo (2026-04-20)
+## LLM Stack activo (post-benchmark 2026-04-23)
 
-| Rol | Modelo primario | Fallback chain |
-|---|---|---|
-| Router (classify) | `google/gemini-3.1-flash-lite-preview` | → `groq/openai/gpt-oss-120b` → `deepseek/deepseek-chat` |
-| Orchestrator (planner) | `groq/qwen/qwen3-32b` | → `google/gemini-3.1-flash-lite-preview` → `deepseek/deepseek-chat` → `mistral/mistral-medium-latest` |
-| Context agent | `groq/qwen/qwen3-32b` | (usa llm_context_agent, configurable independientemente) |
-| Chat | `groq/compound-beta` | → `groq/qwen/qwen3-32b` |
-| Extractor | `google/gemini-3.1-flash-lite-preview` | — |
+| Variable config | Rol | Modelo primario | Fallback chain |
+|---|---|---|---|
+| `llm_router` | Classifier (gateway/normalizer) | `mistral/mistral-medium-latest` | → `deepseek/deepseek-reasoner` |
+| `llm_orchestrator` | Planner (agent/planner) | `groq/openai/gpt-oss-120b` | → `ollama/gemini-3-flash-preview:cloud` → `deepseek/deepseek-reasoner` |
+| `llm_synthesizer` | Synthesizer (agent/synthesizer) | `groq/meta-llama/llama-4-scout-17b-16e-instruct` | → `ollama/gemini-3-flash-preview:cloud` → `mistral/mistral-small-latest` |
+| `llm_context_agent` | Context skill agent | `mistral/mistral-small-latest` | — |
+| `llm_chat` | Chat libre (ia/skill) | `groq/compound-beta` | → `mistral/mistral-small-latest` |
+| `llm_extractor` | Extractor legacy | `mistral/mistral-medium-latest` | — |
+
+Groq: planner y synthesizer usan modelos distintos → cuotas 20 RPM independientes.
 
 Fallback implementado en `skills/llm/client.py:call_with_fallback()` — maneja 503 y 429 automáticamente.
 
