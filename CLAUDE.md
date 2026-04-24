@@ -25,10 +25,14 @@ uv run alembic revision --autogenerate -m "description"
 ./sai.sh [start|stop|restart|enable|disable|status|backup|logs [api|bot|jornada|agente]]
 
 # Entry points (direct run without systemd)
-uv run schoolaiapi
-uv run schoolai-gateway
-uv run schoolai-bot
-uv run schoolai-bot-jornada
+uv run schoolaiapi           # FastAPI REST — port 8000
+uv run schoolai-gateway      # Gateway v2 — port 8001
+uv run schoolai-bot          # Telegram bot Libre
+uv run schoolai-bot-jornada  # Telegram bot Jornada
+
+# Interactive CLI (requires gateway running)
+uv run schoolai-cli
+uv run schoolai-cli --user <telegram_id>
 ```
 
 
@@ -150,9 +154,61 @@ JSON vigente: `scripts/benchmark-schoolai-20260423-200745.json`
 
 ### Agent Runtime (v2)
 
-Pipeline: Gateway → Planner (LLM#1, `llm_planner`) → Executor (Python puro) → Synthesizer (LLM#2, `llm_synthesizer`). Entry point: `schoolai-gateway` (puerto 8001). El bot Telegram delega al runtime cuando `GATEWAY_ENABLED=true`.
+Package: `src/schoolai/agent/`. Entry point: `schoolai-gateway` (puerto 8001). El bot Telegram delega al runtime cuando `GATEWAY_ENABLED=true`.
+
+| Módulo | Rol |
+|---|---|
+| `agent/loop.py` | Ciclo principal: orquesta Router → Planner → Executor → Synthesizer |
+| `agent/orchestrator.py` | Router v2: mapea `task.domain` → `DomainController` (Python puro) |
+| `agent/planner.py` | LLM#1: genera `[{tool, params}]` vía `llm_planner` |
+| `agent/executor.py` | Ejecuta cada tool step (Python puro) usando módulos de `_tools/` |
+| `agent/synthesizer.py` | LLM#2: redacta respuesta final en español vía `llm_synthesizer` |
+| `agent/context.py` | Carga y persiste historial de conversación por sesión |
+| `agent/domains/` | `DomainController` por dominio: attendance, homework, cuotas, reports, general |
 
 `skills/orchestrator/_tools/` — tool modules reutilizados por el Executor. `skills/orchestrator/skill_agents/` — skill agents legacy usados por el bot-agente v1 (en proceso de sustitución por el Agent Runtime).
+
+### LLM client
+
+All LLM calls go through `skills/llm/client.py`. Use `call_with_fallback` — it tries `primary`, then each comma-separated model in `fallbacks` on 5xx/429, and runs the blocking SDK call in a thread pool:
+
+```python
+from schoolai.skills.llm.client import call_with_fallback
+from schoolai.config import settings
+
+resp = await call_with_fallback(
+    primary=settings.llm_planner,
+    fallbacks=settings.llm_planner_fallback,
+    messages=[...],
+    response_format={"type": "json_object"},
+)
+```
+
+Model strings are `"provider/model"` (e.g. `"groq/llama-3.1-8b-instant"`). Providers are registered in `skills/llm/providers.py`. Each provider maps to a `settings` attribute for its API key.
+
+### Gateway endpoints (v2)
+
+| Method | Path | Descripción |
+|---|---|---|
+| `POST` | `/gateway/message` | Canal → Agent Runtime → respuesta |
+| `POST` | `/gateway/classify` | Solo clasificación (sin ejecutar el agente) |
+| `WS` | `/gateway/ws/{user_id}` | WebSocket para SvelteKit / CLI web |
+| `POST` | `/gateway/telegram/{token}` | Telegram webhook |
+| `GET` | `/gateway/health` | Health check |
+
+### Key env vars
+
+Critical vars that must be set in `.env`:
+
+| Var | Required | Default |
+|---|---|---|
+| `DATABASE_URL` | yes | — |
+| `TELEGRAM_BOT_TOKEN` | yes | — |
+| `JWT_SECRET_KEY` | yes (prod) | — |
+| `GATEWAY_ENABLED` | no | `false` |
+| `REDIS_URL` | no | RAM-only state |
+| `TELEGRAM_ALLOWED_USERS` | no | all users allowed |
+| `SCHOOL_TIMEZONE` | no | `America/Guayaquil` |
 
 ### Database sessions
 
@@ -172,7 +228,13 @@ FastAPI app at `schoolai.api.main:app`. Routers in `src/schoolai/api/routers/` �
 
 ### Frontend
 
-Separate repo at `~/schoolaiUI` (SvelteKit + Svelte 5 runes). API client at `src/lib/api/client.ts`. Domain API wrappers (e.g. `scores.ts`, `grades.ts`) live in `src/lib/api/`.
+Subcarpeta `ui/` dentro de este repo (SvelteKit + Svelte 5 runes). API client at `ui/src/lib/api/client.ts`. Domain API wrappers (e.g. `scores.ts`, `grades.ts`, `gateway.ts`) live in `ui/src/lib/api/`.
+
+```bash
+cd ui && npm install   # instalar deps frontend
+cd ui && npm run dev   # dev server (puerto 5173)
+cd ui && npm run build # build producción
+```
 
 ## Migrations
 
