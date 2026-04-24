@@ -1,7 +1,7 @@
 """
 Planner — LLM call #1.
 Receives TaskSpec + available tools → returns [{tool, params}, ...].
-Uses llm_orchestrator (default: kimi-k2-instruct) for reliable JSON tool selection.
+Uses llm_planner (default: groq/openai/gpt-oss-120b) for reliable JSON tool selection.
 """
 from __future__ import annotations
 
@@ -44,8 +44,8 @@ async def plan(
     messages = [{"role": "system", "content": system}] + list(ctx.history) + [{"role": "user", "content": task.raw_text}]
 
     response = await call_with_fallback(
-        primary=settings.llm_orchestrator,
-        fallbacks=settings.llm_orchestrator_fallback,
+        primary=settings.llm_planner,
+        fallbacks=settings.llm_planner_fallback,
         messages=messages,
         temperature=0.0,
         response_format={"type": "json_object"},

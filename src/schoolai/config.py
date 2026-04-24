@@ -55,9 +55,9 @@ class Settings(BaseSettings):
 
     # PLANNER — agent/planner.py: genera plan JSON [{tool, params}]
     # #1 planner 94.6% — 437ms, JSON perfecto, Groq free (20 RPM, cuota distinta a synthesizer)
-    llm_orchestrator: str = "groq/openai/gpt-oss-120b"
+    llm_planner: str = "groq/openai/gpt-oss-120b"
     # free (ollama cloud) → paid (deepseek reasoner)
-    llm_orchestrator_fallback: str = (
+    llm_planner_fallback: str = (
         "ollama/gemini-3-flash-preview:cloud,deepseek/deepseek-reasoner"
     )
 

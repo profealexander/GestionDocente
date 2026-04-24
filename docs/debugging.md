@@ -130,7 +130,7 @@ LOG_LEVEL=DEBUG uv run schoolai-gateway
 | `AuthError: User X not authorized` | `user_id` no está en `TELEGRAM_ALLOWED_USERS` | Añadir al `.env` |
 | `Unknown LLM provider` | API key ausente en `.env` | Verificar `GOOGLE_API_KEY` / `GROQ_API_KEY` |
 | `Curso 'X' no encontrado` | Curso no existe en `schoolai_v2` DB | Verificar con `psql` |
-| `JSON parse error` en planner | LLM devolvió texto en vez de JSON | Revisar modelo en `LLM_ORCHESTRATOR` |
+| `JSON parse error` en planner | LLM devolvió texto en vez de JSON | Revisar modelo en `LLM_PLANNER` |
 | WebSocket `4003 Unauthorized` | `user_id` no autorizado | Añadir a `TELEGRAM_ALLOWED_USERS` |
 
 ---
@@ -165,6 +165,6 @@ WHERE a.date = CURRENT_DATE;
 DATABASE_URL=postgresql+asyncpg://schoolai:1234@localhost:5432/schoolai_v2
 GATEWAY_ENABLED=false          # true → bots Telegram también usan gateway
 GOOGLE_API_KEY=...             # llm_router (gemini-flash-lite)
-GROQ_API_KEY=...               # llm_orchestrator (qwen3-32b) + transcripción de voz
+GROQ_API_KEY=...               # llm_planner (gpt-oss-120b) + llm_synthesizer (llama-4-scout) + voz
 TELEGRAM_ALLOWED_USERS=5494482378
 ```

@@ -81,14 +81,14 @@ Each skill's `handle()` is called independently. Text interceptors run first and
 Key rules in `skills/utils/extract_rules.py`:
 - `extract_prefilter` treats a message starting with an att keyword (falta/asistencia) as a **query** only if it also has a period/course token (`hoy`, `3BT`, `bachillerato`, etc.) OR the message is only att keywords. "Falta tatiana" → registration; "Faltas de hoy" → query.
 - `_extract_names` strips course codes (`_COURSE_RE`) and verbal course forms (`_COURSE_VERBAL_RE`, e.g. "Primero BT") before splitting candidate names. Tokens in `_ATT_KW` are excluded from name candidates.
-- Fuzzy name matching in `skills/attendance/matcher.py` uses `SequenceMatcher` with `SIMILARITY_THRESHOLD = 0.75`.
+- Fuzzy name matching in `skills/attendance/matcher.py` uses `rapidfuzz.fuzz.WRatio` with `SIMILARITY_THRESHOLD = 0.75`.
 - `normalize()` in `skills/utils/text.py` — NFKD + uppercase + strip accents, LRU-cached. Used throughout for all comparisons.
 
 ### Jornada mode state machine
 
 `JornadaSession` is stored per-user in `StateStore` (`bot/state.py`). States: `waiting → active → paused → done`. The session carries `grade_id`, `grade_name`, `subject_id`, `subject_name` when `status == "active"`, and `current_period` when `status == "waiting"`. Both are used by `get_jornada_context()` to inject course context into attendance/homework registrations without the teacher naming the course explicitly.
 
-`StateStore` is a two-layer store (RAM + optional Redis). `REDIS_URL` is **not** currently set in `.env` — state lives in RAM only and is lost on process restart.
+`StateStore` is a two-layer store (RAM + optional Redis). When `REDIS_URL` is set, state persists across restarts; otherwise degrades to RAM-only automatically.
 
 ### Bot packages
 
@@ -100,9 +100,12 @@ Key rules in `skills/utils/extract_rules.py`:
 
 | Variable | Primary | Fallback 1 | Fallback 2 | Rol |
 |---|---|---|---|---|
-| `llm_router` | `mistral/mistral-medium-latest` | `deepseek/deepseek-reasoner` | — | Classifier |
-| `llm_synthesizer` | `groq/meta-llama/llama-4-scout-17b-16e-instruct` | `ollama/gemini-3-flash-preview:cloud` | `mistral/mistral-small-latest` | Synthesizer |
-| `llm_orchestrator` | `groq/openai/gpt-oss-120b` | `ollama/gemini-3-flash-preview:cloud` | `deepseek/deepseek-reasoner` | Planner |
+| `llm_router` | `mistral/mistral-medium-latest` | `deepseek/deepseek-reasoner` | — | Classifier (gateway) |
+| `llm_planner` | `groq/openai/gpt-oss-120b` | `ollama/gemini-3-flash-preview:cloud` | `deepseek/deepseek-reasoner` | Planner (agent runtime) |
+| `llm_synthesizer` | `groq/meta-llama/llama-4-scout-17b-16e-instruct` | `ollama/gemini-3-flash-preview:cloud` | `mistral/mistral-small-latest` | Synthesizer (agent runtime) |
+| `llm_chat` | `groq/compound-beta` | `mistral/mistral-small-latest` | — | Chat libre (v1) |
+| `llm_extractor` | `mistral/mistral-medium-latest` | — | — | Extractor (v1 legacy) |
+| `llm_context_agent` | `mistral/mistral-small-latest` | — | — | Context skill agent |
 
 Groq free tier: 20 RPM por modelo — planner y synthesizer usan modelos distintos, cuotas independientes.
 
@@ -124,9 +127,11 @@ uv run python scripts/rank_llm.py --json scripts/<file>.json --role synthesizer
 
 JSON vigente: `scripts/benchmark-schoolai-20260423-200745.json`
 
-### Orchestrator (Bot Agente)
+### Agent Runtime (v2)
 
-`skills/orchestrator/_tools/` — individual tool modules loaded by `OrchestratorSkill`. Uses GLM-4.7-Flash (Z.AI) with tool calling. Session history stored in Redis (falls back to in-process dict if `REDIS_URL` not set). Fallback provider: Groq llama-3.3-70b-versatile.
+Pipeline: Gateway → Planner (LLM#1, `llm_planner`) → Executor (Python puro) → Synthesizer (LLM#2, `llm_synthesizer`). Entry point: `schoolai-gateway` (puerto 8001). El bot Telegram delega al runtime cuando `GATEWAY_ENABLED=true`.
+
+`skills/orchestrator/_tools/` — tool modules reutilizados por el Executor. `skills/orchestrator/skill_agents/` — skill agents legacy usados por el bot-agente v1 (en proceso de sustitución por el Agent Runtime).
 
 ### Database sessions
 

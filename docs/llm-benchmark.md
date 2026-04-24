@@ -18,26 +18,31 @@ Fuentes: `docs/llm-benchmark-2026-04-13.md`, `docs/llm-benchmark-2026-04-15.md`,
 ## Stack SchoolAI activo
 
 ```env
-# Actualizado: 2026-04-21 (post-benchmark)
+# Actualizado: 2026-04-24 (post-benchmark + renombrado llm_orchestrator → llm_planner)
 LLM_EXTRACTOR=mistral/mistral-medium-latest
 LLM_ROUTER=mistral/mistral-medium-latest
+LLM_ROUTER_FALLBACK=deepseek/deepseek-reasoner
 LLM_CHAT=groq/compound-beta
 LLM_CHAT_FALLBACK=mistral/mistral-small-latest
-LLM_ORCHESTRATOR=moonshotai/kimi-k2-instruct
-LLM_ORCHESTRATOR_FALLBACK=deepseek/deepseek-chat,deepseek/deepseek-reasoner,groq/openai/gpt-oss-120b
+LLM_SYNTHESIZER=groq/meta-llama/llama-4-scout-17b-16e-instruct
+LLM_SYNTHESIZER_FALLBACK=ollama/gemini-3-flash-preview:cloud,mistral/mistral-small-latest
+LLM_PLANNER=groq/openai/gpt-oss-120b
+LLM_PLANNER_FALLBACK=ollama/gemini-3-flash-preview:cloud,deepseek/deepseek-reasoner
 LLM_VISION=openrouter/nvidia/nemotron-nano-12b-v2-vl:free
 LLM_VISION_FALLBACK=openrouter/google/gemma-4-31b-it:free
+LLM_CONTEXT_AGENT=mistral/mistral-small-latest
 ```
 
-### Cambios aplicados 2026-04-21
+### Cambios aplicados 2026-04-24
 
 | Variable | Anterior | Nuevo | Razón |
 |----------|----------|-------|-------|
 | `LLM_EXTRACTOR` | `google/gemini-3.1-flash-lite-preview` | **`mistral/mistral-medium-latest`** | Gemini 0%/0% en JSON → Mistral 100%/100%, #1 global |
 | `LLM_ROUTER` | `google/gemini-3.1-flash-lite-preview` | **`mistral/mistral-medium-latest`** | Igual |
 | `LLM_CHAT_FALLBACK` | `groq/qwen/qwen3-32b` | **`mistral/mistral-small-latest`** | Score noex más consistente, latencia 1120ms |
-| `LLM_ORCHESTRATOR_FALLBACK` | `…,mistral/mistral-large-latest` | sin Mistral Large | Mistral Large: 10%/30% — peor que Small, eliminado |
-| `LLM_ORCHESTRATOR_FALLBACK` | `…,gpt-oss-20b` | `…,gpt-oss-120b` | 120B: 100%/40% vs 20B: 10%/10% |
+| `LLM_PLANNER_FALLBACK` | `…,mistral/mistral-large-latest` | sin Mistral Large | Mistral Large: 10%/30% — peor que Small, eliminado |
+| `LLM_PLANNER_FALLBACK` | `…,gpt-oss-20b` | `…,gpt-oss-120b` | 120B: 100%/40% vs 20B: 10%/10% |
+| `LLM_ORCHESTRATOR` | (v1 — renombrado) | `LLM_PLANNER` | Coherencia con arquitectura v2 — el planner no es un orquestador |
 
 ---
 
@@ -65,11 +70,11 @@ Score = latencia 30% + JSON-full 35% + JSON-noex 35%
 | 15 | Kimi K2.5 | Ollama Cloud | ollama | 7922ms | — | 100% | 100% | 81.3% | candidato |
 | 16 | Gemma 4 31B | Google | google | 6795ms | 3t/s | 90% | 100% | 80.5% | candidato |
 | 17 | Stepfun Step-3.5 Flash | OpenRouter | openrouter | 2070ms | 88t/s | 100% | 50% | 77.6% | candidato |
-| 18 | **GPT-OSS 120B** | Groq | groq | **597ms** | 136t/s | 100% | 40% | 77.6% | orchestrator_fallback ★ |
+| 18 | **GPT-OSS 120B** | Groq | groq | **597ms** | 136t/s | 100% | 40% | 77.6% | planner ★ |
 | 19 | Qwen3 32B | Groq | groq | 8898ms | 121t/s | 100% | 90% | 75.5% | candidato |
 | 20 | Gemini 3.1 Flash Lite Preview | Google | google | 10808ms | 6t/s | 100% | 100% | 74.5% | candidato |
 | 21 | Llama 4 Scout 17B | Groq | groq | 1959ms | 51t/s | 100% | 40% | 74.4% | candidato |
-| 22 | **DeepSeek V3.2 Reasoner** | DeepSeek | deepseek | 11192ms | 21t/s | 100% | 100% | **73.6%** | orchestrator ★ |
+| 22 | **DeepSeek V3.2 Reasoner** | DeepSeek | deepseek | 11192ms | 21t/s | 100% | 100% | **73.6%** | planner_fallback ★ |
 | 23 | ByteDance Seed 2.0 Lite | OpenRouter | openrouter | 12707ms | 26t/s | 100% | 100% | 70.0% | candidato |
 | 24 | Qwen3 8B (HF/nscale) 🆕 | HuggingFace | hf | 1529ms | 147t/s | 100% | 20% | 68.4% | candidato |
 | 25 | GLM-4V Flash | Z.AI | zai | 2201ms | 17t/s | 100% | 20% | 66.8% | candidato |
@@ -133,8 +138,8 @@ Run `2026-04-19-181605` marcó 1/10 — **falso negativo por rate limiting** (12
 | Gemma 4 26B | Google | 3797ms | 100% | 100% | 91.0% | candidato |
 | DeepSeek V3.2 Chat | DeepSeek | 4836ms | 100% | 100% | 88.6% | fallback ★ |
 | Mistral Small | Mistral | 1120ms | 100% | 60% | 83.4% | chat_fallback ★ |
-| GPT-OSS 120B | Groq | 597ms | 100% | 40% | 77.6% | orchestrator_fallback ★ |
-| DeepSeek V3.2 Reasoner | DeepSeek | 11192ms | 100% | 100% | 73.6% | orchestrator ★ |
+| GPT-OSS 120B | Groq | 597ms | 100% | 40% | 77.6% | planner ★ |
+| DeepSeek V3.2 Reasoner | DeepSeek | 11192ms | 100% | 100% | 73.6% | planner_fallback ★ |
 
 ### Tier 2 — candidatos alternativos rápidos (HF pool)
 

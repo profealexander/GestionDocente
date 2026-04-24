@@ -45,11 +45,11 @@ async def list_models(_user=Depends(get_current_user)):
     active_models = {
         settings.llm_extractor,
         settings.llm_chat,
-        settings.llm_orchestrator,
+        settings.llm_planner,
     }
     # fallbacks
-    if settings.llm_orchestrator_fallback:
-        for m in settings.llm_orchestrator_fallback.split(","):
+    if settings.llm_planner_fallback:
+        for m in settings.llm_planner_fallback.split(","):
             active_models.add(m.strip())
 
     providers = []

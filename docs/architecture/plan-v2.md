@@ -125,7 +125,7 @@ src/schoolai/
 ├── agent/
 │   ├── loop.py          ciclo principal con timing y logs
 │   ├── orchestrator.py  Router Python puro: domain → DomainController
-│   ├── planner.py       LLM #1 (llm_orchestrator) → plan JSON
+│   ├── planner.py       LLM #1 (llm_planner) → plan JSON
 │   ├── executor.py      Python puro — ejecuta steps, captura errores
 │   ├── synthesizer.py   LLM #2 (llm_router) → respuesta ES
 │   ├── context.py       Context Engine RAM, 10 turnos/sesión
@@ -280,7 +280,7 @@ VITE_GATEWAY_WS=ws://localhost:8001
 | Variable config | Rol | Modelo primario | Fallback chain |
 |---|---|---|---|
 | `llm_router` | Classifier (gateway/normalizer) | `mistral/mistral-medium-latest` | → `deepseek/deepseek-reasoner` |
-| `llm_orchestrator` | Planner (agent/planner) | `groq/openai/gpt-oss-120b` | → `ollama/gemini-3-flash-preview:cloud` → `deepseek/deepseek-reasoner` |
+| `llm_planner` | Planner (agent/planner) | `groq/openai/gpt-oss-120b` | → `ollama/gemini-3-flash-preview:cloud` → `deepseek/deepseek-reasoner` |
 | `llm_synthesizer` | Synthesizer (agent/synthesizer) | `groq/meta-llama/llama-4-scout-17b-16e-instruct` | → `ollama/gemini-3-flash-preview:cloud` → `mistral/mistral-small-latest` |
 | `llm_context_agent` | Context skill agent | `mistral/mistral-small-latest` | — |
 | `llm_chat` | Chat libre (ia/skill) | `groq/compound-beta` | → `mistral/mistral-small-latest` |
@@ -296,7 +296,7 @@ Fallback implementado en `skills/llm/client.py:call_with_fallback()` — maneja 
 |---|---|
 | `planner.py` — `KeyError` por `{}` del JSON en `.format()` | `.replace("{tools}", tools_desc)` |
 | Parser planner — no manejaba objeto único `{"tool":...}` de Qwen3 | Extendido para 3 formatos de respuesta |
-| `LLM_ORCHESTRATOR=moonshotai/...` — provider no registrado, caía a Groq | Renombrado a `moonshot/` → reemplazado por `groq/qwen/qwen3-32b` |
+| `LLM_PLANNER=moonshotai/...` — provider no registrado, caía a Groq | Renombrado a `moonshot/` → reemplazado por `groq/openai/gpt-oss-120b` |
 | `llm_override` hardcodeado en `context.py` | → `settings.llm_context_agent` |
 
 ---

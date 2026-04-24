@@ -17,7 +17,7 @@ Uso:
     reply = await AttendanceAgent().run(text, prior_messages)
 
 Failover / Retry:
-  - Cadena de proveedores: LLM_ORCHESTRATOR → LLM_ORCHESTRATOR_FALLBACK (coma-separado)
+  - Cadena de proveedores: LLM_PLANNER → LLM_PLANNER_FALLBACK (coma-separado)
   - Por proveedor: hasta MAX_RETRIES intentos con backoff exponencial (1 s, 2 s)
   - Rate-limit (429) o auth (401): cambia proveedor inmediatamente
   - Error transitorio: reintenta en el mismo proveedor antes de cambiar
@@ -108,9 +108,9 @@ def _compress_old_tool_results(messages: list[dict]) -> list[dict]:
 
 def _build_providers_chain(settings) -> list[str]:
     """Construye la cadena de proveedores: primario + fallbacks."""
-    chain = [settings.llm_orchestrator]
-    if settings.llm_orchestrator_fallback:
-        for entry in settings.llm_orchestrator_fallback.split(","):
+    chain = [settings.llm_planner]
+    if settings.llm_planner_fallback:
+        for entry in settings.llm_planner_fallback.split(","):
             entry = entry.strip()
             if entry and entry not in chain:
                 chain.append(entry)
