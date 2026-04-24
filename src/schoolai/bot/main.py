@@ -1,6 +1,4 @@
 import html
-import sys
-from pathlib import Path
 
 try:
     import asyncio
@@ -299,28 +297,14 @@ async def _remove_keyboard_from_teachers(bot) -> None:
         logger.warning(f"[libre_init] error al cargar docentes: {e}")
 
 
-def _setup_logging() -> None:
-    log_dir = Path(settings.log_dir)
-    log_dir.mkdir(parents=True, exist_ok=True)
-    logger.remove()
-    logger.add(
-        sys.stderr,
-        level="INFO",
-        colorize=True,
-        format="<green>{time:HH:mm:ss}</green> | <level>{level:<7}</level> | {message}",
-    )
-    logger.add(
-        log_dir / "schoolai_{time:YYYY-MM-DD}.log",
-        level="DEBUG",
-        rotation="00:00",
-        retention="30 days",
-        compression="gz",
-        format="{time:YYYY-MM-DD HH:mm:ss} | {level:<7} | {message}",
-    )
+def _setup_logging(service: str) -> None:
+    from schoolai.logging import setup_logging
+    setup_logging(service)
 
 
 def run(dev: bool = False) -> None:
-    _setup_logging()
+    service = "bot-jornada" if dev and settings.telegram_bot_token_jornada else "bot"
+    _setup_logging(service)
 
     from schoolai.bot.singleton import singleton_guard
 
