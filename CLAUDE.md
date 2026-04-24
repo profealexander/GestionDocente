@@ -26,41 +26,62 @@ uv run alembic revision --autogenerate -m "description"
 
 # Entry points (direct run without systemd)
 uv run schoolaiapi
+uv run schoolai-gateway
 uv run schoolai-bot
 uv run schoolai-bot-jornada
-uv run schoolai-bot-agente
 ```
 
 
 ## Architecture
 
-### Three processes, one codebase
+### Procesos activos
 
-| Process | Entry point | Purpose |
+| Proceso | Entry point | Propósito |
 |---|---|---|
-| `schoolaiapi` | `schoolai.api.runner:run` | FastAPI REST API (uvicorn) |
-| `schoolai-bot` | `schoolai.bot.main:run` | Telegram bot "Libre" (teachers) |
-| `schoolai-bot-jornada` | `schoolai.bot.main_dev:run_dev` | Telegram bot "Jornada" (school-day view) |
-| `schoolai-bot-agente` | `schoolai.bot.main_agente:run_agente` | Telegram bot "Agente" (LLM orchestrator) |
+| `schoolaiapi` | `schoolai.api.runner:run` | FastAPI REST API (uvicorn, puerto 8000) |
+| `schoolai-gateway` | `schoolai.gateway.runner:run` | Gateway v2 Hub Central (uvicorn, puerto 8001) |
+| `schoolai-bot` | `schoolai.bot.main:run` | Telegram bot "Libre" — docentes |
+| `schoolai-bot-jornada` | `schoolai.bot.main_dev:run_dev` | Telegram bot "Jornada" — vista de jornada escolar |
+
+> `schoolai-bot-agente` es un proceso **legacy v1** (usa OrchestratorSkill directo) — en proceso de sustitución por el Agent Runtime v2 (`GATEWAY_ENABLED=true`).
 
 PostgreSQL runs in Docker container `schoolai-db`. Nightly backup at 02:00 via `backup.sh` + systemd timer.
 
-### Message dispatch pipeline (Libre / Jornada bots)
+### v2 — Flujo principal (Gateway + Agent Runtime)
+
+Activo cuando `GATEWAY_ENABLED=true` o vía acceso directo al gateway (web, CLI, webhook):
+
+```
+Telegram / Web / CLI
+  → Gateway (puerto 8001) — normaliza a TaskSpec via llm_router (classifier)
+  → Agent Runtime
+      Router     — Python puro: dominio → DomainController
+      Planner    — LLM#1 (llm_planner): genera [{tool, params}]
+      Executor   — Python puro: ejecuta tools
+      Synthesizer — LLM#2 (llm_synthesizer): redacta respuesta en español
+  → _tools/ (attendance, homework, cuotas, reports…) → PostgreSQL
+```
+
+### v1 — Pipeline de dispatch (bots Libre / Jornada con GATEWAY_ENABLED=false)
 
 ```
 incoming message
-  → text_interceptors.run()      # priority queue: jornada_absent_other(5), horario(8), edit_flow(10)
-  → registry.detect_all()        # all skills where matches()==True, sorted by priority
+  → text_interceptors.run()      # priority queue (ver lista completa abajo)
+  → registry.detect_all()        # skills donde matches()==True, sorted by priority
       AttendanceEditSkill  p=8
       AttendanceSkill      p=10
       HomeworkSkill        p=20
       QuerySkill           p=30
       ...
-      OrchestratorSkill    p=90  # explicit fallback, matches()==False always
-      ChatSkill            p=100 # last resort
+      ChatSkill            p=100  # last resort
 ```
 
 Each skill's `handle()` is called independently. Text interceptors run first and can short-circuit the pipeline by returning `True`.
+
+Text interceptors activos (orden de prioridad):
+- `modo_chat(1)`, `modo_editar(2)`, `jornada_absent_other(5)`
+- `horario_natural(8)`, `ausencias_natural(8)`, `hw_edit_text(10)`
+- `cuota_edit_text(20)`, `cuota_participante_text(30)`, `cuota_nombre_text(40)`, `cuota_names_text(50)`
 
 ### Skill Registry pattern
 

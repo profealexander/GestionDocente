@@ -1,6 +1,6 @@
 """
-Router — Python puro. Selecciona el DomainController según el dominio del TaskSpec.
-Sin LLM.
+Domain Router — Python puro. Selecciona el DomainController según el dominio del TaskSpec.
+Sin LLM. Parte del Agent Runtime v2 (Gateway → Domain Router → Planner → Executor → Synthesizer).
 """
 from __future__ import annotations
 

@@ -142,7 +142,8 @@ src/schoolai/
 │   └── main.py          CLI interactivo con rich — chat HTTP al gateway
 │
 ├── bot/
-│   ├── main.py / main_dev.py / main_agente.py   entrypoints de cada bot
+│   ├── main.py / main_dev.py    entrypoints bot Libre y bot Jornada
+│   ├── main_agente.py           entrypoint bot Agente (legacy v1 — sustituido por Gateway v2)
 │   ├── singleton.py     PID-file guard — evita Conflict 409 con watchfiles/WSL2
 │   ├── startup.py       common_post_init: redis, course_map, cleanup jobs
 │   ├── mode.py          modo activo del proceso: "libre" | "jornada"

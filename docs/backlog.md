@@ -19,13 +19,19 @@
 ## Deuda técnica
 
 ### Urgente
-- [ ] **Persistencia Jornada** — `JornadaSession` vive en RAM, se pierde al reiniciar. Requiere Redis.
+- [ ] **`bot/jornada/flow.py:390`** — `_on_absent_day_reason` no aplica fallback a viernes en fin de semana (bug audit 2026-04-24)
+- [ ] **`bot/permissions.py`** — nunca retorna `"none"` para usuarios sin perfil en DB (audit 2026-04-24)
+- [ ] **`skills/homework/repository.py:286`** — race condition en `MAX(sequence_num)` sin lock (audit 2026-04-24)
 
 ### Menor
-- [ ] Tests básicos — fuzzy matcher, dispatcher, router
-- [ ] `_pending_pago` en RAM → migrar a Redis
-- [ ] Bloqueo fin de semana — restaurar en `bot/jornada/flow.py`
-- [ ] Batch inserts asistencia — 30 alumnos = 30 INSERTs individuales
+- [ ] Tests básicos — fuzzy matcher, dispatcher, gateway router
+- [ ] `_pending_pago` en RAM → migrar a Redis (StateStore sin `use_redis=True`)
+- [ ] Migrar ~40 archivos de `async_session()` directo → `get_db_session()` (audit 2026-04-24)
+
+### Resuelto ✅
+- ~~Persistencia Jornada~~ — `use_redis=True` implementado en `bot/state.py`
+- ~~Batch inserts asistencia~~ — ya usa `insert(Attendance), [list_of_dicts]`
+- ~~Bloqueo fin de semana~~ — hay fallback a viernes (pendiente el bug en `_on_absent_day_reason`)
 
 ---
 
@@ -64,7 +70,7 @@ Subcomandos objetivo:
 ### FASE 1 — MVP
 
 - [ ] Importación masiva via LLM (PDF/Excel → extrae estudiantes, docentes, representantes)
-- [ ] Reusar formatter asistencia en Bot Agente
+- [ ] Reusar formatter asistencia en Agent Runtime (v2)
 
 ### FASE 2 — PWA completa
 
