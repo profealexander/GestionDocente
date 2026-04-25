@@ -39,6 +39,9 @@ async def lifespan(app: FastAPI):  # noqa: ARG001
             raise RuntimeError(
                 "JWT_SECRET_KEY está vacío. Configura esta variable en .env antes de iniciar la API."
             )
+    if _settings.redis_url:
+        from schoolai.bot.state import init_redis
+        init_redis(_settings.redis_url)
     yield
 
 
