@@ -22,14 +22,16 @@ uv run alembic upgrade head
 uv run alembic revision --autogenerate -m "description"
 
 # Comando global (disponible desde cualquier ruta)
-gestion                      # menú principal
+gestion                      # menú interactivo (sin args)
 gestion start                # arrancar todo (API + Gateway + Bots)
 gestion stop / status        # detener / estado
 gestion api                  # FastAPI REST — port 8000
 gestion gateway              # Gateway v2 — port 8001
-gestion cli                  # CLI interactiva
+gestion cli                  # CLI interactiva (requiere gateway)
 gestion logs [api|bot|jornada|agente|gateway]
-gestion debug                # depuración paso a paso con pudb (menú interactivo)
+gestion debug [api|gateway|bot|jornada]   # pudb paso a paso
+gestion doctor               # diagnóstico: .env, procesos, DB, Redis, endpoints
+gestion update               # git pull + uv sync + reinicio opcional
 
 # Gestión systemd (bajo nivel)
 ./sai.sh [start|stop|restart|enable|disable|status|backup|logs [api|bot|jornada|agente]]
