@@ -4,10 +4,7 @@ Triggered by free text/audio — no command needed.
 Flow: detect → extract names → ask grade if missing → resolve ambiguous names → save.
 """
 
-from datetime import date
-
 from loguru import logger
-from sqlalchemy import select
 from telegram import InlineKeyboardButton, InlineKeyboardMarkup, Update
 from telegram.constants import ParseMode
 from telegram.ext import ContextTypes
@@ -20,73 +17,9 @@ from schoolai.bot.state import (
     set_attendance,
 )
 from schoolai.db.connection import get_db_session
-from schoolai.db.models.grade import Grade
 from schoolai.skills.attendance.constants import ABSENT, JUSTIFIED, LATE
-from schoolai.skills.attendance.detector import extract_absences
 from schoolai.skills.attendance.matcher import MatchResult, match_names
 from schoolai.skills.attendance.service import save_absences
-from schoolai.skills.homework.detector import extract_course
-from schoolai.skills.homework.repository import find_grade
-from schoolai.skills.utils.keyboards import grade_keyboard
-
-# ── Entry: called from dispatcher when attendance message detected ─────────────
-
-
-async def start_attendance(update: Update, text: str) -> None:
-    user_id = update.effective_user.id
-    today = date.today()
-
-    extracted = extract_absences(text)
-    if not extracted:
-        await update.message.reply_text(
-            "Entendí que es asistencia pero no identifiqué nombres. "
-            "Ejemplo: _Hoy faltaron Juan Pérez y María López del 3ro BT._",
-            parse_mode=ParseMode.MARKDOWN,
-        )
-        return
-
-    course_text = extract_course(text)
-    grade = None
-    if course_text:
-        async with get_db_session() as session:
-            grade = await find_grade(session, course_text)
-
-    if not grade:
-        # Ask for grade
-        async with get_db_session() as session:
-            grades = (
-                (await session.execute(select(Grade).order_by(Grade.sort_order))).scalars().all()
-            )
-
-        state = PendingAttendance(
-            step="await_grade",
-            extracted=extracted,
-            attendance_date=today,
-        )
-        set_attendance(user_id, state)
-
-        names_preview = ", ".join(e["name"] for e in extracted[:5])
-        if len(extracted) > 5:
-            names_preview += f" y {len(extracted) - 5} más"
-
-        await update.message.reply_text(
-            f"Ausentes detectados: *{names_preview}*\n\n¿De qué curso?",
-            parse_mode=ParseMode.MARKDOWN,
-            reply_markup=grade_keyboard(grades, "att_grade"),
-        )
-        return
-
-    # Grade found in text — go straight to matching
-    state = PendingAttendance(
-        step="await_ambiguous",
-        extracted=extracted,
-        attendance_date=today,
-        grade_id=grade.id,
-        grade_name=grade.name,
-    )
-    set_attendance(user_id, state)
-    await _run_matching(update, user_id, state)
-
 
 # ── Callback dispatcher ───────────────────────────────────────────────────────
 

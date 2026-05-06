@@ -76,9 +76,12 @@ incoming message
   → registry.detect_all()        # skills donde matches()==True, sorted by priority
       AttendanceEditSkill  p=8
       AttendanceSkill      p=10
-      HomeworkSkill        p=20
-      QuerySkill           p=30
-      ...
+      HWReportSkill        p=20
+      HomeworkSkill        p=30
+      CuotaSkill           p=35
+      HWEditSkill          p=40
+      QuerySkill           p=40
+      OrchestratorSkill    p=50  # default
       ChatSkill            p=100  # last resort
 ```
 
@@ -131,7 +134,7 @@ Key rules in `skills/utils/extract_rules.py`:
 | `llm_planner` | `groq/openai/gpt-oss-120b` | `ollama/gemini-3-flash-preview:cloud` | `deepseek/deepseek-v4-flash` | Planner (agent runtime) |
 | `llm_synthesizer` | `groq/meta-llama/llama-4-scout-17b-16e-instruct` | `ollama/gemini-3-flash-preview:cloud` | `mistral/mistral-small-latest` | Synthesizer (agent runtime) |
 | `llm_chat` | `groq/compound-beta` | `mistral/mistral-small-latest` | — | Chat libre (v1) |
-| `llm_extractor` | `mistral/mistral-medium-latest` | — | — | Extractor (v1 legacy) |
+| `llm_extractor` | `groq/openai/gpt-oss-120b` | `mistral/mistral-medium-latest` | — | Extractor (v1 legacy) |
 | `llm_context_agent` | `mistral/mistral-small-latest` | — | — | Context skill agent |
 
 Groq free tier: 20 RPM por modelo — planner y synthesizer usan modelos distintos, cuotas independientes.
@@ -254,9 +257,11 @@ Name files sequentially: `0015_description.py` (próxima libre). After creating 
 2. A new alembic revision
 3. `uv run alembic upgrade head`
 
-## Homework backend (en implementación)
+## Homework backend (planificado — NO implementado aún)
 
-El almacén de tareas está siendo migrado de PostgreSQL a **Google Sheets** como store primario.
+> **Estado:** La migración a Google Sheets está planificada pero NO iniciada. Los archivos del patrón Repository aún no existen. Actualmente solo existe `skills/homework/repository.py` (monolítico).
+
+El almacén de tareas será migrado de PostgreSQL a **Google Sheets** como store primario.
 
 **Variables de entorno:**
 ```

@@ -52,10 +52,6 @@ cuotas       = "schoolai.skills.cuotas.skill:CuotaSkill"
 orchestrator = "schoolai.skills.orchestrator.skill:OrchestratorSkill"
 chat         = "schoolai.skills.ia.skill:ChatSkill"
 
-[project.entry-points."schoolai.channels"]
-telegram  = "schoolai.bot.channels.telegram:TelegramChannel"
-whatsapp  = "schoolai.bot.channels.whatsapp:WhatsAppChannel"
-
 [project.scripts]
 schoolai-bot         = "schoolai.bot.main:run"
 schoolai-bot-jornada = "schoolai.bot.main_dev:run_dev"

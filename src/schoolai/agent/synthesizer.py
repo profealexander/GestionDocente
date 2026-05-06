@@ -1,7 +1,7 @@
 """
 Synthesizer — LLM call #2.
 Receives ActionResults + original request → formatted response in Spanish.
-Uses llm_router (gemini-flash-lite) — fast, cheap, good at formatting.
+Uses llm_synthesizer — fast, cheap, good at formatting.
 """
 from __future__ import annotations
 

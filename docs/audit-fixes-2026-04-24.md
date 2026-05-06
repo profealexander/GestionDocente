@@ -1,7 +1,7 @@
 # Plan de correcciones — Auditoría 2026-04-24
 
 Originado por auditoría completa de código, documentación y consistencia.
-Estado general: **mayoría de bugs críticos resueltos** — actualizado 2026-04-24.
+Estado general: **mayoría de bugs resueltos** — actualizado 2026-05-05.
 
 > Revisión posterior al commit inicial confirmó que Fases 1 y la mayoría de Fase 2 ya estaban implementadas en el código integrado.
 
@@ -47,25 +47,15 @@ Corregido según backlog 2026-04-24.
 
 ---
 
-### 2.3 · `api/routers/health.py` — Redis reportado como "not configured" siempre
+### ~~2.3 · `api/routers/health.py` — Redis reportado como "not configured" siempre~~ ✅ RESUELTO
 
-**Archivo**: `api/routers/health.py:26-32`  
-**Problema**: La API no llama `init_redis()` en startup. El health endpoint siempre reporta `"redis": "not configured"` aunque `REDIS_URL` esté definido.
-
-**Pasos**:
-1. [ ] Agregar `await init_redis()` en el lifespan/startup de `api/main.py`
-2. [ ] Verificar que `init_redis()` sea idempotente (safe to call múltiples veces)
+`api/main.py:42-44` llama `init_redis()` en el lifespan startup cuando `REDIS_URL` está definido. El health endpoint ahora reporta correctamente.
 
 ---
 
-### 2.4 · `gateway/auth.py:42` — rate-limit `_buckets` crece sin TTL
+### ~~2.4 · `gateway/auth.py:42` — rate-limit `_buckets` crece sin TTL~~ ✅ RESUELTO
 
-**Archivo**: `gateway/auth.py:16`  
-**Problema**: El dict de buckets acumula timestamps por `user_id` sin purga. Con muchos usuarios puede acumular MB de datos históricos.
-
-**Pasos**:
-1. [ ] Agregar purga de entradas vacías después de cada `check_rate_limit()`
-2. [ ] Limitar el `deque` por user_id con `maxlen` igual a la ventana máxima
+`gateway/auth.py` ahora tiene purga periódica cada 500 llamadas (`_CLEANUP_EVERY = 500`). Elimina entradas cuyo último timestamp es más viejo que `_WINDOW` (60s).
 
 ---
 
@@ -75,19 +65,9 @@ Usa `pg_advisory_xact_lock` en `repository.py:244-247`. Lock liberado automátic
 
 ---
 
-### 2.6 · `gateway/app.py:24` — CORS origins sin strip de espacios
+### ~~2.6 · `gateway/app.py:24` — CORS origins sin strip de espacios~~ ❌ INCORRECTO
 
-**Archivo**: `gateway/app.py:24`  
-**Problema**: `settings.cors_origins.split(",")` no hace strip. Si hay espacios en `.env`, los orígenes quedan con espacios y CORS falla.
-
-**Fix**:
-```python
-origins = [o.strip() for o in settings.cors_origins.split(",")]
-```
-
-**Pasos**:
-1. [ ] Aplicar el fix (1 línea)
-2. [ ] Verificar que `api/main.py:79` ya lo hace correctamente (sirve de referencia)
+El código ya hace `.strip()` correctamente: `allow_origins=[o.strip() for o in settings.cors_origins.split(",") if o.strip()]`. La auditoría estaba equivocada.
 
 ---
 
@@ -135,14 +115,16 @@ origins = [o.strip() for o in settings.cors_origins.split(",")]
 
 ### 3.4 · Docstrings de módulos LLM obsoletos
 
-**Archivos**: `agent/planner.py:4`, `agent/synthesizer.py:4`, `skills/llm/client.py:6`, `skills/llm/usage.py:8`, `skills/orchestrator/skill.py:1`  
+**Archivos**: `agent/planner.py:4`, `agent/synthesizer.py:4`, `skills/llm/client.py:6`, `skills/llm/usage.py:8`, `skills/orchestrator/skill.py:1`
 
 **Pasos**:
-1. [ ] `agent/planner.py:4` — cambiar "kimi-k2-instruct" → "groq/openai/gpt-oss-120b"
-2. [ ] `agent/synthesizer.py:4` — cambiar "llm_router (gemini-flash-lite)" → "llm_synthesizer (llama-4-scout)"
+1. [x] `agent/planner.py:4` — corregido a "groq/openai/gpt-oss-120b"
+2. [x] `agent/synthesizer.py:4` — corregido a "llm_synthesizer" (2026-05-05)
 3. [ ] `skills/llm/client.py:6` — cambiar ejemplo de modelo a uno del stack activo
-4. [ ] `skills/llm/usage.py:8` — cambiar `provider="google", model="gemini-2.5-flash-lite"` a ejemplo válido
+4. [x] `skills/llm/usage.py:8` — corregido ejemplo a `provider="groq", model="openai/gpt-oss-120b"` (2026-05-05)
 5. [ ] `skills/orchestrator/skill.py:1` — actualizar referencia a modelo real del planner
+
+**Nota adicional (2026-05-05):** `skills/context/extractor.py:60,77` hardcodea `model="gemini-3.1-flash-lite-preview"` en código real (no solo docstring). `skills/llm/structured.py:69` docstring corregido.
 
 ---
 
@@ -161,19 +143,15 @@ Solo 2 ocurrencias restantes, ambas en `db/connection.py` donde es la implementa
 
 ---
 
-### 4.2 · `bot/permissions.py:39` — lógica redundante
+### ~~4.2 · `bot/permissions.py:39` — lógica redundante~~ ✅ RESUELTO
 
-**Pasos**:
-1. [ ] Eliminar el segundo `return "teacher"` (ver fix en 2.1 — se resuelve junto)
+Flujo de control limpio, sin returns redundantes.
 
 ---
 
-### 4.3 · `pyproject.toml` — grupos dev duplicados con versiones diferentes
+### ~~4.3 · `pyproject.toml` — grupos dev duplicados con versiones diferentes~~ ✅ RESUELTO
 
-**Pasos**:
-1. [ ] Unificar `[project.optional-dependencies].dev` y `[dependency-groups].dev`
-2. [ ] Mantener las versiones más recientes: `ruff>=0.15.5`, `pytest>=9.0.2`
-3. [ ] Ejecutar `uv sync` y verificar que tests y lint siguen funcionando
+Un solo `[dependency-groups].dev` en pyproject.toml.
 
 ---
 
@@ -185,21 +163,15 @@ Solo 2 ocurrencias restantes, ambas en `db/connection.py` donde es la implementa
 
 ---
 
-### 4.5 · `bot/state.py:325` — lazy import de `timedelta`
+### ~~4.5 · `bot/state.py:325` — lazy import de `timedelta`~~ ✅ RESUELTO
 
-**Archivo**: `bot/state.py:325`  
-**Pasos**:
-1. [ ] Mover `from datetime import timedelta` al bloque de imports del módulo
+Import movido a nivel de módulo en `bot/state.py:11`.
 
 ---
 
-### 4.6 · Alias legacy `call_groq_tools` en `tool_caller.py`
+### ~~4.6 · Alias legacy `call_groq_tools` en `tool_caller.py`~~ ✅ RESUELTO (2026-05-05)
 
-**Archivo**: `skills/llm/tool_caller.py:106`  
-**Pasos**:
-1. [ ] Grep para encontrar todos los usos: `grep -rn "call_groq_tools" src/`
-2. [ ] Migrar cada uso a `call_extractor_tools`
-3. [ ] Eliminar el alias
+Alias eliminado de `tool_caller.py`. 4 callers migrados: `homework/tools.py`, `attendance/tools.py`, `cuotas/tools.py`, `query/tools.py`.
 
 ---
 
@@ -208,18 +180,15 @@ Solo 2 ocurrencias restantes, ambas en `db/connection.py` donde es la implementa
 ### 5.1 · Eliminar funciones nunca invocadas
 
 **Pasos**:
-1. [ ] `bot/attendance_handler.py` — verificar y eliminar `start_attendance()` si no tiene callers
-2. [ ] `cli/dispatcher.py:154` — eliminar `_start_gateway()` o conectarlo al flujo (ver 1.3)
-3. [ ] `db/connection.py` — eliminar `get_session()` (generador que no se usa; no confundir con `get_db_session()`)
+1. [x] `bot/attendance_handler.py` — `start_attendance()` eliminado (2026-05-05, cero callers)
+2. ~~`cli/dispatcher.py:154` — `_start_gateway()`~~ NO EXISTE — ya fue eliminado o nunca existió
+3. ~~`db/connection.py` — `get_session()`~~ NO ESTÁ MUERTO — usado por 10+ routers FastAPI (la auditoría estaba equivocada)
 
 ---
 
-### 5.2 · Entry points `schoolai.channels` sin loader
+### ~~5.2 · Entry points `schoolai.channels` sin loader~~ ✅ RESUELTO (2026-05-05)
 
-**Archivo**: `pyproject.toml`  
-**Pasos**:
-1. [ ] Verificar si `TelegramChannel` / `WhatsAppChannel` se cargan vía entry_points en algún sitio
-2. [ ] Si no: eliminar las entradas de `[project.entry-points."schoolai.channels"]`
+Entry points eliminados de `pyproject.toml`. Los canales se importan directamente, no vía entry points.
 
 ---
 
@@ -312,22 +281,22 @@ Fases 4.2-4.6, 5, 7   → limpieza incremental
 
 ## Métricas de progreso
 
-> Actualizado 2026-04-24 tras verificación en código.
+> Actualizado 2026-05-05 tras auditoría completa docs vs código.
 
 | Fase | Issues | Estado |
 |------|--------|--------|
 | 1 — Bugs críticos | 4 | ✅ 4/4 resueltos |
-| 2 — Bugs medios | 6 | ✅ 4/6 resueltos — pendientes: 2.3 (Redis health), 2.4 (rate-limit TTL) |
-| 3 — Docs incorrectas | 5 | ✅ 3.1–3.3 resueltos — pendientes: 3.4 (docstrings LLM), 3.5 era docs/plan-v2.md (actualizado) |
-| 4 — Inconsistencias | 6 | ✅ 4.1 resuelto — pendientes: 4.2–4.6 (menores) |
-| 5 — Código muerto | 2 | Pendiente |
+| 2 — Bugs medios | 6 | ✅ 6/6 resueltos (2.3, 2.4, 2.6 confirmados/fijados) |
+| 3 — Docs incorrectas | 5 | ✅ 3.1–3.3 resueltos — 3.4 parcial (3/5 docstrings corregidos, 2 pendientes) |
+| 4 — Inconsistencias | 6 | ✅ 6/6 resueltos (4.2–4.6 confirmados/fijados) |
+| 5 — Código muerto | 2 | ✅ 5.1 resuelto (start_attendance eliminado, _start_gateway no existe, get_session NO está muerto) — 5.2 resuelto (entry points eliminados) |
 | 6 — Seguridad | 2 | 6.1 verificar .gitignore (pendiente), 6.2 gateway admin bypass (pendiente) |
 | 7 — Optimizaciones | 5 | Pendiente (bajo riesgo) |
 
 ### Issues pendientes prioritarios
 
-- **2.3** `api/routers/health.py` — Redis siempre reportado "not configured" (falta `init_redis()` en startup)
-- **2.4** `gateway/auth.py` — `_buckets` crece sin TTL en producción con muchos usuarios
-- **2.6** `gateway/app.py:25` — `cors_origins.split(",")` sin `.strip()` (1 línea)
-- **4.3** `pyproject.toml` — grupos dev duplicados con versiones distintas
-- **6.2** `gateway/auth.py:27` — admin no tiene bypass (igual que `bot/handlers.py:84`)
+- **3.4** Docstrings restantes: `skills/llm/client.py:6`, `skills/orchestrator/skill.py:1`
+- **3.4** `skills/context/extractor.py:60,77` hardcodea modelo `gemini-3.1-flash-lite-preview` en código
+- **6.1** Verificar `.env` nunca fue commiteado, rotar API keys
+- **6.2** `gateway/auth.py:27` — admin no tiene bypass
+- **7.x** Optimizaciones menores (bajo riesgo)

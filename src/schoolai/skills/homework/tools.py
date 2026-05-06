@@ -109,9 +109,9 @@ def _tool_call_to_result(tool_name: str, args: dict):
 
 async def llm_fallback(text: str):
     """Fallback Groq para HomeworkSkill / HWReportSkill. Retorna ExtractionResult o None."""
-    from schoolai.skills.llm.tool_caller import call_groq_tools
+    from schoolai.skills.llm.tool_caller import call_extractor_tools
 
-    result = await call_groq_tools(text, TOOLS, _SYSTEM_PROMPT)
+    result = await call_extractor_tools(text, TOOLS, _SYSTEM_PROMPT)
     if result is None:
         return None
     tool_name, args = result

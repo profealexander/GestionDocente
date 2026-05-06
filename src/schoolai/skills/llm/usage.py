@@ -5,7 +5,7 @@ en la tabla llm_usage sin bloquear el flujo principal.
 
 Usage:
     from schoolai.skills.llm.usage import fire_record_usage
-    fire_record_usage(provider="google", model="gemini-2.5-flash-lite", response=resp, agent="attendance")
+    fire_record_usage(provider="groq", model="openai/gpt-oss-120b", response=resp, agent="attendance")
 """
 
 from __future__ import annotations

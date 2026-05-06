@@ -7,7 +7,7 @@
 
 **Asistente IA para docentes** — registra asistencia, tareas y cuotas desde Telegram con lenguaje natural, sin formularios.
 
-[Guía de usuario](docs/user-guide.md) | [Arquitectura v2](docs/architecture/plan-v2.md) | [API REST](#api-rest) | [Bot Agente](#ejecución)
+[Guía de usuario](docs/user-guide.md) | [Arquitectura](docs/architecture/architecture.md) | [API REST](#api-rest) | [Bot Agente](#ejecución)
 
 [![Python](https://img.shields.io/badge/Python-3.13+-3776AB?style=flat&logo=python&logoColor=white)](https://www.python.org/)
 [![FastAPI](https://img.shields.io/badge/FastAPI-0.115+-009688?style=flat&logo=fastapi&logoColor=white)](https://fastapi.tiangolo.com/)
@@ -83,9 +83,10 @@ cp .env.example .env
 | `TELEGRAM_ALLOWED_USERS` | IDs de Telegram separados por coma (ej. `123456,789012`) | ✅ |
 | `GROQ_API_KEY` | API key de Groq — LLM fallback + transcripción de voz | ✅ |
 | `TELEGRAM_BOT_TOKEN_JORNADA` | Token del bot Modo Jornada | — |
-| `TELEGRAM_BOT_TOKEN_AGENTE` | Token del bot Agente IA (Gemini + GLM) | — |
-| `GOOGLE_API_KEY` | API key Google AI Studio — OrchestratorSkill primario (Gemini 2.5 Flash-Lite) | — |
-| `ZAI_API_KEY` | API key Z.AI global — ReplAgent (GLM-4.7-Flash) + fallback orquestador | — |
+| `TELEGRAM_BOT_TOKEN_AGENTE` | Token del bot Agente IA (ReAct orchestrator) | — |
+| `MISTRAL_API_KEY` | API key Mistral — router classifier | — |
+| `DEEPSEEK_API_KEY` | API key DeepSeek — fallback LLM | — |
+| `OPENROUTER_API_KEY` | API key OpenRouter — vision model | — |
 | `JWT_SECRET_KEY` | Clave secreta JWT (32+ caracteres) | ✅ para API |
 | `API_SECRET` | Clave compartida con la PWA para obtener tokens | ✅ para API |
 | `JWT_EXPIRE_HOURS` | Duración del token JWT en horas (default: `24`) | — |
@@ -94,10 +95,14 @@ cp .env.example .env
 | `REDIS_URL` | URL de Redis (ej. `redis://localhost:6379/0`) — recomendado en producción | — |
 | `ADMIN_TELEGRAM_ID` | Tu ID de Telegram para recibir alertas de error | — |
 | `SUPERVISED_MODE` | `true` → pide confirmación antes de toda escritura en DB (default: `false`) | — |
-| `LLM_EXTRACTOR` | Modelo extractor (default: `groq/llama-3.1-8b-instant`) | — |
-| `LLM_CHAT` | Modelo chat IA (default: `groq/llama-3.3-70b-versatile`) | — |
-| `LLM_ORCHESTRATOR` | Modelo orquestador primario (default: `google/gemini-2.5-flash-lite`) | — |
-| `LLM_ORCHESTRATOR_FALLBACK` | Fallback automático, coma-separado (default: `google/gemini-2.5-flash,zai/glm-4.7-flash,groq/llama-3.3-70b-versatile`) | — |
+| `GATEWAY_ENABLED` | `true` → activa Agent Runtime v2 (default: `false`) | — |
+| `SCHOOL_TIMEZONE` | Zona horaria IANA (default: `America/Guayaquil`) | — |
+| `LLM_ROUTER` | Classifier de intención (default: `mistral/mistral-medium-latest`) | — |
+| `LLM_PLANNER` | Planificador del Agent Runtime (default: `groq/openai/gpt-oss-120b`) | — |
+| `LLM_SYNTHESIZER` | Redactor de respuestas (default: `groq/meta-llama/llama-4-scout-17b-16e-instruct`) | — |
+| `LLM_EXTRACTOR` | Extractor tool-calling (default: `groq/openai/gpt-oss-120b`) | — |
+| `LLM_CHAT` | Chat IA libre (default: `groq/compound-beta`) | — |
+| `LLM_VISION` | Modelo de visión (default: `openrouter/nvidia/nemotron-nano-12b-v2-vl:free`) | — |
 | `API_HOST` | Host del servidor API (default: `0.0.0.0`) | — |
 | `API_PORT` | Puerto del servidor API (default: `8000`) | — |
 | `LOG_DIR` | Directorio de logs (default: `logs`) | — |
@@ -144,7 +149,7 @@ uv run schoolai-bot
 # Bot Modo Jornada
 uv run schoolai-bot-jornada
 
-# Bot Agente IA (Gemini 2.5 Flash-Lite + GLM-4.7-Flash REPL, sin pipeline regex)
+# Bot Agente IA (ReAct orchestrator — Groq GPT-OSS 120B)
 uv run schoolai-bot-agente
 
 # API REST
@@ -229,8 +234,8 @@ schoolai/
         │                       # Router de patrones 0ms (6 dominios) + _FlatAgent fallback
         ├── context/            # ContextAgent: documentos institucionales + búsqueda web (DuckDuckGo)
         ├── reminders/          # RemindersAgent: recordatorios programados vía Telegram
-        ├── ia/                 # ChatSkill con streaming (Groq 70B)
-        ├── llm/                # Cliente unificado + tool_caller + providers (groq/google/zai)
+        ├── ia/                 # ChatSkill (compound-beta + mistral fallback)
+        ├── llm/                # Cliente unificado + tool_caller + providers (13 providers)
         ├── documents/          # Generación de documentos PDF
         ├── whatsapp/           # Integración Green API (saliente)
         └── utils/              # normalize, extract_rules, schema (via_llm), keyboards

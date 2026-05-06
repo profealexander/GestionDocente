@@ -276,9 +276,9 @@ def _tool_call_to_extract(tool_name: str, args: dict):
 
 async def llm_fallback(text: str):
     """Llama a Groq cuando extract_cuota() devuelve None. Retorna CuotaExtract o None."""
-    from schoolai.skills.llm.tool_caller import call_groq_tools
+    from schoolai.skills.llm.tool_caller import call_extractor_tools
 
-    result = await call_groq_tools(
+    result = await call_extractor_tools(
         text,
         TOOLS,
         system_prompt=(

@@ -106,7 +106,3 @@ async def call_extractor_tools(
 
     logger.info(f"[tool_caller] tool={tc.function.name} args={args}")
     return tc.function.name, args
-
-
-# Alias para compatibilidad con llamadas existentes — eliminar cuando todos migren
-call_groq_tools = call_extractor_tools

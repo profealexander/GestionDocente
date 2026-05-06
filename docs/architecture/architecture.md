@@ -275,6 +275,60 @@ VITE_GATEWAY_WS=ws://localhost:8001
 
 ---
 
+## Estado del Agent Runtime v2 (2026-05-05)
+
+### ¿Está v2 completo?
+
+**Sí.** Todo el pipeline está implementado y funcional:
+
+| Componente | Archivo | Estado |
+|---|---|---|
+| Gateway (5 endpoints) | `gateway/app.py` | Completo |
+| Message Normalizer | `gateway/normalizer.py` | Completo |
+| LLM Router/Classifier | `gateway/router.py` | Completo |
+| Agent Loop | `agent/loop.py` | Completo |
+| Domain Router | `agent/orchestrator.py` | Completo (5 controllers) |
+| Planner (LLM#1) | `agent/planner.py` | Completo |
+| Executor | `agent/executor.py` | Completo |
+| Synthesizer (LLM#2) | `agent/synthesizer.py` | Completo |
+| Context Store | `agent/context.py` | Completo (in-memory) |
+| Telegram Adapter | `bot/gateway_adapter.py` | Completo (fallback a v1) |
+
+Los 5 domain controllers (`attendance`, `homework`, `cuotas`, `reports`, `general`) delegan a las mismas `_tools/` que v1. No hay lógica duplicada.
+
+### ¿Por qué `GATEWAY_ENABLED=false`?
+
+v2 está desactivado por decisión, no por defecto. Las razones:
+
+**1. Features de v1 que v2 no tiene:**
+- Modo Jornada (SOP engine, notificación matutina, flujo de aprobación)
+- Modo Editar (flujo conversacional de edición de tareas/asistencia)
+- Modo Chat IA (conversación libre con web search)
+- Text interceptors (10 interceptores priorizados que cortocircuitan el pipeline)
+- Broadcast handler (comunicados masivos WhatsApp)
+- Teclados inline (selección de curso, confirmación, resolución de ambigüedad)
+- Contexto conversacional (inyección automática de curso/materia en modo jornada)
+
+**2. Latencia:** v1 resuelve muchos mensajes con 0 LLM calls (regex). v2 necesita mínimo 3 LLM calls por mensaje (classifier + planner + synthesizer).
+
+**3. Costo:** 3x más tokens por mensaje. Groq free tier: 20 RPM por modelo.
+
+**4. Madurez:** v1 lleva semanas en producción con usuarios reales. v2 nunca se ha ejercitado con tráfico real.
+
+### Qué se necesita para activar v2
+
+Antes de poner `GATEWAY_ENABLED=true`, hay que portear las features interactivas de v1 al pipeline de v2:
+
+1. **Modo Jornada** — el domain controller de attendance necesita soportar el flujo SOP (waiting→active→paused→done) con inyección de contexto automática
+2. **Text interceptors** — v2 necesita un mecanismo equivalente para que los interceptores (jornada, editar, cuotas) puedan cortocircuitear el pipeline antes del classifier
+3. **Teclados inline** — el synthesizer necesita poder devolver no solo texto sino también teclados para flujos conversacionales
+4. **Modo Editar/Chat** — los domain controllers necesitan manejar estados de conversación (no solo one-shot)
+5. **Context store → Redis** — migrar de in-memory a Redis para persistir entre reinicios
+
+**Próximo paso recomendado:** Habilitar v2 solo para el `schoolai-bot-agente` (que ya ignora estas features) como campo de pruebas, mientras v1 sigue sirviendo a los bots Libre y Jornada.
+
+---
+
 ## Calidad de Código
 
 - **ruff**: 0 errores (verificado 2026-04-23)
@@ -289,7 +343,7 @@ VITE_GATEWAY_WS=ws://localhost:8001
 | `llm_synthesizer` | Synthesizer (agent/synthesizer) | `groq/meta-llama/llama-4-scout-17b-16e-instruct` | → `ollama/gemini-3-flash-preview:cloud` → `mistral/mistral-small-latest` |
 | `llm_context_agent` | Context skill agent | `mistral/mistral-small-latest` | — |
 | `llm_chat` | Chat libre (ia/skill) | `groq/compound-beta` | → `mistral/mistral-small-latest` |
-| `llm_extractor` | Extractor legacy | `mistral/mistral-medium-latest` | — |
+| `llm_extractor` | Extractor legacy | `groq/openai/gpt-oss-120b` | → `mistral/mistral-medium-latest` |
 
 Groq: planner y synthesizer usan modelos distintos → cuotas 20 RPM independientes.
 
