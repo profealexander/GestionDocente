@@ -81,6 +81,12 @@ packages = ["src/schoolai"]
 [tool.pytest.ini_options]
 asyncio_mode = "auto"
 
+[tool.mypy]
+python_version = "3.11"
+ignore_missing_imports = true
+check_untyped_defs = true
+warn_unused_ignores = false
+
 [dependency-groups]
 dev = [
     "psycopg2-binary>=2.9.10",
@@ -89,4 +95,5 @@ dev = [
     "pytest>=9.0.2",
     "pytest-asyncio>=0.24.0",
     "ruff>=0.15.5",
+    "mypy>=1.10.0",
 ]

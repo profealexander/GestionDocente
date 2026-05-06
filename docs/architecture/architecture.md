@@ -284,8 +284,8 @@ VITE_GATEWAY_WS=ws://localhost:8001
 
 | Variable config | Rol | Modelo primario | Fallback chain |
 |---|---|---|---|
-| `llm_router` | Classifier (gateway/normalizer) | `mistral/mistral-medium-latest` | → `deepseek/deepseek-reasoner` |
-| `llm_planner` | Planner (agent/planner) | `groq/openai/gpt-oss-120b` | → `ollama/gemini-3-flash-preview:cloud` → `deepseek/deepseek-reasoner` |
+| `llm_router` | Classifier (gateway/normalizer) | `mistral/mistral-medium-latest` | → `deepseek/deepseek-v4-flash` |
+| `llm_planner` | Planner (agent/planner) | `groq/openai/gpt-oss-120b` | → `ollama/gemini-3-flash-preview:cloud` → `deepseek/deepseek-v4-flash` |
 | `llm_synthesizer` | Synthesizer (agent/synthesizer) | `groq/meta-llama/llama-4-scout-17b-16e-instruct` | → `ollama/gemini-3-flash-preview:cloud` → `mistral/mistral-small-latest` |
 | `llm_context_agent` | Context skill agent | `mistral/mistral-small-latest` | — |
 | `llm_chat` | Chat libre (ia/skill) | `groq/compound-beta` | → `mistral/mistral-small-latest` |

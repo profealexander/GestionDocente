@@ -46,7 +46,7 @@ class Settings(BaseSettings):
     # #4 classifier 86.4% — 100% noex, sin límite RPM, estable
     llm_router: str = "mistral/mistral-medium-latest"
     # #3 classifier 87.1% — 100% noex, paid
-    llm_router_fallback: str = "deepseek/deepseek-reasoner"
+    llm_router_fallback: str = "deepseek/deepseek-v4-flash"
 
     # SYNTHESIZER — agent/synthesizer.py: redacta respuesta final en español
     # #2 synthesizer 94.4% — 694ms TTFT, español 100%, Groq free (20 RPM)
@@ -61,7 +61,7 @@ class Settings(BaseSettings):
     llm_planner: str = "groq/openai/gpt-oss-120b"
     # free (ollama cloud) → paid (deepseek reasoner)
     llm_planner_fallback: str = (
-        "ollama/gemini-3-flash-preview:cloud,deepseek/deepseek-reasoner"
+        "ollama/gemini-3-flash-preview:cloud,deepseek/deepseek-v4-flash"
     )
 
     llm_context_agent: str = "mistral/mistral-small-latest"    # context skill agent

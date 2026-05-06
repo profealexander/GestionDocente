@@ -132,7 +132,11 @@ _ALLOWED_TABLES = frozenset(
 
 
 def _check_tables(sql: str) -> None:
-    """Verifica que solo se referencien tablas permitidas en la consulta."""
+    """Verifica que solo se referencien tablas permitidas en la consulta.
+
+    Cubre identificadores sin comillas y con comillas dobles (e.g. FROM "teachers")
+    en cualquier nivel de anidamiento (subqueries, CTEs).
+    """
     # Strip SQL comments before analysis
     cleaned = re.sub(r"--[^\n]*", "", sql)
     cleaned = re.sub(r"/\*.*?\*/", "", cleaned, flags=re.DOTALL)
@@ -147,13 +151,15 @@ def _check_tables(sql: str) -> None:
         )
     )
 
-    # Extract table identifiers after FROM, JOIN, INTO, UPDATE
+    # Match both bare identifiers (FROM students) and quoted ones (FROM "teachers").
+    # re.findall scans the full string so subqueries are covered automatically.
     found = re.findall(
-        r"(?:FROM|JOIN|INTO|UPDATE)\s+([a-zA-Z_][a-zA-Z0-9_]*)",
+        r'(?:FROM|JOIN|INTO|UPDATE)\s+(?:"([a-zA-Z_][a-zA-Z0-9_]*)"|([a-zA-Z_][a-zA-Z0-9_]*))',
         cleaned,
         re.IGNORECASE,
     )
-    for table in found:
+    for quoted, bare in found:
+        table = quoted or bare
         tlower = table.lower()
         if tlower in cte_names:
             continue

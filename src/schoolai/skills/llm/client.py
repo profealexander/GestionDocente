@@ -44,24 +44,26 @@ def parse_model(model_str: str) -> tuple[str, str]:
 
 def get_client(provider: str, timeout: float = 60.0) -> OpenAI:
     """Return a cached OpenAI-compatible client for the given provider."""
-    if provider not in _clients:
-        from schoolai.config import settings
+    if provider in _clients:
+        return _clients[provider]
 
-        info = PROVIDERS.get(provider)
-        if info is None:
-            raise ValueError(f"Unknown LLM provider: {provider!r}. Available: {list(PROVIDERS)}")
+    from schoolai.config import settings
 
-        api_key = getattr(settings, info["key"], "") or ""
-        if not api_key:
-            raise ValueError(f"API key not configured for provider {provider!r} ({info['key']})")
+    info = PROVIDERS.get(provider)
+    if info is None:
+        raise ValueError(f"Unknown LLM provider: {provider!r}. Available: {list(PROVIDERS)}")
 
-        kwargs: dict = {"api_key": api_key, "timeout": timeout}
-        if info["base_url"]:
-            kwargs["base_url"] = info["base_url"]
+    api_key = getattr(settings, info["key"], "") or ""
+    if not api_key:
+        raise ValueError(f"API key not configured for provider {provider!r} ({info['key']})")
 
-        _clients[provider] = OpenAI(**kwargs)
+    kwargs: dict = {"api_key": api_key, "timeout": timeout}
+    if info["base_url"]:
+        kwargs["base_url"] = info["base_url"]
 
-    return _clients[provider]
+    # setdefault is atomic under the GIL: if two threads race here, the first one wins
+    # and the second one's newly created client is discarded harmlessly.
+    return _clients.setdefault(provider, OpenAI(**kwargs))
 
 
 def _call_sync(model_str: str, messages: list[dict], **kwargs):

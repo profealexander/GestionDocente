@@ -110,11 +110,11 @@ origins = [o.strip() for o in settings.cors_origins.split(",")]
 1. [ ] Eliminar modelos google/gemini-2.5-flash-lite (eliminado del stack)
 2. [ ] Actualizar stack LLM completo según `config.py` actual:
    - `LLM_ROUTER=mistral/mistral-medium-latest`
-   - `LLM_ROUTER_FALLBACK=deepseek/deepseek-reasoner`
+   - `LLM_ROUTER_FALLBACK=deepseek/deepseek-v4-flash`
    - `LLM_SYNTHESIZER=groq/meta-llama/llama-4-scout-17b-16e-instruct`
    - `LLM_SYNTHESIZER_FALLBACK=ollama/gemini-3-flash-preview:cloud,mistral/mistral-small-latest`
    - `LLM_PLANNER=groq/openai/gpt-oss-120b`
-   - `LLM_PLANNER_FALLBACK=ollama/gemini-3-flash-preview:cloud,deepseek/deepseek-reasoner`
+   - `LLM_PLANNER_FALLBACK=ollama/gemini-3-flash-preview:cloud,deepseek/deepseek-v4-flash`
    - `LLM_CHAT=groq/compound-beta`
    - `LLM_VISION=openrouter/nvidia/nemotron-nano-12b-v2-vl:free`
    - `LLM_CONTEXT_AGENT=mistral/mistral-small-latest`

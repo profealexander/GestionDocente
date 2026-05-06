@@ -10,6 +10,7 @@ from schoolai.api.schemas import SubjectOut
 from schoolai.db.connection import get_session
 from schoolai.db.models.subject import Subject
 
+# Public endpoint — no auth required (catalog data needed by SvelteKit before login)
 router = APIRouter(prefix="/subjects", tags=["Subjects"])
 
 

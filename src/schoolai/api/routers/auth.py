@@ -1,5 +1,6 @@
 """Auth router — issue JWT tokens."""
 
+import asyncio
 import hmac
 import time
 from collections import defaultdict
@@ -31,13 +32,16 @@ class _Bucket:
 
 
 _rate_buckets: dict[str, _Bucket] = defaultdict(_Bucket)
+_rate_call_counter = 0
+_CLEANUP_EVERY = 500  # purge stale IPs every N auth calls
 
 
 def _check_rate_limit(ip: str) -> None:
     """Raise 429 if IP exceeded the rate limit window."""
+    global _rate_call_counter
     now = time.monotonic()
     bucket = _rate_buckets[ip]
-    # prune expired
+    # prune expired attempts for this IP
     bucket.attempts = [t for t in bucket.attempts if t > now - _RATE_LIMIT_WINDOW]
     if len(bucket.attempts) >= _RATE_LIMIT_MAX:
         raise HTTPException(
@@ -45,6 +49,15 @@ def _check_rate_limit(ip: str) -> None:
             detail=f"Demasiadas solicitudes. Intenta de nuevo en {_RATE_LIMIT_WINDOW}s.",
         )
     bucket.attempts.append(now)
+
+    # Periodic cleanup: evict IPs with no recent activity to prevent unbounded growth
+    _rate_call_counter += 1
+    if _rate_call_counter >= _CLEANUP_EVERY:
+        _rate_call_counter = 0
+        cutoff = now - _RATE_LIMIT_WINDOW
+        stale = [ip for ip, b in _rate_buckets.items() if not b.attempts or b.attempts[-1] < cutoff]
+        for stale_ip in stale:
+            del _rate_buckets[stale_ip]
 
 
 class TokenRequest(BaseModel):
@@ -129,7 +142,10 @@ async def login(request: Request, body: LoginRequest) -> TokenResponse:
             detail="Credenciales inválidas.",
         )
 
-    if not _bcrypt.checkpw(body.password.encode(), teacher.password_hash.encode()):
+    pw_ok = await asyncio.to_thread(
+        _bcrypt.checkpw, body.password.encode(), teacher.password_hash.encode()
+    )
+    if not pw_ok:
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="Credenciales inválidas.",

@@ -8,7 +8,7 @@ If Redis is not configured or unavailable the system silently uses RAM only.
 """
 
 from dataclasses import dataclass, field
-from datetime import date
+from datetime import date, timedelta
 from typing import Any, Literal
 
 from loguru import logger
@@ -322,7 +322,7 @@ def _decode_jornada(d: dict) -> "JornadaSession":
         today = date.today()
         dow = d.get("day_of_week", today.weekday())
         days_back = (today.weekday() - dow) % 7
-        d["session_date"] = today - __import__("datetime").timedelta(days=days_back)
+        d["session_date"] = today - timedelta(days=days_back)
     return JornadaSession(**d)
 
 

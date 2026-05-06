@@ -21,13 +21,13 @@ Fuentes: `docs/llm-benchmark-2026-04-13.md`, `docs/llm-benchmark-2026-04-15.md`,
 # Actualizado: 2026-04-24 (post-benchmark + renombrado llm_orchestrator → llm_planner)
 LLM_EXTRACTOR=mistral/mistral-medium-latest
 LLM_ROUTER=mistral/mistral-medium-latest
-LLM_ROUTER_FALLBACK=deepseek/deepseek-reasoner
+LLM_ROUTER_FALLBACK=deepseek/deepseek-v4-flash
 LLM_CHAT=groq/compound-beta
 LLM_CHAT_FALLBACK=mistral/mistral-small-latest
 LLM_SYNTHESIZER=groq/meta-llama/llama-4-scout-17b-16e-instruct
 LLM_SYNTHESIZER_FALLBACK=ollama/gemini-3-flash-preview:cloud,mistral/mistral-small-latest
 LLM_PLANNER=groq/openai/gpt-oss-120b
-LLM_PLANNER_FALLBACK=ollama/gemini-3-flash-preview:cloud,deepseek/deepseek-reasoner
+LLM_PLANNER_FALLBACK=ollama/gemini-3-flash-preview:cloud,deepseek/deepseek-v4-flash
 LLM_VISION=openrouter/nvidia/nemotron-nano-12b-v2-vl:free
 LLM_VISION_FALLBACK=openrouter/google/gemma-4-31b-it:free
 LLM_CONTEXT_AGENT=mistral/mistral-small-latest

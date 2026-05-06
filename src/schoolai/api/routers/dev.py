@@ -28,7 +28,7 @@ _PROVIDER_MODELS: dict[str, list[str]] = {
     "zai":        ["zai/glm-4.7-flash"],
     "zhipu":      ["zhipu/glm-4-flash"],
     "mistral":    ["mistral/mistral-small-latest"],
-    "deepseek":   ["deepseek/deepseek-chat"],
+    "deepseek":   ["deepseek/deepseek-v4-flash", "deepseek/deepseek-v4-pro"],
     "openrouter": ["openrouter/google/gemma-3-27b-it:free"],
     "openai":     ["openai/gpt-4o-mini"],
     "nvidia":     ["nvidia/meta/llama-3.1-8b-instruct"],

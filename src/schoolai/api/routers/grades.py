@@ -8,6 +8,7 @@ from schoolai.api.schemas import GradeOut
 from schoolai.db.connection import get_session
 from schoolai.db.models.grade import Grade
 
+# Public endpoint — no auth required (catalog data needed by SvelteKit before login)
 router = APIRouter(prefix="/grades", tags=["Grades"])
 
 

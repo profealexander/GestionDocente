@@ -127,8 +127,8 @@ Key rules in `skills/utils/extract_rules.py`:
 
 | Variable | Primary | Fallback 1 | Fallback 2 | Rol |
 |---|---|---|---|---|
-| `llm_router` | `mistral/mistral-medium-latest` | `deepseek/deepseek-reasoner` | — | Classifier (gateway) |
-| `llm_planner` | `groq/openai/gpt-oss-120b` | `ollama/gemini-3-flash-preview:cloud` | `deepseek/deepseek-reasoner` | Planner (agent runtime) |
+| `llm_router` | `mistral/mistral-medium-latest` | `deepseek/deepseek-v4-flash` | — | Classifier (gateway) |
+| `llm_planner` | `groq/openai/gpt-oss-120b` | `ollama/gemini-3-flash-preview:cloud` | `deepseek/deepseek-v4-flash` | Planner (agent runtime) |
 | `llm_synthesizer` | `groq/meta-llama/llama-4-scout-17b-16e-instruct` | `ollama/gemini-3-flash-preview:cloud` | `mistral/mistral-small-latest` | Synthesizer (agent runtime) |
 | `llm_chat` | `groq/compound-beta` | `mistral/mistral-small-latest` | — | Chat libre (v1) |
 | `llm_extractor` | `mistral/mistral-medium-latest` | — | — | Extractor (v1 legacy) |
@@ -214,8 +214,17 @@ Critical vars that must be set in `.env`:
 
 ### Database sessions
 
-Always use `get_db_session()` from `schoolai.db.connection` — never raw `async_session()`. It handles commit/rollback automatically.
+Dos patrones según el contexto:
 
+**Dentro de routers FastAPI** — usar `get_session` como dependencia. La sesión no hace auto-commit; el router debe llamar `await session.commit()` explícitamente en los endpoints de escritura:
+```python
+from schoolai.db.connection import get_session
+async def my_endpoint(session: AsyncSession = Depends(get_session)):
+    session.add(obj)
+    await session.commit()
+```
+
+**Fuera de FastAPI** (skills, background tasks, CLI) — usar `get_db_session()`. Hace auto-commit al salir y rollback automático en excepciones. Nunca usar `async_session()` directo:
 ```python
 from schoolai.db.connection import get_db_session
 async with get_db_session() as db:
@@ -240,7 +249,37 @@ cd ui && npm run build # build producción
 
 ## Migrations
 
-Name files sequentially: `0012_description.py`. After creating a model add:
+Name files sequentially: `0015_description.py` (próxima libre). After creating a model add:
 1. `UniqueConstraint` / `Index` to `__table_args__` on the model
 2. A new alembic revision
 3. `uv run alembic upgrade head`
+
+## Homework backend (en implementación)
+
+El almacén de tareas está siendo migrado de PostgreSQL a **Google Sheets** como store primario.
+
+**Variables de entorno:**
+```
+HOMEWORK_BACKEND=db       # default — PostgreSQL (actual)
+HOMEWORK_BACKEND=sheets   # nuevo — Google Sheets
+GOOGLE_SHEETS_SPREADSHEET_ID=<id>
+GOOGLE_SERVICE_ACCOUNT_JSON=<path o JSON inline>
+```
+
+**Patrón Repository — NO importar `repository.py` directamente:**
+```python
+# ✅ correcto
+from schoolai.skills.homework.repository_factory import get_homework_repo
+repo = get_homework_repo()
+hw = await repo.save_homework(session, ...)
+
+# ❌ incorrecto (acoplamiento directo al backend DB)
+from schoolai.skills.homework.repository import save_homework
+```
+
+Mientras `HOMEWORK_BACKEND=db` (default), el comportamiento es idéntico al actual.
+Los archivos del módulo cuando esté implementado:
+- `skills/homework/repository_base.py` — ABC con la interfaz
+- `skills/homework/repository_db.py` — implementación PostgreSQL (actual `repository.py`)
+- `skills/homework/repository_sheets.py` — implementación Google Sheets
+- `skills/homework/repository_factory.py` — selecciona backend según settings

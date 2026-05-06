@@ -186,17 +186,27 @@ def _build_models() -> list[ModelDef]:
             role="planner", in_use=True,
             rpm=20, skip_reason=_or_skip,
         ),
-        # DeepSeek Chat — planner fallback #1
+        # DeepSeek V4 Flash — planner fallback #1 (non-thinking mode)
         ModelDef(
-            model_id="deepseek-chat", model_name="DeepSeek V3.2 (Chat)",
+            model_id="deepseek-v4-flash", model_name="DeepSeek V4 Flash",
             provider="DeepSeek", pool="deepseek", rpm_pool="deepseek",
             base_url=_ds_url, api_key=_ds_key,
             role="planner_fallback", in_use=True,
             rpm=60, skip_reason=_ds_skip,
         ),
-        # DeepSeek Reasoner — planner fallback #2
+        # DeepSeek V4 Flash — planner fallback #2 (thinking mode)
         ModelDef(
-            model_id="deepseek-reasoner", model_name="DeepSeek V3.2 Reasoner",
+            model_id="deepseek-v4-flash", model_name="DeepSeek V4 Flash [thinking]",
+            provider="DeepSeek", pool="deepseek", rpm_pool="deepseek",
+            base_url=_ds_url, api_key=_ds_key,
+            role="planner_fallback", in_use=True,
+            rpm=60, thinking_budget=4000, strip_thinking=True,
+            reasoning_style="budget_tokens",
+            skip_reason=_ds_skip,
+        ),
+        # DeepSeek V4 Pro — planner fallback #3 (premium)
+        ModelDef(
+            model_id="deepseek-v4-pro", model_name="DeepSeek V4 Pro",
             provider="DeepSeek", pool="deepseek", rpm_pool="deepseek",
             base_url=_ds_url, api_key=_ds_key,
             role="planner_fallback", in_use=True,
