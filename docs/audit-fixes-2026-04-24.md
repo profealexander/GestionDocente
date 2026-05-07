@@ -78,7 +78,7 @@ El código ya hace `.strip()` correctamente: `allow_origins=[o.strip() for o in 
 **Pasos**:
 1. [ ] Corregir sección "Attendance extraction pipeline": fuzzy matcher usa `rapidfuzz.WRatio`, no `SequenceMatcher`
 2. [ ] Corregir lista de text_interceptors (sección "Message dispatch pipeline"):
-   - Agregar: `modo_chat(1)`, `modo_editar(2)`, `ausencias_natural(8)`, `horario_natural(8)`, `cuota_edit_text(20)`, `cuota_participante_text(30)`, `cuota_nombre_text(40)`, `cuota_names_text(50)`
+   - Agregar: `modo_chat(1)`, `modo_editar(2)`, `ausencias_natural(8)`, `horario_natural(8)`
 3. [ ] Corregir nota sobre Redis: "REDIS_URL no set → RAM only" → clarificar que es degradación automática al fallar ping, no decisión de arquitectura
 4. [ ] Corregir Orchestrator LLM: eliminar referencia a "GLM-4.7-Flash (Z.AI)" → poner `groq/openai/gpt-oss-120b` con fallbacks correctos según `config.py`
 
@@ -171,7 +171,7 @@ Import movido a nivel de módulo en `bot/state.py:11`.
 
 ### ~~4.6 · Alias legacy `call_groq_tools` en `tool_caller.py`~~ ✅ RESUELTO (2026-05-05)
 
-Alias eliminado de `tool_caller.py`. 4 callers migrados: `homework/tools.py`, `attendance/tools.py`, `cuotas/tools.py`, `query/tools.py`.
+Alias eliminado de `tool_caller.py`. 3 callers migrados: `homework/tools.py`, `attendance/tools.py`, `query/tools.py`.
 
 ---
 

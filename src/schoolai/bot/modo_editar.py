@@ -52,7 +52,6 @@ async def _show_edit_menu(update: Update) -> None:
         reply_markup=InlineKeyboardMarkup([
             [InlineKeyboardButton("📋 Asistencia", callback_data="edit_mode:attendance")],
             [InlineKeyboardButton("📚 Tareas",     callback_data="edit_mode:homework")],
-            [InlineKeyboardButton("💰 Cuotas",     callback_data="edit_mode:cuota")],
         ]),
     )
 
@@ -94,12 +93,6 @@ async def handle_edit_mode_text(update: Update, user_id: int) -> bool:
         await handle_hw_edit(update, user_id, ctx.grade_id)
         return True
 
-    if ctx and ctx.last_intent == "cuota":
-        from schoolai.skills.cuotas.handler_edit import handle_cuota_edit
-
-        await handle_cuota_edit(update, user_id)
-        return True
-
     # Sin contexto previo: mostrar menú de selección
     await _show_edit_menu(update)
     return True
@@ -118,12 +111,11 @@ async def handle_edit_mode_callback(update: Update, context: ContextTypes.DEFAUL
     q = update.callback_query
     await q.answer()
     user_id = update.effective_user.id
-    action = q.data.split(":", 1)[1]  # "attendance" | "homework" | "cuota"
+    action = q.data.split(":", 1)[1]  # "attendance" | "homework"
 
     intent_map = {
         "attendance": "attendance",
         "homework": "homework",
-        "cuota": "cuota",
     }
     if action not in intent_map:
         logger.warning(f"[edit_mode_callback] unknown action={action!r}")
@@ -134,7 +126,6 @@ async def handle_edit_mode_callback(update: Update, context: ContextTypes.DEFAUL
     prompts = {
         "attendance": "✏️ *Editar asistencia*\nEscribe el curso o el nombre del estudiante.",
         "homework": "✏️ *Editar tarea*\nEscribe el nombre de la tarea o el curso.",
-        "cuota": "✏️ *Editar cuota*\nEscribe el nombre de la actividad.",
     }
     await q.edit_message_text(prompts[action], parse_mode="Markdown")
     logger.info(f"[edit_mode_callback] user={user_id} intent={action}")

@@ -124,12 +124,6 @@ LOG_LEVEL=DEBUG gestion gateway
 "Tareas pendientes 2EGB"           → domain=homework, intent=query
 ```
 
-### Cuotas
-```
-"¿Cuánto debe Ana García?"         → domain=cuotas, intent=query
-"Pagó Pedro 10 dólares excursión"  → domain=cuotas, intent=record
-```
-
 ### Reportes
 ```
 "Reporte de asistencia 3BT"        → domain=reports, intent=query

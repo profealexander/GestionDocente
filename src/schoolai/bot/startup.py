@@ -4,11 +4,10 @@ Contiene la lógica que se repite en cada _post_init:
   - init_redis
   - load_course_map (carga inicial)
   - job periódico de cleanup de StateStores + sesiones LLM + recarga de cursos
-  - job periódico del dispatcher de recordatorios (opcional)
 
 Uso en _post_init de cada bot:
     from schoolai.bot.startup import common_post_init
-    await common_post_init(app, register_reminders=True, log_label="agente")
+    await common_post_init(app, log_label="bot")
 """
 
 from __future__ import annotations
@@ -19,14 +18,12 @@ from loguru import logger
 async def common_post_init(
     app,
     *,
-    register_reminders: bool = False,
     log_label: str = "bot",
 ) -> None:
     """Inicialización compartida por todos los bots.
 
     Args:
         app:                Instancia de Application de python-telegram-bot.
-        register_reminders: Si True, registra el job periódico del dispatcher.
         log_label:          Prefijo para los mensajes de log (ej: "bot", "agente").
     """
     from schoolai.bot.state import init_redis
@@ -39,10 +36,6 @@ async def common_post_init(
         )
     init_redis(settings.redis_url)
     await load_course_map()
-
-    if register_reminders:
-        from schoolai.skills.autonomy.jobs import register_jobs
-        await register_jobs(app.bot)
 
     async def _cleanup_job(ctx) -> None:
         from schoolai.bot.state import cleanup_stale, clear_jornada_all_stale

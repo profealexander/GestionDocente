@@ -288,8 +288,7 @@ async def _dispatch(
       0. Jornada triggers — solo en modo jornada
       1. Selección pendiente (botones inline)
       2. Setup de WhatsApp activo
-      3. Input numérico para cuotas (PendingCuotaCreate)
-      4. SkillRegistry.detect_all() → Planner si multi-intent
+      3. SkillRegistry.detect_all() → Planner si multi-intent
     """
     # Capa 0: atajos de jornada — solo en modo jornada
     if is_jornada():

@@ -13,9 +13,6 @@ Estructura de skill_agents/:
   base.py        — SkillAgentBase: loop ReAct genérico
   attendance.py  — AttendanceAgent: tools de asistencia
   homework.py    — HomeworkAgent: tools de tareas
-  cuotas.py      — CuotasAgent: tools de cuotas/pagos
-  repl.py        — ReplAgent: Python REPL para estadísticas
-  reminders.py   — RemindersAgent: recordatorios programados
   context.py     — ContextAgent: documentos + búsqueda web
 
 Agregar una nueva skill:
@@ -35,7 +32,7 @@ from schoolai.skills.orchestrator.skill_agents.base import SkillAgentBase
 # ── System prompt del agente plano (fallback) ─────────────────────────────────
 
 _SYSTEM_PROMPT = """You are SchoolAI, an intelligent assistant for Ecuadorian teachers.
-You have tools to manage attendance, homework, and school fees (cuotas).
+You have tools to manage attendance, homework, and context documents.
 
 Today is {today}.
 
@@ -76,10 +73,7 @@ class _FlatAgent(SkillAgentBase):
     @property
     def tools(self):
         from schoolai.skills.orchestrator.tools import TOOLS
-        # python_repl se excluye aquí: Gemini genera código incorrecto (default_api.query).
-        # Las queries analíticas van a ReplAgent (GLM) via router.
-        # context tools siempre disponibles — el LLM decide cuándo buscar en documentos.
-        return [t for t in TOOLS if t.name != "python_repl"]
+        return TOOLS
 
     async def _execute_tool(self, name: str, args: dict) -> str:
         from schoolai.skills.orchestrator.tools import execute_tool

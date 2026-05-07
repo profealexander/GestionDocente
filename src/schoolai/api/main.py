@@ -11,7 +11,6 @@ from loguru import logger
 from schoolai.api.routers import (
     attendance,
     auth,
-    cuotas,
     dev,
     grades,
     health,
@@ -100,7 +99,6 @@ app.include_router(subjects.router)
 app.include_router(students.router)
 app.include_router(homework.router)
 app.include_router(attendance.router)
-app.include_router(cuotas.router)
 app.include_router(scores.router)
 app.include_router(llm_stats.router)
 app.include_router(dev.router)

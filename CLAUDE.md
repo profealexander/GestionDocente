@@ -65,7 +65,7 @@ Telegram / Web / CLI
       Planner    — LLM#1 (llm_planner): genera [{tool, params}]
       Executor   — Python puro: ejecuta tools
       Synthesizer — LLM#2 (llm_synthesizer): redacta respuesta en español
-  → _tools/ (attendance, homework, cuotas, reports…) → PostgreSQL
+  → _tools/ (attendance, homework, reports…) → PostgreSQL
 ```
 
 ### v1 — Pipeline de dispatch (bots Libre / Jornada con GATEWAY_ENABLED=false)
@@ -78,7 +78,6 @@ incoming message
       AttendanceSkill      p=10
       HWReportSkill        p=20
       HomeworkSkill        p=30
-      CuotaSkill           p=35
       HWEditSkill          p=40
       QuerySkill           p=40
       OrchestratorSkill    p=50  # default
@@ -90,7 +89,6 @@ Each skill's `handle()` is called independently. Text interceptors run first and
 Text interceptors activos (orden de prioridad):
 - `modo_chat(1)`, `modo_editar(2)`, `jornada_absent_other(5)`
 - `horario_natural(8)`, `ausencias_natural(8)`, `hw_edit_text(10)`
-- `cuota_edit_text(20)`, `cuota_participante_text(30)`, `cuota_nombre_text(40)`, `cuota_names_text(50)`
 
 ### Skill Registry pattern
 
@@ -169,7 +167,7 @@ Package: `src/schoolai/agent/`. Entry point: `schoolai-gateway` (puerto 8001). E
 | `agent/executor.py` | Ejecuta cada tool step (Python puro) usando módulos de `_tools/` |
 | `agent/synthesizer.py` | LLM#2: redacta respuesta final en español vía `llm_synthesizer` |
 | `agent/context.py` | Carga y persiste historial de conversación por sesión |
-| `agent/domains/` | `DomainController` por dominio: attendance, homework, cuotas, reports, general |
+| `agent/domains/` | `DomainController` por dominio: attendance, homework, reports, general |
 
 `skills/orchestrator/_tools/` — tool modules reutilizados por el Executor. `skills/orchestrator/skill_agents/` — skill agents legacy usados por el bot-agente v1 (en proceso de sustitución por el Agent Runtime).
 
@@ -238,7 +236,7 @@ PostgreSQL upserts use `sqlalchemy.dialects.postgresql.insert(...).on_conflict_d
 
 ### API
 
-FastAPI app at `schoolai.api.main:app`. Routers in `src/schoolai/api/routers/` — one file per domain (grades, students, attendance, homework, scores, cuotas, auth, …).
+FastAPI app at `schoolai.api.main:app`. Routers in `src/schoolai/api/routers/` — one file per domain (grades, students, attendance, homework, scores, auth, …).
 
 ### Frontend
 

@@ -8,7 +8,6 @@ from schoolai.gateway.schemas import TaskSpec
 
 from .domains.attendance import AttendanceController
 from .domains.base import BaseDomainController
-from .domains.cuotas import CuotasController
 from .domains.general import GeneralController
 from .domains.homework import HomeworkController
 from .domains.reports import ReportsController
@@ -16,7 +15,6 @@ from .domains.reports import ReportsController
 _CONTROLLERS: dict[str, BaseDomainController] = {
     "attendance": AttendanceController(),
     "homework": HomeworkController(),
-    "cuotas": CuotasController(),
     "reports": ReportsController(),
     "general": GeneralController(),
 }

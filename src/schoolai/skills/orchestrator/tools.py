@@ -12,7 +12,7 @@ from __future__ import annotations
 
 from loguru import logger
 
-from schoolai.skills.cuotas.tools import ToolDef
+from schoolai.skills.tool_def import ToolDef
 from schoolai.skills.orchestrator._tools.attendance import _query_attendance, _record_attendance
 from schoolai.skills.orchestrator._tools.context_docs import (
     _delete_context_doc,
@@ -22,23 +22,12 @@ from schoolai.skills.orchestrator._tools.context_docs import (
     _web_search,
 )
 from schoolai.skills.orchestrator._tools.courses import _list_courses
-from schoolai.skills.orchestrator._tools.cuotas import (
-    _activity_status,
-    _create_activity,
-    _list_activities,
-    _register_payment,
-)
+
 from schoolai.skills.orchestrator._tools.homework import (
     _create_assignment,
     _delete_assignment,
     _query_assignments,
 )
-from schoolai.skills.orchestrator._tools.reminders import (
-    _cancel_reminder,
-    _create_reminder,
-    _list_reminders,
-)
-from schoolai.skills.orchestrator._tools.repl import _python_repl
 from schoolai.skills.orchestrator._tools.teacher import _my_courses, _my_schedule
 
 # Re-export helpers for legacy callers that may import from tools directly
@@ -219,71 +208,6 @@ TOOLS: list[ToolDef] = [
         fn=_list_courses,
     ),
     ToolDef(
-        name="list_activities",
-        description="Lists active school activities and fees (cuotas) for the current teacher.",
-        parameters={
-            "type": "object",
-            "properties": {
-                "telegram_id": {
-                    "type": "integer",
-                    "description": "Telegram ID of the teacher (injected automatically)",
-                },
-            },
-            "required": ["telegram_id"],
-        },
-        fn=_list_activities,
-    ),
-    ToolDef(
-        name="create_activity",
-        description="Creates a new school activity or fee with a name and amount.",
-        parameters={
-            "type": "object",
-            "properties": {
-                "name": {"type": "string", "description": "Activity name"},
-                "amount": {"type": "number", "description": "Amount in dollars"},
-                "course": {
-                    "type": "string",
-                    "description": (
-                        "Course abbreviation to auto-enroll students as participants. Optional."
-                    ),
-                },
-            },
-            "required": ["name", "amount"],
-        },
-        fn=_create_activity,
-    ),
-    ToolDef(
-        name="activity_status",
-        description="Queries the payment status of an activity by name.",
-        parameters={
-            "type": "object",
-            "properties": {
-                "name": {"type": "string", "description": "Activity name"},
-            },
-            "required": ["name"],
-        },
-        fn=_activity_status,
-    ),
-    ToolDef(
-        name="register_payment",
-        description="Records a payment from one or more students for an activity.",
-        parameters={
-            "type": "object",
-            "properties": {
-                "names": {
-                    "type": "array",
-                    "items": {"type": "string"},
-                    "description": "Last names of the students who paid",
-                },
-                "amount": {"type": "number", "description": "Amount paid in dollars"},
-                "activity": {"type": "string", "description": "Activity name"},
-                "course": {"type": "string", "description": "Course abbreviation"},
-            },
-            "required": ["names", "amount", "activity", "course"],
-        },
-        fn=_register_payment,
-    ),
-    ToolDef(
         name="my_courses",
         description=(
             "Returns the current teacher's assigned courses and subjects. "
@@ -327,49 +251,6 @@ TOOLS: list[ToolDef] = [
             "required": ["telegram_id"],
         },
         fn=_my_schedule,
-    ),
-    ToolDef(
-        name="python_repl",
-        description=(
-            "Executes Python code with read-only PostgreSQL access. "
-            "Use for custom queries not covered by other tools.\n"
-            "\n"
-            "ONLY these are available inside the code:\n"
-            "  await query(sql, params={}) → list[dict]   # runs SELECT/WITH\n"
-            "  today  → date    now → datetime    print(...) → output\n"
-            "  Imports allowed: datetime, math, collections, re, json, decimal\n"
-            "DO NOT use default_api, os, sys, open, or any other tool name.\n"
-            "\n"
-            "DB schema (PostgreSQL — status values are strings with quotes in SQL):\n"
-            "  people(id, first_name, last_name, second_last_name)\n"
-            "  students(id, person_id, grade_id, section, status)  -- status='active'|'inactive'\n"
-            "  grades(id, name, level, sort_order)\n"
-            "  subjects(id, name, area)\n"
-            "  attendance(id, student_id, date DATE, status)  -- status='F' 'AT' 'J'\n"
-            "  homework(id, grade_id, subject_id, trimester_num, sequence_num, homework TEXT, is_open BOOL)\n"
-            "  actividades(id, nombre, monto, is_active)\n"
-            "  actividad_participantes(id, actividad_id, student_id, total_pagado, is_complete)\n"
-            "\n"
-            "SQL RULES (PostgreSQL):\n"
-            "  - Dates: use >= and < operators, NOT LIKE. Ex: date >= '2026-03-01' AND date < '2026-04-01'\n"
-            "  - String values always in single quotes: status = 'F', status = 'active'\n"
-            "  - Always print results; do not just assign them.\n"
-            "\n"
-            "EXAMPLE:\n"
-            "  rows = await query(\"SELECT COUNT(*) as n FROM students WHERE status = 'active'\")\n"
-            "  print(rows[0]['n'])"
-        ),
-        parameters={
-            "type": "object",
-            "properties": {
-                "code": {
-                    "type": "string",
-                    "description": "Python code. Use await query(sql) and print() for output.",
-                },
-            },
-            "required": ["code"],
-        },
-        fn=_python_repl,
     ),
     ToolDef(
         name="search_context",
@@ -489,84 +370,6 @@ TOOLS: list[ToolDef] = [
             "required": ["telegram_id", "url"],
         },
         fn=_save_web_page,
-    ),
-    ToolDef(
-        name="create_reminder",
-        description=(
-            "Schedules a new reminder for the teacher (Telegram) and/or course parents (WhatsApp). "
-            "target: 'teacher' | 'parents' | 'both'. "
-            "course is required when target is 'parents' or 'both'."
-        ),
-        parameters={
-            "type": "object",
-            "properties": {
-                "telegram_id": {
-                    "type": "integer",
-                    "description": "The teacher's Telegram ID from the system prompt.",
-                },
-                "message": {
-                    "type": "string",
-                    "description": "The reminder text to send.",
-                },
-                "scheduled_at": {
-                    "type": "string",
-                    "description": "ISO 8601 datetime, e.g. 2026-04-04T07:00:00",
-                },
-                "target": {
-                    "type": "string",
-                    "enum": ["teacher", "parents", "both"],
-                    "description": (
-                        "teacher=Telegram to teacher, parents=WhatsApp to course parents, "
-                        "both=both channels."
-                    ),
-                },
-                "course": {
-                    "type": "string",
-                    "description": "Course abbreviation. Required when target is 'parents' or 'both'.",
-                },
-            },
-            "required": ["telegram_id", "message", "scheduled_at", "target"],
-        },
-        fn=_create_reminder,
-    ),
-    ToolDef(
-        name="list_reminders",
-        description="Lists the teacher's reminders filtered by status.",
-        parameters={
-            "type": "object",
-            "properties": {
-                "telegram_id": {
-                    "type": "integer",
-                    "description": "The teacher's Telegram ID from the system prompt.",
-                },
-                "status": {
-                    "type": "string",
-                    "enum": ["pending", "sent", "failed", "cancelled", "all"],
-                    "description": "Filter by status. Default: 'pending'.",
-                },
-            },
-            "required": ["telegram_id"],
-        },
-        fn=_list_reminders,
-    ),
-    ToolDef(
-        name="cancel_reminder",
-        description="Cancels a pending reminder by its ID.",
-        parameters={
-            "type": "object",
-            "properties": {
-                "telegram_id": {
-                    "type": "integer",
-                    "description": "The teacher's Telegram ID from the system prompt.",
-                },
-                "reminder_id": {
-                    "type": "integer",
-                    "description": "The reminder ID to cancel.",
-                },
-            },
-            "required": ["telegram_id", "reminder_id"],
-        },
-        fn=_cancel_reminder,
     ),
 ]
 

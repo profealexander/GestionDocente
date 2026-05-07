@@ -71,7 +71,7 @@ async def handle_chat_mode_text(update: Update, user_id: int) -> bool:
     if get_user_mode(user_id) != "chat":
         return False
 
-    # Primero intentar skills específicas (asistencia, tareas, cuotas…)
+    # Primero intentar skills específicas (asistencia, tareas…)
     # Si hay match, las ejecutamos normalmente — no hace falta salir del chat.
     from schoolai.skills.registry import registry
 

@@ -25,7 +25,6 @@ console = Console()
 DOMAIN_COLOR = {
     "attendance": "green",
     "homework": "blue",
-    "cuotas": "yellow",
     "reports": "magenta",
     "web_search": "cyan",
     "general": "white",

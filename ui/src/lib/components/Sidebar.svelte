@@ -7,7 +7,6 @@
 		{ href: '/jornada',      icon: '📅', label: 'Jornada'      },
 		{ href: '/asistencia',   icon: '✅', label: 'Asistencia'   },
 		{ href: '/tareas',       icon: '📝', label: 'Tareas'       },
-		{ href: '/cuotas',       icon: '💰', label: 'Cuotas'       },
 		{ href: '/cumplimiento', icon: '📊', label: 'Cumplimiento' },
 		{ href: '/notas',        icon: '🎓', label: 'Notas'        },
 		{ href: '/reportes',     icon: '👁', label: 'Reportes'     },

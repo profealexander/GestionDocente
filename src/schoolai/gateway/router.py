@@ -13,7 +13,7 @@ _SYSTEM = """
 You are a classifier for a school management assistant.
 
 Given a teacher's message, return JSON with:
-- domain: one of [attendance, homework, cuotas, reports, web_search, general]
+- domain: one of [attendance, homework, reports, web_search, general]
 - intent: one of [query, record, delete, search, chat]
 - entities: list of names, dates, course codes, or other key tokens extracted from the message
 
@@ -23,7 +23,6 @@ Examples:
   "Falta Tatiana y Mario 3BT" → {"domain":"attendance","intent":"record","entities":["Tatiana","Mario","3BT"]}
   "Faltas de hoy" → {"domain":"attendance","intent":"query","entities":[]}
   "Tarea de matemáticas para el viernes" → {"domain":"homework","intent":"record","entities":["matemáticas","viernes"]}
-  "¿Cuánto debe Pedro?" → {"domain":"cuotas","intent":"query","entities":["Pedro"]}
   "Busca información sobre fracciones" → {"domain":"web_search","intent":"search","entities":["fracciones"]}
 """
 

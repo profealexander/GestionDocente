@@ -49,13 +49,12 @@ El sistema v1 funciona en producción pero tiene problemas estructurales:
 ┌──────────────────────▼──────────────────────────────┐
 │  DOMAIN CONTROLLERS                                  │
 │  AttendanceController  │ HomeworkController           │
-│  CuotasController      │ ReportsController            │
-│  GeneralController                                   │
+│  ReportsController     │ GeneralController            │
 └──────────────────────┬──────────────────────────────┘
                        │ reusan sin modificar
 ┌──────────────────────▼──────────────────────────────┐
 │  SKILLS / _TOOLS/ (v1 — sin cambios)                 │
-│  attendance/ │ homework/ │ cuotas/ │ reports/        │
+│  attendance/ │ homework/ │ reports/                  │
 └──────────────────────┬──────────────────────────────┘
                        │
 ┌──────────────────────▼──────────────────────────────┐
@@ -86,7 +85,7 @@ El sistema v1 funciona en producción pero tiene problemas estructurales:
 ```python
 class TaskSpec(BaseModel):
     channel: Literal["telegram", "web", "cli", "cron"]
-    domain: Literal["attendance", "homework", "cuotas", "reports", "web_search", "general"]
+    domain: Literal["attendance", "homework", "reports", "web_search", "general"]
     intent: Literal["query", "record", "delete", "search", "chat"]
     entities: list[str]
     raw_text: str
@@ -102,7 +101,6 @@ class TaskSpec(BaseModel):
 |---|---|---|
 | AttendanceController | record_attendance, query_attendance, list_courses | `_tools/attendance.py` |
 | HomeworkController | create_assignment, query_assignments, delete_assignment | `_tools/homework.py` |
-| CuotasController | list_activities, activity_status, register_payment | `_tools/cuotas.py` |
 | ReportsController | attendance_pdf, homework_pdf | `_tools/reports.py` |
 | GeneralController | list_courses | `_tools/courses.py` |
 
@@ -134,7 +132,6 @@ src/schoolai/
 │       ├── base.py          BaseDomainController (ABC)
 │       ├── attendance.py    AttendanceController
 │       ├── homework.py      HomeworkController
-│       ├── cuotas.py        CuotasController
 │       ├── reports.py       ReportsController
 │       └── general.py       GeneralController (fallback)
 │
@@ -168,7 +165,7 @@ src/schoolai/
 │   ├── main.py / auth.py / schemas.py / runner.py
 │   └── routers/
 │       ├── auth.py, grades.py, subjects.py, students.py
-│       ├── attendance.py, homework.py, cuotas.py
+│       ├── attendance.py, homework.py
 │       ├── scores.py        notas académicas (gradebook)
 │       ├── llm_stats.py     uso de LLMs agrupado por proveedor/modelo
 │       ├── health.py        GET /health — DB + Redis status
@@ -181,7 +178,7 @@ src/schoolai/
 │       ├── grade, student, teacher, person, subject
 │       ├── attendance, homework, homework_submission  (seguimiento de entregas)
 │       ├── student_score    notas por estudiante/materia/trimestre/columna
-│       ├── cuota, reminder, context_document
+│       ├── context_document
 │       ├── llm_usage        registro de tokens/costo por llamada LLM
 │       ├── notification     notificaciones pendientes/enviadas
 │       ├── teacher_absence  ausencias de docentes
@@ -202,17 +199,15 @@ src/schoolai/
     │   ├── position_service.py  cargos institucionales
     │   └── deduplicator.py     dedup fuzzy de personas
     ├── orchestrator/
-    │   ├── skill.py / agent.py / router.py / repl.py / session.py
-    │   ├── _tools/           attendance, homework, cuotas, reports, courses,
-    │   │                     context_docs, reminders, repl, teacher, helpers
-    │   └── skill_agents/     SkillAgents: attendance, homework, cuotas,
-    │                         reminders, context, repl (base ABC)
+    │   ├── skill.py / agent.py / router.py / session.py
+    │   ├── _tools/           attendance, homework, reports, courses,
+    │   │                     context_docs, teacher, helpers
+    │   └── skill_agents/     SkillAgents: attendance, homework,
+    │                         context (base ABC)
     ├── attendance/       skill + tools + matcher fuzzy + service + handler_edit
     ├── homework/         skill + tools + detector + repository + handler_edit
-    ├── cuotas/           skill + tools + handlers (create/pago/query/edit) + service
     ├── query/            skill + detector + resolver + formatter
     ├── context/          documentos institucionales + búsqueda web (DuckDuckGo)
-    ├── reminders/        dispatcher + repository + tools
     ├── ia/               ChatSkill — agente libre (Groq compound-beta)
     ├── llm/              cliente unificado + tool_caller + providers + usage tracker
     ├── planner.py        micro-planner: reparte texto entre 2+ skills detectadas simultáneamente
@@ -237,7 +232,7 @@ Loop → Router → Planner (LLM#1) → Executor → Synthesizer (LLM#2). 2 LLM 
 **Entregable:** respuesta <6s, domain controllers con firmas verificadas contra `_tools/`.
 
 ### Fase 3 — Skills Expansion ✅
-APScheduler reemplaza PTB job_queue para reminders. Reports PDF con fpdf2 (attendance + homework).
+Reports PDF con fpdf2 (attendance + homework).
 **Entregable:** APScheduler activo; PDFs generados correctamente.
 
 ### Fase 4 — Canales Adicionales ✅
@@ -294,7 +289,7 @@ VITE_GATEWAY_WS=ws://localhost:8001
 | Context Store | `agent/context.py` | Completo (in-memory) |
 | Telegram Adapter | `bot/gateway_adapter.py` | Completo (fallback a v1) |
 
-Los 5 domain controllers (`attendance`, `homework`, `cuotas`, `reports`, `general`) delegan a las mismas `_tools/` que v1. No hay lógica duplicada.
+Los 4 domain controllers (`attendance`, `homework`, `reports`, `general`) delegan a las mismas `_tools/` que v1. No hay lógica duplicada.
 
 ### ¿Por qué `GATEWAY_ENABLED=false`?
 
@@ -320,7 +315,7 @@ v2 está desactivado por decisión, no por defecto. Las razones:
 Antes de poner `GATEWAY_ENABLED=true`, hay que portear las features interactivas de v1 al pipeline de v2:
 
 1. **Modo Jornada** — el domain controller de attendance necesita soportar el flujo SOP (waiting→active→paused→done) con inyección de contexto automática
-2. **Text interceptors** — v2 necesita un mecanismo equivalente para que los interceptores (jornada, editar, cuotas) puedan cortocircuitear el pipeline antes del classifier
+2. **Text interceptors** — v2 necesita un mecanismo equivalente para que los interceptores (jornada, editar) puedan cortocircuitear el pipeline antes del classifier
 3. **Teclados inline** — el synthesizer necesita poder devolver no solo texto sino también teclados para flujos conversacionales
 4. **Modo Editar/Chat** — los domain controllers necesitan manejar estados de conversación (no solo one-shot)
 5. **Context store → Redis** — migrar de in-memory a Redis para persistir entre reinicios
@@ -345,7 +340,7 @@ Antes de poner `GATEWAY_ENABLED=true`, hay que portear las features interactivas
 | `llm_chat` | Chat libre (ia/skill) | `groq/compound-beta` | → `mistral/mistral-small-latest` |
 | `llm_extractor` | Extractor legacy | `groq/openai/gpt-oss-120b` | → `mistral/mistral-medium-latest` |
 
-Groq: planner y synthesizer usan modelos distintos → cuotas 20 RPM independientes.
+Groq: planner y synthesizer usan modelos distintos → quotas 20 RPM independientes.
 
 Fallback implementado en `skills/llm/client.py:call_with_fallback()` — maneja 503 y 429 automáticamente.
 

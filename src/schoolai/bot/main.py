@@ -23,7 +23,6 @@ from telegram.ext import (
 from telegram.request import HTTPXRequest
 
 import schoolai.skills.attendance.handler_edit  # noqa: F401 — triggers auto-register
-import schoolai.skills.cuotas.handler_edit  # noqa: F401 — triggers auto-register
 import schoolai.skills.homework.handler_edit  # noqa: F401 — triggers auto-register
 import schoolai.bot.modo_editar  # noqa: F401 — registra interceptor + callback edit_mode:
 import schoolai.bot.modo_chat  # noqa: F401 — registra interceptor modo chat IA
@@ -59,9 +58,6 @@ from schoolai.bot.schedule_handler import handle_schedule_callback, handle_sched
 from schoolai.bot.state import (
     clear_attendance,
     clear_course_context,
-    clear_cuota_create,
-    clear_cuota_edit_field,
-    clear_cuota_participante,
     clear_db_flow,
     clear_hw_edit_field,
     clear_jornada,
@@ -72,23 +68,12 @@ from schoolai.bot.state import (
     clear_user_mode,
     clear_wa_notification,
     clear_wa_setup,
-    get_cuota_create,
     get_db_flow,
     get_position_flow,
     get_schedule_flow,
-    pop_pending_pago,
 )
 from schoolai.bot.whatsapp_handler import handle_wa_notify_callback
 from schoolai.config import settings
-from schoolai.skills.cuotas.handler import (
-    handle_add_grade_callback,
-    handle_cuota_add_callback,
-    handle_cuota_addall_callback,
-    handle_cuota_done_callback,
-    handle_cuota_pago_callback,
-    handle_cuota_pick_callback,
-    handle_cuota_sel_callback,
-)
 
 
 async def _handle_start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
@@ -121,13 +106,9 @@ async def _handle_cancel(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
     clear_course_context(user_id)
     clear_wa_notification(user_id)
     clear_wa_setup(user_id)
-    clear_cuota_create(user_id)
-    clear_cuota_edit_field(user_id)
-    clear_cuota_participante(user_id)
     clear_hw_edit_field(user_id)
     clear_pending_confirm(user_id)
     clear_user_mode(user_id)
-    pop_pending_pago(user_id)
     if is_jornada():
         from schoolai.bot.handlers import JORNADA_AND_EDIT_KEYBOARD
         await update.message.reply_text("Operación cancelada.", reply_markup=JORNADA_AND_EDIT_KEYBOARD)
@@ -147,7 +128,6 @@ class _DbFlowFilter(filters.MessageFilter):
             get_db_flow(user.id) is not None
             or get_schedule_flow(user.id) is not None
             or get_position_flow(user.id) is not None
-            or get_cuota_create(user.id) is not None
         )
 
 
@@ -185,15 +165,10 @@ async def _error_handler(update: object, context: ContextTypes.DEFAULT_TYPE) -> 
 
 
 async def _handle_db_or_schedule_text(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
-    """Routes text to schedule/position/cuota handlers first, falls back to db handler."""
+    """Routes text to schedule/position handlers first, falls back to db handler."""
     if await handle_schedule_text(update, context):
         return
     if await handle_position_text(update, context):
-        return
-    from schoolai.skills.cuotas.handler import handle_cuota_names_text
-
-    user_id = update.effective_user.id
-    if await handle_cuota_names_text(update, user_id):
         return
     await handle_db_text(update, context)
 
@@ -205,7 +180,7 @@ async def _post_init(app) -> None:
     from schoolai.bot.startup import common_post_init
     from schoolai.skills.registry import registry
 
-    await common_post_init(app, register_reminders=True, log_label="bot")
+    await common_post_init(app, log_label="bot")
 
     cron_service.load(settings.log_dir)
     cron_service.register_callback("morning_notify", job_morning_notify)
@@ -348,13 +323,6 @@ def run(dev: bool = False) -> None:
     app.add_handler(CallbackQueryHandler(handle_wa_notify_callback, pattern=r"^wa_notify:"))
     app.add_handler(CallbackQueryHandler(handle_doc_notify_callback, pattern=r"^doc_notify:"))
     app.add_handler(CallbackQueryHandler(handle_selection_callback, pattern=r"^sel:"))
-    app.add_handler(CallbackQueryHandler(handle_cuota_sel_callback, pattern=r"^cuota_sel:"))
-    app.add_handler(CallbackQueryHandler(handle_add_grade_callback, pattern=r"^cuota_grade:"))
-    app.add_handler(CallbackQueryHandler(handle_cuota_pago_callback, pattern=r"^cuota_pago:"))
-    app.add_handler(CallbackQueryHandler(handle_cuota_add_callback, pattern=r"^cuota_add:"))
-    app.add_handler(CallbackQueryHandler(handle_cuota_pick_callback, pattern=r"^cuota_pick:"))
-    app.add_handler(CallbackQueryHandler(handle_cuota_addall_callback, pattern=r"^cuota_addall:"))
-    app.add_handler(CallbackQueryHandler(handle_cuota_done_callback, pattern=r"^cuota_done:"))
     app.add_handler(CallbackQueryHandler(handle_position_callback, pattern=r"^pos_"))
 
     # ── Cron ──────────────────────────────────────────────────────────────────

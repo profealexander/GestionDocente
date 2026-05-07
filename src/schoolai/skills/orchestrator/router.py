@@ -26,7 +26,7 @@ if TYPE_CHECKING:
 # ── Patrones por dominio ───────────────────────────────────────────────────────
 #
 # Regla: solo keywords que son inequívocos para su dominio.
-# "actividad" NO está en ninguna lista — es ambiguo (tarea o cuota).
+# "actividad" NO está en ninguna lista — es ambiguo.
 # "atraso"    SOLO en attendance — "atraso en pago" queda para _FlatAgent.
 
 _PATTERNS: dict[str, list[str]] = {
@@ -47,12 +47,6 @@ _PATTERNS: dict[str, list[str]] = {
         r"\bquiz",
         r"\belimin[a]",          # elimina, eliminar tarea
         r"\bborra[r]?\s+tarea",  # borrar tarea
-    ],
-    "cuotas": [
-        r"\bcuota[s]?\b",
-        r"\bpag[oó][s]?\b",      # pago, pagó, pagos
-        r"\bcobro[s]?\b",
-        r"\bdeuda[s]?\b",
     ],
     "context": [
         # Gestión explícita de documentos
@@ -80,21 +74,6 @@ _PATTERNS: dict[str, list[str]] = {
         r"\bbusca[r]?\s+información\s+(sobre|de|acerca)\b",
         r"\bencuentra[r]?\s+(en\s+)?(internet|la\s+web)\b",
     ],
-    "reminders": [
-        r"\brecordatori[oa][s]?\b",                         # recordatorio, recordatorios
-        r"\bprograma[r]?\s+(un\s+)?(aviso|recordatorio|mensaje)",
-        r"\benvía?[r]?\s+(un\s+)?(recordatorio|aviso)",
-        r"\brecuérda[m]?[e]?\b",                            # recuérdame, recuérda
-    ],
-    "repl": [
-        r"\bpromedio\b",                                    # promedio de faltas/notas
-        r"\bestadístic",                                    # estadísticas
-        r"\branking\b",                                     # ranking de asistencia
-        r"\banaliz",                                        # analizar, análisis
-        r"\bcuántos?\s+(estudiantes?|alumnos?|cursos?)\b",  # cuántos estudiantes hay
-        r"\btotal\s+de\s+(estudiantes?|alumnos?|cursos?)\b",# total de estudiantes
-        r"\breporte\s+(general|estadístic|completo|total)", # reporte general/estadístico
-    ],
     # Nota: my_courses / my_schedule NO necesitan patrón aquí —
     # si no hay match → _FlatAgent, que ya tiene esas tools.
     # Se dejan sin dominio para evitar conflicto con multi-intent paralelo.
@@ -117,17 +96,11 @@ def _get_agents() -> dict[str, SkillAgentBase]:
     if _agents_cache is None:
         from schoolai.skills.orchestrator.skill_agents.attendance import AttendanceAgent
         from schoolai.skills.orchestrator.skill_agents.context import ContextAgent
-        from schoolai.skills.orchestrator.skill_agents.cuotas import CuotasAgent
         from schoolai.skills.orchestrator.skill_agents.homework import HomeworkAgent
-        from schoolai.skills.orchestrator.skill_agents.reminders import RemindersAgent
-        from schoolai.skills.orchestrator.skill_agents.repl import ReplAgent
 
         _agents_cache = {
             "attendance": AttendanceAgent(),
             "homework": HomeworkAgent(),
-            "cuotas": CuotasAgent(),
-            "repl": ReplAgent(),
-            "reminders": RemindersAgent(),
             "context": ContextAgent(),
         }
     return _agents_cache
@@ -140,7 +113,7 @@ def route(text: str) -> list[SkillAgentBase]:
     """Clasifica el mensaje a uno o más SkillAgents.
 
     Evalúa cada dominio independientemente — un mensaje puede activar varios
-    (ej: "registra falta de Juan y el pago del paseo" → attendance + cuotas).
+    (ej: "registra falta de Juan y tarea de matemáticas" → attendance + homework).
 
     Returns:
         Lista de SkillAgents que corresponden al mensaje.

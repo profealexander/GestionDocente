@@ -1,7 +1,7 @@
 """Bot Agente — GLM-4.7-Flash como único punto de entrada.
 
 Todos los mensajes van directo a OrchestratorSkill sin pipeline regex.
-Sin callbacks de cuotas/asistencia/jornada — solo texto y voz.
+Sin callbacks de asistencia/jornada — solo texto y voz.
 
 Token: TELEGRAM_BOT_TOKEN_AGENTE en .env
 """
@@ -44,7 +44,7 @@ from schoolai.config import settings
 async def _handle_start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     await update.message.reply_text(
         "Hola, soy SchoolAI Agente.\n"
-        "Puedo registrar asistencia, tareas, cuotas y responder consultas.\n"
+        "Puedo registrar asistencia, tareas y responder consultas.\n"
         "Escríbeme en lenguaje natural.",
     )
 
@@ -128,7 +128,7 @@ async def _error_handler(update: object, context: ContextTypes.DEFAULT_TYPE) -> 
 async def _post_init(app) -> None:
     from schoolai.bot.startup import common_post_init
 
-    await common_post_init(app, register_reminders=True, log_label="agente")
+    await common_post_init(app, log_label="agente")
     logger.info("[agente] listo — OrchestratorSkill activo")
 
 

@@ -9,11 +9,9 @@ from schoolai.bot.callback_router import callback_router
 SKILLS = [
     ("📋 Tareas", "help:homework"),
     ("👥 Asistencia", "help:attendance"),
-    ("💰 Cuotas", "help:cuotas"),
     ("🔍 Consultas", "help:query"),
     ("🤖 Agente IA", "help:agent"),
     ("📁 Contexto", "help:context"),
-    ("⏰ Recordatorios", "help:reminders"),
     ("👤 Personas y datos", "help:db"),
     ("⚙️ Comandos", "help:commands"),
 ]
@@ -36,15 +34,6 @@ DESCRIPTIONS = {
         "• Editar registro: _editar asistencia de ayer de 3ro BT_\n"
         "• Puedes enviar el mensaje por voz"
     ),
-    "help:cuotas": (
-        "*Cuotas y actividades*\n\n"
-        "Gestiona cobros de actividades escolares:\n\n"
-        "_Crear actividad excursión al museo, costo 5 dólares, para 3ro BT._\n"
-        "_Registrar pago de Juan Pérez en excursión._\n"
-        "_¿Quién debe la cuota de la excursión?_\n\n"
-        "• Exportar lista de pagos a Excel\n"
-        "• Editar montos y participantes"
-    ),
     "help:query": (
         "*Consultas*\n\n"
         "Pide información sobre tareas o asistencia:\n\n"
@@ -59,8 +48,7 @@ DESCRIPTIONS = {
         "_¿Cuántos estudiantes faltaron más de 3 veces este mes?_\n"
         "_Muestra el promedio de asistencia por curso._\n"
         "_¿Cuáles son las tareas pendientes de esta semana?_\n\n"
-        "• Análisis con código Python (REPL)\n"
-        "• Combina datos de asistencia, tareas y cuotas\n"
+        "• Combina datos de asistencia y tareas\n"
         "• Usa el Bot Agente para aprovechar al máximo esta función"
     ),
     "help:context": (
@@ -72,14 +60,6 @@ DESCRIPTIONS = {
         "• Busca primero en documentos guardados\n"
         "• Si no encuentra, busca en la web automáticamente\n"
         "• Puedes guardar páginas web como referencia"
-    ),
-    "help:reminders": (
-        "*Recordatorios*\n\n"
-        "Programa avisos para fechas importantes:\n\n"
-        "_Recuérdame mañana a las 8am entregar las notas._\n"
-        "_Avísame el viernes que hay reunión de padres._\n\n"
-        "• El bot te envía un mensaje en el horario indicado\n"
-        "• Disponible en el Bot Agente"
     ),
     "help:db": (
         "*Personas y datos*\n\n"

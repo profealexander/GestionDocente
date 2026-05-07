@@ -21,7 +21,6 @@
 	const DOMAIN_LABEL: Record<string, string> = {
 		attendance: 'Asistencia',
 		homework: 'Tareas',
-		cuotas: 'Cuotas',
 		reports: 'Reportes',
 		web_search: 'Búsqueda',
 		general: 'General',

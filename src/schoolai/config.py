@@ -33,7 +33,7 @@ class Settings(BaseSettings):
 
     # ── LLM model per skill (format: "provider/model") ────────────────────────
     # Scores: benchmark 2026-04-23 (classifier 40% · planner 35% · synthesizer 25%)
-    # EXTRACTOR — tool_caller.py: tool calling fallback cuando regex falla (attendance/hw/cuotas/query)
+    # EXTRACTOR — tool_caller.py: tool calling fallback cuando regex falla (attendance/hw/query)
     # #1 global 94.9% — JSON 100%, 437ms, Groq free; fallback: mistral-medium (noex 100%)
     llm_extractor: str = "groq/openai/gpt-oss-120b"
     llm_extractor_fallback: str = "mistral/mistral-medium-latest"

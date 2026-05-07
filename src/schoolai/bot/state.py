@@ -381,7 +381,7 @@ class ConversationCtx:
     Permite interpretar acciones ambiguas ("editar", "borrar") en el contexto
     correcto: si el bot acabó de mostrar tareas, "editar" → editar tarea.
     """
-    last_intent: str           # "homework" | "attendance" | "cuota" | ...
+    last_intent: str           # "homework" | "attendance" | ...
     grade_id: int | None = None
     grade_name: str | None = None
 
@@ -502,60 +502,6 @@ def clear_wa_setup(user_id: int) -> None:
     _wa_setup_store.clear(user_id)
 
 
-# ── Pending cuota participante ────────────────────────────────────────────────
-
-
-@dataclass
-class PendingCuotaParticipante:
-    actividad_id: int
-    actividad_nombre: str
-
-
-_cuota_participante_store: StateStore[PendingCuotaParticipante] = StateStore(
-    "cuota_part",
-    ttl=_REDIS_TTL_SHORT,
-)
-
-
-def set_cuota_participante(user_id: int, state: PendingCuotaParticipante) -> None:
-    _cuota_participante_store.set(user_id, state)
-
-
-def get_cuota_participante(user_id: int) -> PendingCuotaParticipante | None:
-    return _cuota_participante_store.get(user_id)
-
-
-def clear_cuota_participante(user_id: int) -> None:
-    _cuota_participante_store.clear(user_id)
-
-
-# ── Pending cuota nombre ──────────────────────────────────────────────────────
-
-
-@dataclass
-class PendingCuotaNombre:
-    monto: float | None  # monto ya conocido, puede ser None si tampoco lo tiene
-    course: str | None
-
-
-_cuota_nombre_store: StateStore[PendingCuotaNombre] = StateStore(
-    "cuota_nombre",
-    ttl=_REDIS_TTL_SHORT,
-)
-
-
-def set_cuota_nombre(user_id: int, state: PendingCuotaNombre) -> None:
-    _cuota_nombre_store.set(user_id, state)
-
-
-def get_cuota_nombre(user_id: int) -> PendingCuotaNombre | None:
-    return _cuota_nombre_store.get(user_id)
-
-
-def clear_cuota_nombre(user_id: int) -> None:
-    _cuota_nombre_store.clear(user_id)
-
-
 # ── Pending homework edit field ───────────────────────────────────────────────
 
 
@@ -583,84 +529,6 @@ def get_hw_edit_field(user_id: int) -> PendingHwEditField | None:
 
 def clear_hw_edit_field(user_id: int) -> None:
     _hw_edit_store.clear(user_id)
-
-
-# ── Pending cuota edit field ──────────────────────────────────────────────────
-
-
-@dataclass
-class PendingCuotaEditField:
-    actividad_id: int
-    actividad_nombre: str
-    field: str  # "nombre" | "monto" | "descripcion"
-
-
-_cuota_edit_store: StateStore[PendingCuotaEditField] = StateStore(
-    "cuota_edit",
-    ttl=_REDIS_TTL_SHORT,
-)
-
-
-def set_cuota_edit_field(user_id: int, state: PendingCuotaEditField) -> None:
-    _cuota_edit_store.set(user_id, state)
-
-
-def get_cuota_edit_field(user_id: int) -> PendingCuotaEditField | None:
-    return _cuota_edit_store.get(user_id)
-
-
-def clear_cuota_edit_field(user_id: int) -> None:
-    _cuota_edit_store.clear(user_id)
-
-
-# ── Cuota create state ────────────────────────────────────────────────────────
-
-
-@dataclass
-class PendingCuotaCreate:
-    actividad_id: int
-    actividad_nombre: str
-    step: Literal["await_numbers"]
-    grade_id: int
-    grade_name: str
-    student_list: list[dict]  # [{"idx": int, "student_id": int, "name": str}]
-
-
-_cuota_create_store: StateStore[PendingCuotaCreate] = StateStore(
-    "cuota",
-    use_redis=True,
-    ttl=_REDIS_TTL_SHORT,
-    decode=lambda d: PendingCuotaCreate(**d),
-)
-
-
-def set_cuota_create(user_id: int, state: PendingCuotaCreate) -> None:
-    _cuota_create_store.set(user_id, state)
-
-
-def get_cuota_create(user_id: int) -> PendingCuotaCreate | None:
-    return _cuota_create_store.get(user_id)
-
-
-def clear_cuota_create(user_id: int) -> None:
-    _cuota_create_store.clear(user_id)
-
-
-# ── Pending pago ──────────────────────────────────────────────────────────────
-
-_pending_pago_store: StateStore[Any] = StateStore("pago", ttl=_REDIS_TTL_SHORT)
-
-
-def set_pending_pago(user_id: int, data: Any) -> None:
-    _pending_pago_store.set(user_id, data)
-
-
-def get_pending_pago(user_id: int) -> Any | None:
-    return _pending_pago_store.get(user_id)
-
-
-def pop_pending_pago(user_id: int) -> Any | None:
-    return _pending_pago_store.pop(user_id)
 
 
 # ── Pending confirmation state ────────────────────────────────────────────────

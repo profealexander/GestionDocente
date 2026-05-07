@@ -48,7 +48,6 @@ hw_edit      = "schoolai.skills.homework.skill:HWEditSkill"
 hw_report    = "schoolai.skills.homework.skill:HWReportSkill"
 homework     = "schoolai.skills.homework.skill:HomeworkSkill"
 query        = "schoolai.skills.query.skill:QuerySkill"
-cuotas       = "schoolai.skills.cuotas.skill:CuotaSkill"
 orchestrator = "schoolai.skills.orchestrator.skill:OrchestratorSkill"
 chat         = "schoolai.skills.ia.skill:ChatSkill"
 

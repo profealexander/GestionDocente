@@ -5,7 +5,7 @@
 
 # 🤖 SchoolAI
 
-**Asistente IA para docentes** — registra asistencia, tareas y cuotas desde Telegram con lenguaje natural, sin formularios.
+**Asistente IA para docentes** — registra asistencia y tareas desde Telegram con lenguaje natural, sin formularios.
 
 [Guía de usuario](docs/user-guide.md) | [Arquitectura](docs/architecture/architecture.md) | [API REST](#api-rest) | [Bot Agente](#ejecución)
 
@@ -40,7 +40,6 @@ Los docentes pierden horas semanales en trabajo administrativo repetitivo. Schoo
 
 - Registro de asistencia por voz o texto en segundos
 - Creación de tareas para múltiples materias en un mensaje
-- Control de cuotas y pagos de actividades
 - Consultas en lenguaje natural ("¿quién debe tareas esta semana?")
 - Comunicados masivos a docentes vía WhatsApp (texto o archivo adjunto)
 - Reporte de fin de jornada por curso → aprobación del tutor → notificación automática a representantes
@@ -214,13 +213,13 @@ schoolai/
     │   ├── auth.py             # JWT HS256
     │   ├── schemas.py
     │   └── routers/            # auth, grades, subjects, students,
-    │                           # homework, attendance, cuotas,
+    │                           # homework, attendance,
     │                           # whatsapp_webhook (POST /webhook/whatsapp)
     ├── db/                     # Capa de base de datos
     │   ├── connection.py       # Sesión async SQLAlchemy
     │   └── models/             # ORM: grade, student, teacher (+whatsapp_phone),
-    │                           # homework, attendance, subject, cuota,
-    │                           # context_document, reminder
+    │                           # homework, attendance, subject,
+    │                           # context_document
     └── skills/                 # Sistema de skills (SkillRegistry + pipeline regex → Orchestrator → Chat)
         ├── registry.py         # SkillRegistry: detect() + detect_all()
         ├── planner.py          # Divide mensajes multi-intent por skill
@@ -228,12 +227,10 @@ schoolai/
         ├── attendance/         # Skill (via_llm) + tools + matcher fuzzy
         ├── homework/           # Skill (via_llm) + tools + detector + repository + handler_edit
         ├── query/              # Skill + tools
-        ├── cuotas/             # Skill + tools + handlers (create/pago/query/edit) + service
-        ├── orchestrator/       # OrchestratorSkill + agent ReAct loop + 15+ tools
-        │                       # SkillAgents: attendance, homework, cuotas, repl, reminders, context
-        │                       # Router de patrones 0ms (6 dominios) + _FlatAgent fallback
+        ├── orchestrator/       # OrchestratorSkill + agent ReAct loop + tools
+        │                       # SkillAgents: attendance, homework, context
+        │                       # Router de patrones 0ms + _FlatAgent fallback
         ├── context/            # ContextAgent: documentos institucionales + búsqueda web (DuckDuckGo)
-        ├── reminders/          # RemindersAgent: recordatorios programados vía Telegram
         ├── ia/                 # ChatSkill (compound-beta + mistral fallback)
         ├── llm/                # Cliente unificado + tool_caller + providers (13 providers)
         ├── documents/          # Generación de documentos PDF
@@ -290,10 +287,6 @@ Ver documentación interactiva en `/docs` (Swagger UI) o `/redoc`.
 | GET | `/homework/` | Lista tareas |
 | PATCH | `/homework/{id}` | Cierra una tarea |
 | GET | `/attendance/` | Lista registros de asistencia |
-| GET | `/cuotas/actividades/` | Lista actividades/cuotas |
-| POST | `/cuotas/actividades/` | Crea una actividad |
-| POST | `/cuotas/actividades/{id}/participantes` | Agrega participantes |
-| POST | `/cuotas/actividades/{id}/pagos` | Registra un pago |
 | GET/POST | `/scores/` | Notas académicas por trimestre/columna |
 | GET | `/llm-stats/` | Uso de LLMs agrupado por proveedor y modelo |
 | POST | `/webhook/whatsapp` | Webhook Green API — mensajes entrantes WhatsApp |

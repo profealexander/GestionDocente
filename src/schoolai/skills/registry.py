@@ -11,8 +11,7 @@ Uso típico:
     registry.register(HWReportSkill())     # 2°
     registry.register(HomeworkSkill())     # 3°
     registry.register(QuerySkill())        # 4°
-    registry.register(CuotaSkill())        # 5°
-    registry.register(ChatSkill())         # 6° — siempre al final
+    registry.register(ChatSkill())         # 5° — siempre al final
 
     # Mensaje único → una skill:
     skill = registry.detect(text)

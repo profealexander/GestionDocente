@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from schoolai.skills.cuotas.tools import ToolDef  # reutiliza la misma clase
+from schoolai.skills.tool_def import ToolDef
 
 _SYSTEM_PROMPT = (
     "You are a school assistant. The teacher is recording absences or querying attendance. "

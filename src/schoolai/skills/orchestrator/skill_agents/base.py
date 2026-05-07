@@ -324,8 +324,7 @@ class SkillAgentBase:
                 f"\n\nCurrent teacher Telegram ID: {teacher_id}. "
                 "When calling 'my_courses', 'my_schedule', 'create_assignment', "
                 "'query_assignments', 'record_attendance', 'search_context', 'list_context_docs', "
-                "'delete_context_doc', 'create_reminder', 'list_reminders', 'list_activities', "
-                f"or 'cancel_reminder', always pass telegram_id={teacher_id} exactly."
+                f"or 'delete_context_doc', always pass telegram_id={teacher_id} exactly."
             )
 
         messages: list[dict] = (

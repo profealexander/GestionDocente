@@ -46,14 +46,6 @@ class HomeworkSkill(BaseSkill):
         re.IGNORECASE,
     )
 
-    # Patrones exclusivos de CuotaSkill — HomeworkSkill no debe interferir
-    _CUOTA_EXCLUDE_RE: re.Pattern = re.compile(
-        r"\b(listado?\s+(?:de\s+)?actividades?|ver\s+actividades?|listar\s+actividades?"
-        r"|actividades?\s+activas?|nueva\s+(?:actividad|cuota)|crear\s+(?:actividad|cuota)"
-        r"|cuotas?|pago\s+cuota|exportar\s+cuota)\b",
-        re.IGNORECASE,
-    )
-
     _DIGIT_COURSE_RE: re.Pattern = re.compile(r"^\d{1,2}$")
     _MULTI_SUBJECT_RE: re.Pattern = re.compile(r"\bmaterias\b", re.IGNORECASE)
 
@@ -73,8 +65,6 @@ class HomeworkSkill(BaseSkill):
 
     def matches(self, text: str) -> bool:
         if self._REPORT_RE.search(text):
-            return False
-        if self._CUOTA_EXCLUDE_RE.search(text):
             return False
         if self._QUERY_NOUN_RE.match(text):
             return False  # es consulta, no creación
@@ -185,7 +175,7 @@ class HWEditSkill(BaseSkill):
     ]
 
     _OTHER_DOMAIN_RE: re.Pattern = re.compile(
-        r"\b(asistencia|falta|atraso|justificado|cuota|actividad|pago)\b",
+        r"\b(asistencia|falta|atraso|justificado)\b",
         re.IGNORECASE,
     )
     _HW_REF_RE: re.Pattern = re.compile(r"#?\s*(\d+)")
